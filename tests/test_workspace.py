@@ -17,6 +17,7 @@ from ascend_math_agent.workspace import (
     create_run_root,
     discover_project_root,
     generate_run_id,
+    latest_run_root,
 )
 
 
@@ -35,6 +36,32 @@ def test_run_id_is_safe_and_deterministic_with_injected_values() -> None:
     )
     assert run_id == "20260719T123456Z-my-result-name-abcdef"
     assert Path(run_id).name == run_id
+
+
+def test_run_id_includes_safe_problem_stem_before_timestamp() -> None:
+    run_id = generate_run_id(
+        "Second attempt",
+        problem_name="My Résult",
+        now=datetime(2026, 7, 19, 12, 34, 56, tzinfo=UTC),
+        random_suffix="abcdef",
+    )
+
+    assert run_id == "run-my-result-second-attempt-20260719T123456Z-abcdef"
+    assert Path(run_id).name == run_id
+
+
+def test_latest_run_uses_embedded_timestamp_with_problem_first_ids(tmp_path: Path) -> None:
+    older = create_run_root(
+        tmp_path,
+        run_id="run-zeta-problem-20260718T120000Z-abcdef",
+    )
+    newer = create_run_root(
+        tmp_path,
+        run_id="run-alpha-problem-20260719T120000Z-abcdef",
+    )
+
+    assert older.name > newer.name
+    assert latest_run_root(tmp_path) == newer
 
 
 def test_create_run_root_builds_exact_concrete_contract_dirs(tmp_path: Path) -> None:

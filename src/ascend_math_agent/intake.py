@@ -142,7 +142,13 @@ def ingest_problem(
     root = project_root.expanduser().resolve(strict=True)
     timestamp = now or datetime.now(UTC)
     config_snapshot = config_as_toml(config)
-    run_root = create_run_root(root, run_name, run_id=run_id, now=timestamp)
+    run_root = create_run_root(
+        root,
+        run_name,
+        problem_name=source.stem,
+        run_id=run_id,
+        now=timestamp,
+    )
     backend_provider = config.backend.provider
     backend_manifest: dict[str, Any] = {
         "schema_version": 1,

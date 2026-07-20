@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -33,6 +34,21 @@ def test_intake_preserves_original_and_normalizes_copy(tmp_path: Path) -> None:
     assert invocation["arguments"]["api_key"] == "[REDACTED]"
     assert "must-not-leak" not in (result.run_root / "state.json").read_text(encoding="utf-8")
     assert result.state.stages[StageName.INTAKE].status is StageStatus.SUCCEEDED
+
+
+def test_intake_generated_run_id_includes_problem_file_stem(tmp_path: Path) -> None:
+    problem = tmp_path / "Unique Theorem.md"
+    problem.write_text("Prove P.\n", encoding="utf-8")
+
+    result = ingest_problem(
+        problem_file=problem,
+        project_root=tmp_path,
+        config=AppConfig(),
+        invocation={},
+        now=datetime(2026, 7, 19, 12, 34, 56, tzinfo=UTC),
+    )
+
+    assert result.run_root.name.startswith("run-unique-theorem-20260719T123456Z-")
 
 
 def test_intake_rejects_empty_problem_before_creating_run(tmp_path: Path) -> None:

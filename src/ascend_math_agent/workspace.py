@@ -39,7 +39,13 @@ ARTIFACT_DIRECTORIES = (
     "traces/codex",
 )
 
-_RUN_ID_PATTERN = re.compile(r"\A\d{8}T\d{6}Z-[a-z0-9](?:[a-z0-9_-]{0,47})-[a-f0-9]{6}\Z")
+_LEGACY_RUN_ID_PATTERN = re.compile(
+    r"\A(?P<timestamp>\d{8}T\d{6}Z)-[a-z0-9](?:[a-z0-9_-]{0,47})-[a-f0-9]{6}\Z"
+)
+_PROBLEM_RUN_ID_PATTERN = re.compile(
+    r"\Arun-[a-z0-9](?:[a-z0-9_-]{0,72})-"
+    r"(?P<timestamp>\d{8}T\d{6}Z)-[a-f0-9]{6}\Z"
+)
 _SLUG_UNSAFE = re.compile(r"[^a-z0-9_-]+")
 _SLUG_SEPARATORS = re.compile(r"[-_]{2,}")
 
@@ -257,28 +263,38 @@ def discover_project_root(start: Path) -> Path:
     return current
 
 
-def _slugify_run_name(run_name: str | None) -> str:
-    if run_name is None or not run_name.strip():
-        return "run"
+def _slugify_component(value: str | None, *, default: str, max_length: int) -> str:
+    if value is None or not value.strip():
+        return default
     ascii_name = (
-        unicodedata.normalize("NFKD", run_name)
+        unicodedata.normalize("NFKD", value)
         .encode("ascii", errors="ignore")
         .decode("ascii")
         .lower()
     )
     slug = _SLUG_UNSAFE.sub("-", ascii_name)
     slug = _SLUG_SEPARATORS.sub("-", slug).strip("-_.")
-    slug = slug[:48].rstrip("-_")
-    return slug or "run"
+    slug = slug[:max_length].rstrip("-_")
+    return slug or default
+
+
+def _slugify_run_name(run_name: str | None) -> str:
+    return _slugify_component(run_name, default="run", max_length=48)
 
 
 def generate_run_id(
     run_name: str | None = None,
     *,
+    problem_name: str | None = None,
     now: datetime | None = None,
     random_suffix: str | None = None,
 ) -> str:
-    """Generate a portable, traversal-safe, collision-resistant run identifier."""
+    """Generate a portable, traversal-safe, collision-resistant run identifier.
+
+    New workflow runs supply ``problem_name`` and use
+    ``run-<problem>[-<name>]-<timestamp>-<suffix>``. Calls without a problem name
+    retain the original timestamp-first format for API and on-disk compatibility.
+    """
 
     moment = now or datetime.now(UTC)
     if moment.tzinfo is None:
@@ -287,7 +303,15 @@ def generate_run_id(
     suffix = random_suffix or secrets.token_hex(3)
     if not re.fullmatch(r"[a-f0-9]{6}", suffix):
         raise InvalidRunIdError("run ID random suffix must be six lowercase hexadecimal digits")
-    run_id = f"{timestamp}-{_slugify_run_name(run_name)}-{suffix}"
+    if problem_name is None:
+        run_id = f"{timestamp}-{_slugify_run_name(run_name)}-{suffix}"
+    else:
+        problem_slug = _slugify_component(problem_name, default="problem", max_length=48)
+        label = problem_slug
+        if run_name is not None and run_name.strip():
+            name_slug = _slugify_component(run_name, default="run", max_length=24)
+            label = f"{problem_slug}-{name_slug}"
+        run_id = f"run-{label}-{timestamp}-{suffix}"
     validate_run_id(run_id)
     return run_id
 
@@ -295,9 +319,14 @@ def generate_run_id(
 def validate_run_id(run_id: str) -> str:
     """Validate and return a run ID suitable for use as one path component."""
 
-    if not _RUN_ID_PATTERN.fullmatch(run_id):
+    if not (
+        _LEGACY_RUN_ID_PATTERN.fullmatch(run_id)
+        or _PROBLEM_RUN_ID_PATTERN.fullmatch(run_id)
+    ):
         raise InvalidRunIdError(
-            "run ID must match YYYYMMDDTHHMMSSZ-name-xxxxxx using lowercase safe characters"
+            "run ID must match run-problem[-name]-YYYYMMDDTHHMMSSZ-xxxxxx "
+            "(or the legacy YYYYMMDDTHHMMSSZ-name-xxxxxx format) using lowercase safe "
+            "characters"
         )
     if run_id in {".", ".."} or Path(run_id).name != run_id:
         raise InvalidRunIdError("run ID must be exactly one relative path component")
@@ -369,6 +398,7 @@ def create_run_root(
     project_root: Path,
     run_name: str | None = None,
     *,
+    problem_name: str | None = None,
     run_id: str | None = None,
     now: datetime | None = None,
 ) -> Path:
@@ -383,7 +413,9 @@ def create_run_root(
     if not root.is_dir():
         raise WorkspaceError(f"project root is not a directory: {project_root}")
     selected_id = (
-        validate_run_id(run_id) if run_id is not None else generate_run_id(run_name, now=now)
+        validate_run_id(run_id)
+        if run_id is not None
+        else generate_run_id(run_name, problem_name=problem_name, now=now)
     )
 
     ascend_root = ensure_path_confined(root, root / ".ascend")
@@ -413,7 +445,7 @@ def find_run_root(project_root: Path, run_id: str) -> Path:
 
 
 def latest_run_root(project_root: Path) -> Path | None:
-    """Return the lexicographically latest valid run workspace, if any."""
+    """Return the latest valid run workspace by its embedded UTC timestamp, if any."""
 
     root = project_root.expanduser().resolve(strict=True)
     runs_root = ensure_path_confined(root, root / ".ascend" / "runs")
@@ -428,7 +460,17 @@ def latest_run_root(project_root: Path) -> Path | None:
             continue
         if resolved.is_dir():
             valid.append(resolved)
-    return max(valid, key=lambda item: item.name, default=None)
+    return max(valid, key=lambda item: (_run_id_timestamp(item.name), item.name), default=None)
+
+
+def _run_id_timestamp(run_id: str) -> str:
+    """Extract the sortable UTC timestamp from either supported run-ID format."""
+
+    for pattern in (_LEGACY_RUN_ID_PATTERN, _PROBLEM_RUN_ID_PATTERN):
+        match = pattern.fullmatch(run_id)
+        if match is not None:
+            return match.group("timestamp")
+    raise InvalidRunIdError(f"invalid run ID: {run_id}")
 
 
 def _json_default(value: Any) -> Any:

@@ -111,8 +111,9 @@ clarification questions, and instruct you to revise the problem file before star
 
 ## Finding the results
 
-Every invocation gets a unique timestamp-based directory, so separate problems and repeated
-attempts do not overwrite one another:
+Every invocation gets a unique directory named
+`run-<problem-name>[-<run-name>]-<UTC-timestamp>-<random-suffix>`, so the source problem is
+recognizable while separate problems and repeated attempts cannot overwrite one another:
 
 ```text
 .ascend/runs/<run-id>/

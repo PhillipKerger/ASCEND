@@ -95,6 +95,10 @@ Without a backend flag, a new installation uses Codex. Important options:
 `--backend api` is explicit consent to use separately billed Platform API access. `--dry-run`
 validates and prints the resolved backend and stage plan without a model call.
 
+Generated run directories use
+`run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
+optional run name are normalized to portable, lowercase filesystem-safe components.
+
 During `run` and active `resume` operations, ASCEND prints sparse progress lines with stable
 high-level milestone numbers. It does not stream model reasoning, per-call diagnostics, or every
 worker completion. A full run may show:
