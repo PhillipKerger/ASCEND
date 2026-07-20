@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "run_id",
+    "scientific_status",
+    "manuscript_status",
+    "lean_status",
+    "strongest_result",
+    "unresolved_obligations",
+    "artifacts"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string"
+    },
+    "scientific_status": {
+      "type": "string"
+    },
+    "manuscript_status": {
+      "type": "string"
+    },
+    "lean_status": {
+      "type": "string"
+    },
+    "strongest_result": {
+      "type": "string"
+    },
+    "unresolved_obligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifacts": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true
+}

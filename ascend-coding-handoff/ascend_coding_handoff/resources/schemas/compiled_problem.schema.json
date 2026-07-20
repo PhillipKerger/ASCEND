@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "title",
+    "normalized_statement",
+    "claim_contract",
+    "compiled_prompt",
+    "source_ledger",
+    "unresolved_ambiguities"
+  ],
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "normalized_statement": {
+      "type": "string"
+    },
+    "claim_contract": {
+      "type": "object"
+    },
+    "compiled_prompt": {
+      "type": "string"
+    },
+    "source_ledger": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "unresolved_ambiguities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

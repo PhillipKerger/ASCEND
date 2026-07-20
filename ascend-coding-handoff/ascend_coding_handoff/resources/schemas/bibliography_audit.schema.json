@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "entries",
+    "claim_checks",
+    "blocking_issues"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "verified",
+        "corrections_required",
+        "rejected"
+      ]
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "claim_checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

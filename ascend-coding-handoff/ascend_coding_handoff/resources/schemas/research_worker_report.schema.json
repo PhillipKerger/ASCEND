@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "assignment_id",
+    "status",
+    "formal_results",
+    "proof_content",
+    "exact_gap",
+    "sources"
+  ],
+  "properties": {
+    "assignment_id": {
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "progress",
+        "blocked",
+        "refuted",
+        "candidate_complete"
+      ]
+    },
+    "formal_results": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "proof_content": {
+      "type": "string"
+    },
+    "exact_gap": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true
+}

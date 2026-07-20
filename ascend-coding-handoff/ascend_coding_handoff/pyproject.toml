@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ascend-math-agent"
+version = "0.2.0"
+description = "ASCEND: autonomous mathematical research and Lean verification workflow"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{name = "ASCEND contributors"}]
+keywords = ["mathematics", "research", "lean", "formal-verification", "openai"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Typing :: Typed",
+]
+dependencies = [
+  "openai>=2.20,<3",
+  "pydantic>=2.8,<3",
+  "typer>=0.12,<1",
+  "rich>=13.7,<16",
+  "tomli-w>=1.0,<2",
+  "platformdirs>=4.2,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2,<2",
+  "pytest>=8.2,<10",
+  "pytest-asyncio>=0.23,<2",
+  "mypy>=1.10,<3",
+  "ruff>=0.5,<1",
+]
+
+[project.scripts]
+ascend = "ascend_math_agent.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ascend_math_agent"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"resources" = "ascend_math_agent/resources"
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/resources",
+  "/scripts",
+  "/examples",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/SECURITY.md",
+  "/ascend.example.toml",
+]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "live: explicitly enabled tests that may use network, paid APIs, or local tools",
+  "codex_live: opt-in authenticated Codex CLI tests that consume Codex allowance",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/ascend_math_agent/cli.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["ascend_math_agent"]
+mypy_path = "src"
+warn_unreachable = true

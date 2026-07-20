@@ -1,0 +1,17 @@
+project_name: ""
+main_theorem_name: ""
+challenge_file: "challenge.lean"
+implementation_file: "Main.lean"
+lean_project_root: ""
+lean_toolchain: ""
+mathlib_revision: ""
+statement_hash: ""
+approved_axioms:
+  - propext
+  - Classical.choice
+  - Quot.sound
+prohibited_tokens:
+  - sorry
+  - admit
+  - by?
+verification_commands: []

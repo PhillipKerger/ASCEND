@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "round_id",
+    "assignments",
+    "rationale",
+    "candidate_packaging_recommended"
+  ],
+  "properties": {
+    "round_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "rationale": {
+      "type": "string"
+    },
+    "candidate_packaging_recommended": {
+      "type": "boolean"
+    },
+    "assignments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "approach_family",
+          "task",
+          "expected_output"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "approach_family": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "expected_output": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

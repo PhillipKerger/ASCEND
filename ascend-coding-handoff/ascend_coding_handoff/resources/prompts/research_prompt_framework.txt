@@ -1,0 +1,854 @@
+PROMPT FRAMEWORK: 
+
+[BEGIN REUSABLE RESEARCH PROMPT FRAMEWORK]
+
+Current task statement
+
+[Give a self-contained, technically precise description of the mathematical or
+computational setting.
+
+Define the principal objects involved in the problem, the ambient class to which those
+objects belong, and all notation needed to state the target result. Definitions should be
+given in sufficient detail that no ambiguity remains about admissible objects, witnesses,
+solutions, counterexamples, transformations, or equivalence notions.
+
+Clarify conventions that may differ across the literature. This may include, as applicable:
+
+- whether objects are finite or infinite;
+- whether repeated elements, degeneracies, singular cases, empty objects, or trivial
+  instances are permitted;
+- whether structures are labeled or unlabeled, ordered or unordered, discrete or
+  continuous;
+- which notion of equality, equivalence, isomorphism, approximation, convergence, or
+  feasibility is intended;
+- whether parameters are fixed, part of the input, or allowed to grow;
+- how boundary cases and exceptional parameter values are treated;
+- which mathematical foundations, axioms, or standard background assumptions may be used.
+
+For an algorithmic problem, additionally specify:
+
+- the formal input representation;
+- the admissible output or certificate;
+- the computational model;
+- the encoding of numerical quantities;
+- the input-size measure;
+- the relevant complexity parameters;
+- whether randomness, approximation, or oracle access is permitted;
+- the required success probability, numerical precision, and bit complexity.
+
+For an asymptotic or quantitative theorem, state the order of all quantifiers and explain
+which constants may depend on which parameters.]
+
+Resolve [FULL NAME OF THE PROBLEM, CONJECTURE, OR TARGET THEOREM] completely:
+
+[State the desired conclusion in a standalone, formal form. Include every quantifier,
+hypothesis, conclusion, parameter dependence, approximation factor, complexity guarantee,
+uniformity condition, or exceptional case that belongs to the target result.
+
+Where useful, display the exact theorem, inequality, identity, algorithmic guarantee,
+classification, dichotomy, lower bound, upper bound, or construction that must be proved.]
+
+Assume for purposes of this task that [CHOOSE AND STATE THE INTENDED RESEARCH
+ASSUMPTION, FOR EXAMPLE:
+
+- a complete affirmative proof exists;
+- a complete disproof or explicit counterexample exists;
+- one of a specified collection of possible resolutions can be established;
+- an algorithm with the stated guarantees exists;
+- the proposed classification theorem is correct].
+
+Do not answer merely that the problem is open, longstanding, difficult, or believed to be
+true or false.
+
+Exact success criterion
+
+A complete solution must establish exactly the following:
+
+[Restate the target result with its full logical strength. This restatement should make clear
+that no hypothesis may be added and no conclusion may be weakened.
+
+For example, identify:
+
+- the full class of objects or instances covered;
+- the exact property, bound, construction, or classification required;
+- all uniformity requirements;
+- all allowed parameter dependencies;
+- all required edge cases;
+- whether the result must be constructive, effective, explicit, or algorithmic;
+- whether the proof must establish existence, uniqueness, optimality, completeness,
+  soundness, or all of these.]
+
+A complete solution must contain:
+
+[Insert the deliverables required for this particular problem. Depending on the target,
+these may include some or all of the following.]
+
+1. [A complete proof of the stated theorem, with all nonstandard intermediate claims proved.]
+
+2. [A fully specified construction, algorithm, reduction, strategy, or certificate.]
+
+3. [A proof that the constructed object belongs to the required admissible class.]
+
+4. [A proof that the construction satisfies the exact target property.]
+
+5. [A complete quantitative analysis, including all constants and parameter choices.]
+
+6. [For an algorithmic result: a proof of correctness, termination, running time, space
+   usage, uniformity, numerical precision, and bit complexity.]
+
+7. [For a randomized result: a precise success guarantee and a proof that correctness and
+   the claimed quantitative bound hold in the same event.]
+
+8. [For an approximation result: a complete inequality chain comparing the returned
+   solution with the stated benchmark, with all losses composed explicitly.]
+
+9. [For a lower-bound or impossibility result: a precise model, a formally defined class of
+   methods or algorithms being ruled out, and a proof applying to every member of that
+   class.]
+
+10. [For a classification result: proofs of both exhaustiveness and mutual exclusivity, or
+    an exact explanation of any permitted overlap.]
+
+11. [A rigorous treatment of all degenerate, limiting, zero-valued, empty, singular, or
+    otherwise exceptional cases relevant to the problem.]
+
+12. [Verification that every external theorem is being used under its exact hypotheses.]
+
+Insufficient outcomes
+
+Partial progress does not count as a complete resolution unless it logically implies the
+full target statement above.
+
+In particular, the following are insufficient:
+
+- a proof for only [LIST IMPORTANT SPECIAL SUBCLASSES THAT DO NOT COVER THE FULL
+  PROBLEM];
+
+- a result obtained by adding assumptions such as [LIST TYPICAL REGULARITY, GENERICITY,
+  BOUNDEDNESS, UNIFORMITY, NONDEGENERACY, OR STRUCTURAL ASSUMPTIONS THAT THE
+  TARGET DOES NOT ALLOW];
+
+- a weaker conclusion such as [LIST NATURAL BUT INSUFFICIENT RELAXATIONS OF THE
+  TARGET];
+
+- a nonuniform, ineffective, asymptotic, average-case, smoothed, heuristic, or
+  distribution-dependent result when the target requires a uniform exact theorem;
+
+- a result with an uncontrolled constant, error term, exceptional set, probability of
+  failure, parameter dependence, or hidden assumption;
+
+- a reduction to another unproved statement of comparable strength;
+
+- a reformulation that is equivalent to the original problem but supplies no new proof
+  mechanism;
+
+- an argument that isolates a theorem-strength missing lemma and then calls that lemma
+  “standard,” “routine,” “plausible,” or “technical”;
+
+- computational verification through any fixed range of sizes, parameters, dimensions, or
+  numerical precision;
+
+- numerical evidence, symbolic experiments, machine-learning predictions, or extensive
+  examples without a proof covering the full domain;
+
+- a candidate counterexample without a complete verification that it satisfies all
+  hypotheses and violates the exact conclusion;
+
+- a proposed proof that works only after changing the model, admissible objects, objective,
+  notion of solution, or interpretation of the theorem;
+
+- [FOR ALGORITHMIC PROBLEMS: an algorithm with a weaker approximation factor, a weaker
+  feasibility guarantee, a worse parameter dependence, a nonpolynomial encoding
+  dependence, an unpermitted oracle, or an exponent depending on a parameter that the
+  target requires to be outside the exponent];
+
+- [FOR EXISTENCE PROBLEMS: a construction in an enlarged completion, extension, quotient,
+  relaxation, or auxiliary category without a rigorous transfer back to the original
+  setting];
+
+- [INSERT OTHER PROBLEM-SPECIFIC NEAR MISSES THAT MUST BE RULED OUT].
+
+Known starting point and exact bottleneck
+
+Primary source or sources:
+
+[Provide complete citations or exact references to the principal papers, books, formal
+statements, or prior frameworks on which the project is based.]
+
+The established starting point is:
+
+[Describe the strongest relevant known result in formal terms. State its hypotheses,
+conclusion, quantitative guarantees, and algorithmic complexity exactly.
+
+Do not merely say that a framework “almost solves” the problem. Write the actual theorem or
+the precise chain of implications supplied by the existing method.]
+
+The existing argument proceeds through the following mechanism:
+
+[Summarize the established proof or algorithm at the level of its decisive lemmas,
+invariants, decompositions, relaxations, recurrences, estimates, or transformations.
+
+Identify which parts may safely be treated as black boxes and state the exact hypotheses of
+those black boxes.]
+
+The exact unresolved step is:
+
+[State the technical bottleneck as a precise failed implication, missing estimate,
+uncontrolled quantity, unavailable structural lemma, incompatible pair of requirements, or
+algorithmic obstacle.
+
+Whenever possible, express the bottleneck as a formula or formally quantified statement.
+Identify exactly where the current proof uses an assumption that is absent from the desired
+theorem.]
+
+The current hypothesis or restriction is used in the following way:
+
+[Show the exact line, estimate, compactness argument, structural step, complexity bound, or
+reduction in which the unwanted hypothesis enters.]
+
+A successful resolution must therefore do at least one of the following:
+
+- [replace the problematic estimate by a quantity controlled by the desired benchmark];
+
+- [construct a new certificate, invariant, potential function, decomposition, relaxation,
+  or representation];
+
+- [prove that the problematic case can be reduced to a controlled family of cases];
+
+- [avoid the existing framework and establish the target by a fundamentally different
+  route];
+
+- [insert other formally described ways of bypassing the bottleneck].
+
+Do not treat informal suggestions in this section as assumptions. Every proposed
+replacement mechanism must itself be proved.
+
+Potential master lemmas
+
+[Optional but strongly recommended when the literature identifies a clear bottleneck.]
+
+The following kinds of intermediate theorem would be sufficient to resolve the target
+problem:
+
+Route A: [NAME OR DESCRIPTION OF A SUFFICIENT INTERMEDIATE RESULT]
+
+[State a formally quantified lemma which, if proved, would imply the target. Then explain
+the implication from the lemma to the main theorem.]
+
+Route B: [NAME OR DESCRIPTION OF A DIFFERENT SUFFICIENT INTERMEDIATE RESULT]
+
+[State the second lemma precisely and explain how it bypasses the bottleneck by a
+substantially different mechanism.]
+
+Route C: [NAME OR DESCRIPTION OF A THIRD SUFFICIENT INTERMEDIATE RESULT]
+
+[State the result and the exact deduction it would enable.]
+
+[Add further routes only when they are mathematically distinct.]
+
+These statements are candidate research routes, not assumptions. Proving only that one of
+them would be sufficient is not progress unless the proposed intermediate theorem is
+actually established or reduced to clearly weaker, independently tractable claims.
+
+Multiagent research protocol
+
+Use [NAME OF THE AVAILABLE MULTIAGENT SYSTEM] aggressively and dynamically. Up to
+[MAXIMUM CONCURRENT AGENT COUNT] agents may be used.
+
+Do not begin with a fixed allocation such as “assign a predetermined number of agents to
+each named approach.” Instead, manage the research adaptively according to the quality,
+novelty, and rigor of the mathematical progress being returned.
+
+Begin with a genuinely diverse portfolio of approaches. Agents should investigate
+substantially different mathematical mechanisms, selected and adapted to the problem.
+Possible families include:
+
+- direct constructions or direct proofs;
+
+- induction on a natural complexity measure;
+
+- minimal-counterexample and extremal arguments;
+
+- structural decompositions and local-to-global principles;
+
+- invariant, potential-function, or charging arguments;
+
+- algebraic, analytic, geometric, topological, combinatorial, logical, or
+  category-theoretic reformulations, where relevant;
+
+- probabilistic methods, random restrictions, concentration, coupling, or derandomization;
+
+- duality, convexity, optimization, relaxation, rounding, or min-max formulations;
+
+- generating functions, transforms, spectral methods, representation theory, or other
+  field-appropriate algebraic tools;
+
+- compactness, limiting, approximation, regularization, or discretization methods;
+
+- recursive, dynamic-programming, automata-theoretic, parameterized, or
+  complexity-theoretic formulations;
+
+- communication, information-theoretic, adversarial, game-theoretic, or proof-complexity
+  viewpoints;
+
+- reductions to well-understood canonical structures, provided the reduction is not
+  circular;
+
+- constructive and nonconstructive routes pursued independently;
+
+- explicit search for counterexamples to proposed intermediate claims;
+
+- computational experiments designed to falsify lemmas, identify invariants, or reveal
+  small obstructions;
+
+- formal barrier results for carefully defined families of methods;
+
+- [INSERT APPROACH FAMILIES PARTICULARLY NATURAL IN THE RELEVANT FIELD].
+
+Do not tell most agents the currently favored approach during the initial rounds. Preserve
+independence so that agents do not all converge on the same attractive but incomplete
+reformulation.
+
+Maintain an explicit registry of approach families. Group agents according to their actual
+mathematical mechanism, not superficial differences in terminology.
+
+For every approach family, record:
+
+- the principal idea or representation;
+
+- the exact theorem, lemma, construction, or obstruction being pursued;
+
+- the quantity, invariant, or certificate on which the route depends;
+
+- the assumptions currently being used;
+
+- the strongest rigorously proved result obtained by the route;
+
+- the exact unresolved step;
+
+- whether the unresolved step appears local, technical, structural, or theorem-strength;
+
+- known counterexamples to stronger versions of the proposed lemma;
+
+- dependencies on other active routes;
+
+- whether the route is active, blocked, refuted, superseded, or ready for audit.
+
+If too many agents converge on one family, redirect some of them toward underexplored
+formulations.
+
+Do not allow an approach to dominate merely because it produces an elegant reduction. A
+route ending at a lemma equivalent in strength to the original problem is not close to
+completion unless it supplies a genuinely new proof of that lemma.
+
+When an approach stalls at a theorem-strength missing statement, mark it as blocked.
+Continue assigning agents to it only when someone proposes a materially new invariant,
+construction, decomposition, estimate, induction parameter, or transfer mechanism.
+Renaming or restating the same missing global claim does not count as a new mechanism.
+
+Keep several incompatible proof routes alive through multiple rounds. Cross-pollinate ideas
+only after independent agents have developed them far enough to expose their genuine
+strengths, hidden assumptions, and exact failure points.
+
+The root agent must repeatedly:
+
+1. synthesize the strongest rigorous findings;
+
+2. identify common hidden assumptions or recurring obstacles;
+
+3. challenge the most promising claims;
+
+4. redirect resources away from duplicated or circular approaches;
+
+5. launch new agents on newly exposed subproblems;
+
+6. commission counterexample searches against proposed lemmas;
+
+7. combine ideas only when the compatibility conditions are formally proved;
+
+8. reopen blocked routes only when a genuinely new mechanism has appeared.
+
+Do not stop after the first wave of agents fails.
+
+Required agent outputs
+
+Require agents to return concrete mathematical content. A useful agent report must contain
+one or more of the following:
+
+- a formally stated lemma with a proof;
+
+- a construction with verification of all required properties;
+
+- an explicit recurrence, inequality, invariant, identity, or potential function;
+
+- a complete reduction with proofs of soundness and completeness;
+
+- a worked derivation showing exactly how a known theorem applies;
+
+- a counterexample to a proposed intermediate statement;
+
+- an explicit family demonstrating a barrier;
+
+- pseudocode together with a correctness and complexity argument;
+
+- a precisely specified gap, including the weakest statement whose proof would close it;
+
+- a computational experiment together with the exact conjecture it supports or refutes.
+
+Reject:
+
+- status reports without mathematical content;
+
+- vague optimism;
+
+- literature analogies without a hypothesis-by-hypothesis mapping;
+
+- statements that a compatibility, lifting, convergence, measurability, integrality,
+  compactness, or complexity argument is “routine”;
+
+- proofs whose decisive step is described only informally;
+
+- numerical evidence presented as if it were a theorem;
+
+- claims that silently change the target statement.
+
+Computational exploration
+
+Use computational agents strategically when finite experiments can clarify the theory.
+They may:
+
+- enumerate small instances or low-complexity objects;
+
+- search for counterexamples to proposed lemmas;
+
+- compare exact solutions with relaxations or heuristics;
+
+- inspect extremal configurations;
+
+- test candidate invariants;
+
+- symbolically verify identities in representative cases;
+
+- identify the smallest failure of an overstrong conjecture;
+
+- generate examples distinguishing two competing formulations;
+
+- suggest sharper constants or missing hypotheses.
+
+Every computational task must have a stated mathematical purpose.
+
+Computations may guide conjecture formation, falsify false lemmas, and check proof
+bookkeeping. They do not replace a proof over an unbounded domain unless the problem has
+first been rigorously reduced to a finite computation and the completeness of that
+reduction is proved.
+
+Adversarial auditing requirements
+
+Use dedicated adversarial agents throughout the search.
+
+Before launching the main research process, add a problem-specific audit list containing
+the subtle failure modes most likely to invalidate a proof in this area. These items should
+be as concrete as the definitions in the task statement.
+
+At a minimum, every proposed solution must be audited for the following.
+
+1. Exact target statement
+
+Check that the proof establishes the theorem with the original quantifiers, hypotheses,
+conclusion, and parameter dependencies. Verify that it has not proved a nearby but weaker
+statement.
+
+2. Definitions and conventions
+
+Check every use of the principal definitions. Verify all empty, trivial, singular,
+degenerate, boundary, zero-valued, or infinite cases specified in the task statement.
+
+3. Hidden assumptions
+
+Search for unannounced assumptions such as genericity, compactness, smoothness,
+integrality, boundedness, finiteness, independence, uniqueness, nondegeneracy, regularity,
+uniformity, or access to additional structure.
+
+4. Preservation under transformations
+
+For every reduction, normalization, quotient, completion, embedding, perturbation,
+contraction, extension, relaxation, discretization, limiting operation, or change of
+representation, verify that:
+
+- the transformed object is well defined;
+
+- all required hypotheses are preserved;
+
+- solutions can be transferred in the required direction;
+
+- the target quantity changes by a controlled amount;
+
+- no information needed for reconstruction is lost.
+
+5. Local-to-global reasoning
+
+Check that locally valid statements actually combine into the required global conclusion.
+Demand a proof of every compatibility, gluing, consistency, extension, or reconstruction
+claim.
+
+6. Use of external theorems
+
+Verify the exact statement and hypotheses of every cited theorem. Check that the theorem
+applies to the permitted object class, parameter range, regularity level, computational
+model, and notion of solution.
+
+7. Circularity and equivalent restatements
+
+Reject any argument that assumes a statement equivalent to the target, hides the target
+inside a definition, or transfers the entire difficulty into an unproved master lemma.
+
+8. Quantitative bookkeeping
+
+Check every inequality, constant, asymptotic term, normalization, error estimate, and
+parameter substitution. Verify that individually small errors remain small after all
+iterations, levels, regions, or recursive calls are combined.
+
+9. Limiting and infinitary arguments
+
+Where limits, compactness, convergence, infinite sums, measure-theoretic operations, or
+choice principles occur, verify:
+
+- the required compactness or completeness;
+
+- the mode of convergence;
+
+- interchange of limits and other operations;
+
+- preservation of the desired property in the limit;
+
+- effectiveness, if the target is constructive.
+
+10. Probabilistic reasoning
+
+Check independence assumptions, conditioning, measurability, failure probabilities,
+expectations, tail bounds, union bounds, and derandomization. An expected bound does not
+automatically yield one outcome satisfying all required properties simultaneously.
+
+11. Optimization and approximation
+
+Where relevant, verify:
+
+- that the benchmark is correctly defined;
+
+- that every relaxation is a valid lower or upper bound in the needed direction;
+
+- that fractional or relaxed objects can be converted to admissible objects;
+
+- that the actual cost or objective of the constructed object is bounded, not merely a
+  surrogate quantity;
+
+- that additive errors can genuinely be absorbed into the required multiplicative or
+  asymptotic guarantee;
+
+- that the zero-benchmark case is treated separately when necessary.
+
+12. Algorithmic correctness
+
+Where relevant, verify:
+
+- that every step is computable in the stated model;
+
+- that all subroutines have the claimed guarantees;
+
+- that the algorithm terminates;
+
+- that the returned object is valid;
+
+- that correctness and approximation guarantees apply to the same execution or event.
+
+13. Complexity and encoding
+
+Where relevant, check:
+
+- the dependence of the exponent on every parameter;
+
+- hidden pseudo-polynomial dependence;
+
+- numerical precision and rational arithmetic;
+
+- growth of intermediate representations;
+
+- oracle assumptions;
+
+- uniformity;
+
+- preprocessing and reconstruction costs;
+
+- whether the claimed input-size measure includes the complete encoding length.
+
+14. Constructive versus existential claims
+
+Check whether the target requires an explicit or efficiently computable witness. An
+existence proof does not imply an algorithm unless the extraction procedure and its
+complexity are supplied.
+
+15. Counterexamples and obstruction claims
+
+For every proposed counterexample, verify all hypotheses and the exact failure of the
+conclusion. For every claimed impossibility or barrier theorem, verify that the class being
+ruled out is formally defined and that the argument covers every method in that class.
+
+16. Computational evidence
+
+Check that finite experiments are used only for their stated purpose. Reject extrapolation
+from tested cases unless a rigorous finite-reduction theorem justifies it.
+
+17. Problem-specific failure modes
+
+[INSERT A DETAILED LIST OF THE PRINCIPAL DOMAIN-SPECIFIC RISKS. Examples of the
+kind of content to insert include:
+
+- distinctions between several similar notions used in the field;
+- exceptional low-dimensional or low-parameter cases;
+- objects that satisfy a relaxed definition but not the intended one;
+- operations that fail to preserve an essential invariant;
+- forbidden dependence on an auxiliary parameter;
+- common false lemmas or known counterexamples;
+- subtle orientation, multiplicity, sign, normalization, measurability, uniformity, or
+  representation issues;
+- ways in which an apparently valid local construction can fail globally;
+- distinctions between existence in an enlarged setting and existence in the original
+  setting.]
+
+Require agents to return explicit counterexamples when they reject a proposed lemma.
+“Possibly false” is not a sufficient audit result when a concrete small obstruction can be
+found.
+
+Candidate-solution protocol
+
+Whenever a route appears complete, require its proponents to submit a complete proof
+package containing:
+
+- the exact theorem statement;
+
+- all definitions and conventions used in the proof;
+
+- a dependency graph of the lemmas;
+
+- a proof of every new lemma;
+
+- precise statements of all imported theorems;
+
+- the full construction or algorithm, where applicable;
+
+- verification that the output lies in the required class;
+
+- proof of the main property for an arbitrary admissible instance or object;
+
+- complete quantitative bookkeeping;
+
+- all parameter choices and the order in which they are fixed;
+
+- all limiting, compactness, approximation, or reconstruction arguments;
+
+- the full correctness and complexity analysis, where applicable;
+
+- treatment of every exceptional case listed in the task statement;
+
+- a statement identifying any use of nonconstructive principles;
+
+- a final proof showing exactly how the lemmas combine to yield the target theorem.
+
+Then launch independent audits with different objectives.
+
+At minimum, use:
+
+1. a foundational audit focused on definitions, quantifiers, exceptional cases, and hidden
+   assumptions;
+
+2. a domain-specialist audit focused on the central mathematical mechanism and the
+   hypotheses of external results;
+
+3. a hostile counterexample audit whose sole objective is to break the strongest new lemma
+   or construction;
+
+4. [FOR ALGORITHMIC OR QUANTITATIVE RESULTS] a complexity and parameter audit focused
+   on running time, encoding length, numerical precision, constants, approximation losses,
+   and forbidden parameter dependencies;
+
+5. [INSERT ANY ADDITIONAL AUDIT ROLE PARTICULARLY IMPORTANT FOR THE PROBLEM].
+
+Do not tell hostile auditors how the proof is intended to work beyond giving them the
+formal statement and submitted proof.
+
+If an audit discovers a gap, determine whether it is:
+
+- a local omission with a valid proof already implicit in the established lemmas;
+
+- a repairable lemma requiring a genuinely new argument;
+
+- a failure of a central invariant;
+
+- a counterexample to the main route;
+
+- a theorem-strength missing claim;
+
+- a change to the target statement disguised as a repair.
+
+Return the approach to active or blocked status as appropriate. Do not patch wording when
+the audit has exposed a missing global mechanism.
+
+Intermediate outcomes
+
+The following outcomes may be mathematically valuable and should be recorded rigorously,
+but they are not the primary stopping criterion:
+
+- [A complete theorem for a significant but proper subclass];
+
+- [A quantitatively weaker algorithm or bound];
+
+- [A result under a clearly stated additional hypothesis];
+
+- [A structural theorem that isolates the remaining obstruction];
+
+- [A formal barrier theorem for a precisely defined family of methods];
+
+- [A counterexample to a natural intermediate conjecture];
+
+- [A new equivalence that genuinely changes the available toolkit];
+
+- [A verified computational pattern that motivates a precise conjecture];
+
+- [INSERT PROBLEM-SPECIFIC INTERMEDIATE OUTCOMES].
+
+For each intermediate result, state:
+
+- the exact theorem proved;
+
+- its full proof;
+
+- how it differs from the main target;
+
+- whether it removes any previously essential hypothesis;
+
+- the exact remaining gap between it and the desired theorem.
+
+Do not describe an intermediate result as resolving the main problem.
+
+Stopping and reporting policy
+
+The normal stopping criterion is:
+
+[A COMPLETE PROOF, DISPROOF, CLASSIFICATION, CONSTRUCTION, OR ALGORITHM SATISFYING
+THE EXACT SUCCESS CRITERION ABOVE AND SURVIVING ALL REQUIRED AUDITS.]
+
+Do not return merely because:
+
+- the first several approaches fail;
+
+- many agents converge on the same missing lemma;
+
+- the literature treats the problem as open;
+
+- the problem has resisted previous researchers;
+
+- computational experiments are inconclusive;
+
+- a promising reduction ends at a theorem-strength gap;
+
+- the remaining obstacle appears difficult.
+
+Continue launching new rounds, redirecting agents, testing new formulations, and reopening
+blocked routes when a genuinely new mechanism emerges.
+
+Devote at least [MINIMUM RESEARCH BUDGET, EXPRESSED IN ELAPSED TIME, AGENT-ROUNDS,
+COMPUTATIONAL BUDGET, OR ANOTHER APPROPRIATE MEASURE] to sustained research before
+considering termination.
+
+Do not treat elapsed time, agent count, or the number of failed approaches as evidence that
+the target is false or inaccessible.
+
+If an external runtime or resource limit forcibly terminates the process before the primary
+stopping criterion is reached, return only:
+
+- the strongest fully proved result obtained;
+
+- its complete proof;
+
+- the exact unresolved statement separating it from the main theorem;
+
+- any rigorously verified counterexamples or barrier results;
+
+- a clear declaration that the main target has not yet been established.
+
+Do not fill the final response with a research diary, agent-by-agent logs, vague summaries,
+or unsupported speculation.
+
+Source and public-search policy
+
+Public search may be used for:
+
+- reading the specified primary sources;
+
+- checking definitions and standard conventions;
+
+- verifying the exact statements of named theorems;
+
+- locating ordinary mathematical background;
+
+- checking bibliographic dependencies;
+
+- understanding established methods adjacent to the problem.
+
+[STATE WHETHER SEARCHING FOR A DIRECT SOLUTION TO THE EXACT PROBLEM IS PERMITTED.]
+
+When direct-solution search is prohibited:
+
+- do not search for a proof or counterexample to the exact benchmark;
+
+- do not search merely to determine whether the problem is currently considered open;
+
+- do not substitute a literature-status report for mathematical work.
+
+Every external result used in the proof must be stated accurately and applied under its
+actual hypotheses.
+
+Final-response format
+
+When the primary stopping criterion is met, the final response must be a self-contained,
+paper-style solution containing:
+
+1. the exact theorem;
+
+2. all necessary definitions;
+
+3. a concise overview of the proof or algorithm;
+
+4. the complete sequence of lemmas;
+
+5. the full proof or construction;
+
+6. all quantitative and parameter calculations;
+
+7. the correctness and complexity analysis, where relevant;
+
+8. all exceptional cases;
+
+9. a final explicit deduction of the target statement.
+
+Do not include:
+
+- agent logs;
+
+- abandoned approaches;
+
+- speculative extensions;
+
+- unproved conjectures;
+
+- statements that some omitted step is routine;
+
+- informal claims that are stronger than what was proved.
+
+Return the complete solution only after it has survived the independent adversarial audits
+specified above.
+
+
+
+
+[END OF PROMPT FRAMEWORK]

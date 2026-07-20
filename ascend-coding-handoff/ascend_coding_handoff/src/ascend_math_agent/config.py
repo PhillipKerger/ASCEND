@@ -1,0 +1,844 @@
+"""Typed configuration loading for ASCEND.
+
+Configuration has one deliberately small and predictable precedence chain::
+
+    built-in defaults < ascend.toml < ASCEND_* environment < CLI overrides
+
+Environment keys use ``__`` as the nesting separator, for example
+``ASCEND_MODELS__PROMPT_COMPILER__MODEL``.  A handful of CLI-shaped convenience
+names (``ASCEND_MAX_ROUNDS``, ``ASCEND_BUDGET_USD``, and so on) are also accepted.
+The model-execution backend follows that same chain and defaults to the locally
+installed Codex CLI.  API settings remain available under ``[api]`` but selecting
+Codex never falls through to API billing.  Secrets are intentionally not part of
+this model; credentials are read by the selected adapter at call time and must
+never be included in a resolved config snapshot.
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import os
+import tomllib
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any, ClassVar, Literal, TypeAlias, cast
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+ConfigMapping: TypeAlias = Mapping[str, Any]
+BackendProvider: TypeAlias = Literal["codex", "api"]
+
+CURRENT_CONFIG_VERSION: Literal[2] = 2
+BACKEND_MIGRATION_ID: Literal["backend-provider-v2"] = "backend-provider-v2"
+BACKEND_MIGRATION_MESSAGE = (
+    "ASCEND migrated this pre-v2 configuration in memory and preserved the OpenAI API "
+    "backend because legacy API model, pricing, or limit settings were detected. Add "
+    'config_version = 2 and [backend] provider = "api" to ascend.toml to make the '
+    "selection explicit. ASCEND did not discard any API settings and will never switch "
+    "providers automatically."
+)
+
+
+class ConfigError(ValueError):
+    """Raised when configuration cannot be read, merged, or validated."""
+
+
+class _StrictSettings(BaseModel):
+    """Base class shared by persisted configuration sections."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, validate_assignment=True)
+
+
+class ModelSettings(_StrictSettings):
+    model: str = "gpt-5.6-sol"
+    reasoning_mode: Literal["standard", "pro"] = "pro"
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "xhigh"
+    web_search: bool = True
+    maximum_web_search_calls: int = Field(default=8, gt=0)
+    max_output_tokens: int = Field(default=100_000, gt=0)
+
+    @field_validator("model")
+    @classmethod
+    def _model_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("model must not be blank")
+        return value.strip()
+
+
+class ModelsSettings(_StrictSettings):
+    prompt_compiler: ModelSettings = Field(default_factory=ModelSettings)
+    research: ModelSettings = Field(
+        default_factory=lambda: ModelSettings(reasoning_effort="max", max_output_tokens=120_000)
+    )
+    audit: ModelSettings = Field(
+        default_factory=lambda: ModelSettings(reasoning_effort="max", max_output_tokens=120_000)
+    )
+    manuscript: ModelSettings = Field(
+        default_factory=lambda: ModelSettings(max_output_tokens=120_000)
+    )
+
+
+class BackendSettings(_StrictSettings):
+    """Model-execution provider selection and its no-fallback invariant."""
+
+    provider: BackendProvider = "codex"
+    allow_automatic_fallback: Literal[False] = False
+
+    @field_validator("allow_automatic_fallback", mode="before")
+    @classmethod
+    def _fallback_is_never_automatic(cls, value: Any) -> Any:
+        if value is not False:
+            raise ValueError(
+                "backend.allow_automatic_fallback must remain false; select the API "
+                "backend explicitly to permit Platform API billing"
+            )
+        return value
+
+
+class CodexLimits(_StrictSettings):
+    """Subscription/credit limits, intentionally separate from API dollars."""
+
+    max_agent_calls: int = Field(default=100, gt=0)
+    max_research_rounds: int = Field(default=8, gt=0)
+    max_codex_threads: int = Field(default=40, gt=0)
+    max_wall_clock_minutes: int = Field(default=480, gt=0)
+    max_formalization_iterations: int = Field(default=60, gt=0)
+
+
+class CodexSettings(_StrictSettings):
+    """Safe, backend-specific settings for official ``codex exec`` runs."""
+
+    executable: str = "codex"
+    model: str = ""
+    research_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "xhigh"
+    audit_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "xhigh"
+    manuscript_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "high"
+    formalization_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
+        "xhigh"
+    )
+    max_parallel_agents: int = Field(default=3, gt=0)
+    max_parallel_web_agents: int = Field(default=2, gt=0)
+    persist_sessions: bool = True
+    skip_git_repo_check: bool = False
+    extra_args: list[str] = Field(default_factory=list)
+    limits: CodexLimits = Field(default_factory=CodexLimits)
+
+    @field_validator("executable")
+    @classmethod
+    def _executable_must_not_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("codex.executable must not be blank")
+        return normalized
+
+    @field_validator("model")
+    @classmethod
+    def _empty_model_means_codex_default(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("extra_args")
+    @classmethod
+    def _extra_args_are_safe(cls, value: list[str]) -> list[str]:
+        """Allow only presentation flags that cannot bypass ASCEND controls.
+
+        Output locations, workspace, model, effort, authentication, search, sandbox,
+        approval, and feature toggles are all owned by the adapter.  Keeping this a
+        deliberately tiny positive allowlist prevents an innocent-looking config
+        extension from weakening those invariants.
+        """
+
+        normalized = [part.strip() for part in value]
+        if any(not part for part in normalized):
+            raise ValueError("codex.extra_args cannot contain blank arguments")
+        index = 0
+        while index < len(normalized):
+            argument = normalized[index]
+            if argument.startswith("--color="):
+                color = argument.partition("=")[2]
+                if color not in {"always", "never", "auto"}:
+                    raise ValueError("codex.extra_args --color must be always, never, or auto")
+                index += 1
+                continue
+            if argument == "--color":
+                if index + 1 >= len(normalized) or normalized[index + 1] not in {
+                    "always",
+                    "never",
+                    "auto",
+                }:
+                    raise ValueError(
+                        "codex.extra_args --color must be followed by always, never, or auto"
+                    )
+                index += 2
+                continue
+            raise ValueError(
+                f"codex.extra_args contains unsupported or ASCEND-controlled argument: "
+                f"{argument}; only --color always|never|auto is allowed"
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def web_parallelism_does_not_exceed_total(self) -> CodexSettings:
+        if self.max_parallel_web_agents > self.max_parallel_agents:
+            raise ValueError(
+                "codex.max_parallel_web_agents cannot exceed codex.max_parallel_agents"
+            )
+        return self
+
+
+class ResearchSettings(_StrictSettings):
+    minimum_initial_agents: int = Field(default=4, gt=0)
+    maximum_concurrent_agents: int = Field(default=8, gt=0)
+    maximum_rounds: int = Field(default=8, gt=0)
+    require_foundational_audit: bool = True
+    require_domain_audit: bool = True
+    require_hostile_audit: bool = True
+    require_source_theorem_audit: bool = True
+
+
+class ManuscriptSettings(_StrictSettings):
+    enabled: bool = True
+    latex_command: list[str] = Field(
+        default_factory=lambda: ["latexmk", "-pdf", "-interaction=nonstopmode", "paper.tex"],
+        min_length=1,
+    )
+    maximum_revision_rounds: int = Field(default=3, ge=0)
+    require_verified_bibliography: bool = True
+    require_related_work: bool = True
+
+    @field_validator("latex_command")
+    @classmethod
+    def _command_parts_must_not_be_blank(cls, value: list[str]) -> list[str]:
+        if any(not part.strip() for part in value):
+            raise ValueError("manuscript.latex_command cannot contain blank arguments")
+        return value
+
+
+class LeanSettings(_StrictSettings):
+    enabled: bool = True
+    execution_backend: Literal["native", "docker"] = "native"
+    docker_image: str = "ascend-math-agent:latest"
+    allow_project_edits: bool = False
+    codex_command: str = "codex"
+    maximum_codex_iterations: int = Field(default=50, ge=0)
+    prohibit_sorry: bool = True
+    prohibit_admit: bool = True
+    check_axioms: bool = True
+    approved_axioms: list[str] = Field(
+        default_factory=lambda: ["propext", "Classical.choice", "Quot.sound"]
+    )
+
+    @field_validator("codex_command", "docker_image")
+    @classmethod
+    def _commands_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Lean command and image settings must not be blank")
+        return value.strip()
+
+    @field_validator("approved_axioms")
+    @classmethod
+    def _axioms_must_be_unique_and_nonblank(cls, value: list[str]) -> list[str]:
+        normalized = [axiom.strip() for axiom in value]
+        if any(not axiom for axiom in normalized):
+            raise ValueError("lean.approved_axioms cannot contain blank names")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("lean.approved_axioms cannot contain duplicates")
+        return normalized
+
+    @field_validator("allow_project_edits")
+    @classmethod
+    def _project_edits_require_explicit_cli_consent(cls, value: bool) -> bool:
+        if value:
+            raise ValueError(
+                "lean.allow_project_edits cannot be enabled in configuration; "
+                "use the explicit --allow-project-edits CLI flag"
+            )
+        return value
+
+
+class Limits(_StrictSettings):
+    maximum_cost_usd: float = Field(default=150.0, ge=0, allow_inf_nan=False)
+    maximum_wall_clock_hours: float = Field(default=12.0, gt=0, allow_inf_nan=False)
+    maximum_api_retries: int = Field(default=4, ge=0)
+    maximum_total_tokens: int | None = Field(default=None, gt=0)
+
+
+class LoggingSettings(_StrictSettings):
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    store_reasoning_summaries: bool = False
+
+
+class ModelPricingSettings(_StrictSettings):
+    """Standard API prices in USD per million tokens, plus per-tool-call fees."""
+
+    input_per_million: float = Field(gt=0, allow_inf_nan=False)
+    output_per_million: float = Field(gt=0, allow_inf_nan=False)
+    cached_input_per_million: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    cache_write_per_million: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    web_search_per_call: float = Field(default=0.01, ge=0, allow_inf_nan=False)
+    long_context_threshold: int | None = Field(default=None, gt=0)
+    long_input_multiplier: float = Field(default=1.0, ge=1, allow_inf_nan=False)
+    long_output_multiplier: float = Field(default=1.0, ge=1, allow_inf_nan=False)
+
+
+def _default_model_pricing() -> dict[str, ModelPricingSettings]:
+    return {
+        "gpt-5.6-sol": ModelPricingSettings(
+            input_per_million=5.0,
+            cached_input_per_million=0.5,
+            cache_write_per_million=6.25,
+            output_per_million=30.0,
+            web_search_per_call=0.01,
+            long_context_threshold=272_000,
+            long_input_multiplier=2.0,
+            long_output_multiplier=1.5,
+        ),
+        "gpt-5.6-terra": ModelPricingSettings(
+            input_per_million=2.5,
+            cached_input_per_million=0.25,
+            cache_write_per_million=3.125,
+            output_per_million=15.0,
+            web_search_per_call=0.01,
+            long_context_threshold=272_000,
+            long_input_multiplier=2.0,
+            long_output_multiplier=1.5,
+        ),
+        "gpt-5.6-luna": ModelPricingSettings(
+            input_per_million=1.0,
+            cached_input_per_million=0.1,
+            cache_write_per_million=1.25,
+            output_per_million=6.0,
+            web_search_per_call=0.01,
+            long_context_threshold=272_000,
+            long_input_multiplier=2.0,
+            long_output_multiplier=1.5,
+        ),
+    }
+
+
+class PricingSettings(_StrictSettings):
+    as_of: str = "2026-07-19"
+    models: dict[str, ModelPricingSettings] = Field(default_factory=_default_model_pricing)
+
+
+class ApiSettings(_StrictSettings):
+    """Existing Responses API configuration, namespaced without changing semantics."""
+
+    max_parallel_agents: int = Field(default=8, gt=0)
+    models: ModelsSettings = Field(default_factory=ModelsSettings)
+    limits: Limits = Field(default_factory=Limits)
+    pricing: PricingSettings = Field(default_factory=PricingSettings)
+
+
+class ConfigMigrationNotice(_StrictSettings):
+    """A nonsecret runtime notice for one durable, user-facing migration message."""
+
+    migration_id: Literal["backend-provider-v2"] = BACKEND_MIGRATION_ID
+    message: str = BACKEND_MIGRATION_MESSAGE
+
+
+class AppConfig(_StrictSettings):
+    config_version: Literal[2] = CURRENT_CONFIG_VERSION
+    backend: BackendSettings = Field(default_factory=BackendSettings)
+    codex: CodexSettings = Field(default_factory=CodexSettings)
+    api: ApiSettings = Field(default_factory=ApiSettings)
+    research: ResearchSettings = Field(default_factory=ResearchSettings)
+    manuscript: ManuscriptSettings = Field(default_factory=ManuscriptSettings)
+    lean: LeanSettings = Field(default_factory=LeanSettings)
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
+
+    # Runtime context, not emitted into resolved TOML snapshots.
+    project_root: Path | None = Field(default=None, exclude=True)
+    migration_notice: ConfigMigrationNotice | None = Field(default=None, exclude=True)
+
+    ENV_PREFIX: ClassVar[str] = "ASCEND_"
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_api_shape(cls, value: Any) -> Any:
+        """Keep direct ``AppConfig.model_validate`` calls backward compatible."""
+
+        if not isinstance(value, Mapping):
+            return value
+        migrated, inferred_api = _migrate_config_mapping(value)
+        if inferred_api and "migration_notice" not in migrated:
+            migrated["migration_notice"] = ConfigMigrationNotice().model_dump(mode="python")
+        return migrated
+
+    @model_validator(mode="after")
+    def selected_models_have_budget_pricing(self) -> AppConfig:
+        if self.backend.provider != "api":
+            return self
+        selected = {
+            self.models.prompt_compiler.model,
+            self.models.research.model,
+            self.models.audit.model,
+            self.models.manuscript.model,
+        }
+        missing = sorted(selected - self.pricing.models.keys())
+        if missing:
+            raise ValueError(
+                "pricing.models must define standard API rates for selected model(s): "
+                + ", ".join(missing)
+            )
+        return self
+
+    # Compatibility conveniences preserve the v0.1 public API while persisted v2
+    # configurations group direct-API-only settings under ``[api]``.
+    @property
+    def models(self) -> ModelsSettings:
+        return self.api.models
+
+    @property
+    def limits(self) -> Limits:
+        return self.api.limits
+
+    @property
+    def pricing(self) -> PricingSettings:
+        return self.api.pricing
+
+    @property
+    def prompt_compiler(self) -> ModelSettings:
+        return self.models.prompt_compiler
+
+    @property
+    def audit(self) -> ModelSettings:
+        return self.models.audit
+
+    @property
+    def model_manuscript(self) -> ModelSettings:
+        return self.models.manuscript
+
+    @property
+    def research_settings(self) -> ResearchSettings:
+        return self.research
+
+
+_CONVENIENCE_PATHS: dict[str, tuple[str, ...]] = {
+    "BACKEND": ("backend", "provider"),
+    "BUDGET_USD": ("api", "limits", "maximum_cost_usd"),
+    "MAXIMUM_COST_USD": ("api", "limits", "maximum_cost_usd"),
+    "MAX_ROUNDS": ("research", "maximum_rounds"),
+    "MAXIMUM_ROUNDS": ("research", "maximum_rounds"),
+    "MAX_AGENTS": ("research", "maximum_concurrent_agents"),
+    "MAXIMUM_CONCURRENT_AGENTS": ("research", "maximum_concurrent_agents"),
+    "LEAN_ENABLED": ("lean", "enabled"),
+    "SANDBOX": ("lean", "execution_backend"),
+}
+
+_CLI_PATHS: dict[str, tuple[str, ...]] = {
+    "backend": ("backend", "provider"),
+    "budget_usd": ("api", "limits", "maximum_cost_usd"),
+    "max_rounds": ("research", "maximum_rounds"),
+    "max_agents": ("research", "maximum_concurrent_agents"),
+    "sandbox": ("lean", "execution_backend"),
+    "no_lean": ("lean", "enabled"),
+}
+
+_LEGACY_API_SECTIONS = ("models", "limits", "pricing")
+
+
+def _deep_merge(base: dict[str, Any], update: Mapping[str, Any]) -> dict[str, Any]:
+    """Recursively merge mappings without mutating either input."""
+
+    merged = copy.deepcopy(base)
+    for key, value in update.items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), Mapping):
+            merged[key] = _deep_merge(dict(merged[key]), value)
+        else:
+            merged[key] = copy.deepcopy(value)
+    return merged
+
+
+def _migrate_config_mapping(values: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Upgrade a raw config mapping to schema v2 without dropping legacy API values.
+
+    The boolean reports whether an API provider had to be inferred.  An explicit
+    ``[backend]`` always wins, including in an otherwise legacy-shaped file.
+    """
+
+    migrated = copy.deepcopy(dict(values))
+    raw_version = migrated.get("config_version")
+    if isinstance(raw_version, bool):
+        # Let strict Pydantic validation produce the normal field diagnostic.
+        return migrated, False
+    if isinstance(raw_version, int) and raw_version > CURRENT_CONFIG_VERSION:
+        return migrated, False
+
+    legacy_api: dict[str, Any] = {}
+    for section in _LEGACY_API_SECTIONS:
+        if section in migrated:
+            legacy_api[section] = migrated.pop(section)
+
+    existing_api = migrated.get("api", {})
+    if legacy_api:
+        if not isinstance(existing_api, Mapping):
+            # Preserve the invalid value so validation reports the offending section.
+            return migrated, False
+        migrated["api"] = _deep_merge(legacy_api, existing_api)
+
+    backend = migrated.get("backend")
+    explicit_provider = isinstance(backend, Mapping) and "provider" in backend
+    is_pre_v2 = raw_version is None or raw_version == 1
+    inferred_api = bool(is_pre_v2 and (legacy_api or raw_version == 1) and not explicit_provider)
+    if inferred_api:
+        backend_data = dict(backend) if isinstance(backend, Mapping) else {}
+        backend_data["provider"] = "api"
+        migrated["backend"] = backend_data
+
+    if is_pre_v2:
+        migrated["config_version"] = CURRENT_CONFIG_VERSION
+    return migrated, inferred_api
+
+
+def _v2_path(path: tuple[str, ...]) -> tuple[str, ...]:
+    """Translate the v0.1 public API paths into their v2 ``api`` namespace."""
+
+    if path and path[0] in _LEGACY_API_SECTIONS:
+        return ("api", *path)
+    return path
+
+
+def _lookup_template(config: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    current: Any = config
+    for part in path:
+        if not isinstance(current, Mapping) or part not in current:
+            raise ConfigError(f"unknown configuration key: {'.'.join(path)}")
+        current = current[part]
+    return current
+
+
+def _set_nested(target: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
+    current = target
+    for part in path[:-1]:
+        child = current.setdefault(part, {})
+        if not isinstance(child, dict):
+            raise ConfigError(f"configuration key conflicts at {'.'.join(path)}")
+        current = child
+    current[path[-1]] = value
+
+
+def _parse_environment_value(raw: str, template: Any, key: str) -> Any:
+    """Parse an environment string according to the default value's strict type."""
+
+    try:
+        if isinstance(template, bool):
+            normalized = raw.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+            raise ValueError("expected true/false")
+        if isinstance(template, int) and not isinstance(template, bool):
+            return int(raw.strip())
+        if isinstance(template, float):
+            return float(raw.strip())
+        if isinstance(template, list):
+            parsed = json.loads(raw)
+            if not isinstance(parsed, list):
+                raise ValueError("expected a JSON array")
+            return parsed
+        if template is None:
+            normalized = raw.strip().lower()
+            if normalized in {"none", "null", ""}:
+                return None
+            return int(raw.strip())
+        return raw.strip()
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ConfigError(f"invalid value for environment variable {key}: {exc}") from exc
+
+
+def _flat_environment_paths(
+    values: Mapping[str, Any], prefix: tuple[str, ...] = ()
+) -> dict[str, tuple[str, ...]]:
+    paths: dict[str, tuple[str, ...]] = {}
+    for key, value in values.items():
+        path = (*prefix, key)
+        if isinstance(value, Mapping):
+            paths.update(_flat_environment_paths(value, path))
+        else:
+            paths["_".join(part.upper() for part in path)] = path
+    return paths
+
+
+def environment_overrides(
+    environment: Mapping[str, str] | None = None,
+    *,
+    defaults: AppConfig | None = None,
+) -> dict[str, Any]:
+    """Convert supported ``ASCEND_*`` variables to a nested config mapping."""
+
+    source = os.environ if environment is None else environment
+    template = (defaults or AppConfig()).model_dump(mode="python", exclude={"project_root"})
+    flat_paths = _flat_environment_paths(template)
+    api_template = template.get("api")
+    if isinstance(api_template, Mapping):
+        for legacy_name in _LEGACY_API_SECTIONS:
+            legacy_template = api_template.get(legacy_name)
+            if isinstance(legacy_template, Mapping):
+                flat_paths.update(_flat_environment_paths(legacy_template, prefix=(legacy_name,)))
+    overrides: dict[str, Any] = {}
+    for key, raw in source.items():
+        if not key.startswith(AppConfig.ENV_PREFIX):
+            continue
+        suffix = key[len(AppConfig.ENV_PREFIX) :]
+        if suffix in {"LIVE_TESTS", "CONFIG"}:
+            # Operational switches are not application configuration.
+            continue
+        if suffix == "NO_LEAN":
+            enabled = not _parse_environment_value(raw, False, key)
+            _set_nested(overrides, ("lean", "enabled"), enabled)
+            continue
+        path = _CONVENIENCE_PATHS.get(suffix) or flat_paths.get(suffix)
+        if path is None:
+            if "__" not in suffix:
+                # Ignore unrelated ASCEND process flags.  Nested config-like keys,
+                # however, are rejected below so misspellings cannot silently pass.
+                continue
+            path = tuple(part.lower() for part in suffix.split("__") if part)
+        path = _v2_path(path)
+        expected = _lookup_template(template, path)
+        _set_nested(overrides, path, _parse_environment_value(raw, expected, key))
+    return overrides
+
+
+def normalize_cli_overrides(overrides: ConfigMapping | None) -> dict[str, Any]:
+    """Normalize nested, dotted, or common CLI option names.
+
+    ``None`` values are omitted, matching the usual semantics of optional Typer
+    parameters.  Values otherwise remain typed so Pydantic's strict validation can
+    catch accidental string-to-number coercion.
+    """
+
+    normalized: dict[str, Any] = {}
+    if not overrides:
+        return normalized
+
+    def clean_nested(mapping: Mapping[str, Any], prefix: tuple[str, ...] = ()) -> dict[str, Any]:
+        cleaned: dict[str, Any] = {}
+        for nested_key, nested_value in mapping.items():
+            if nested_value is None:
+                continue
+            key_path = (
+                (nested_key,)
+                if prefix in {("pricing", "models"), ("api", "pricing", "models")}
+                else tuple(nested_key.split("."))
+            )
+            value = (
+                clean_nested(nested_value, (*prefix, *key_path))
+                if isinstance(nested_value, Mapping)
+                else nested_value
+            )
+            _set_nested(cleaned, key_path, value)
+        return cleaned
+
+    for key, value in overrides.items():
+        if value is None:
+            continue
+        if isinstance(value, Mapping):
+            path = _v2_path(tuple(key.split(".")))
+            _set_nested(normalized, path, clean_nested(value, path))
+            continue
+        path = _v2_path(_CLI_PATHS.get(key, tuple(key.split("."))))
+        if key == "no_lean":
+            if not isinstance(value, bool):
+                raise ConfigError("CLI override no_lean must be a boolean")
+            value = not value
+        _set_nested(normalized, path, value)
+    return normalized
+
+
+def merge_config(config: AppConfig, overrides: ConfigMapping | None) -> AppConfig:
+    """Return a validated copy of ``config`` with CLI-style overrides applied."""
+
+    data = config.model_dump(mode="python")
+    merged = _deep_merge(data, normalize_cli_overrides(overrides))
+    try:
+        result = AppConfig.model_validate(merged)
+    except ValidationError as exc:
+        raise ConfigError(f"invalid configuration overrides: {exc}") from exc
+    result.project_root = config.project_root
+    result.migration_notice = config.migration_notice
+    return result
+
+
+def _read_toml(path: Path) -> dict[str, Any]:
+    try:
+        with path.open("rb") as stream:
+            contents = tomllib.load(stream)
+    except FileNotFoundError as exc:
+        raise ConfigError(f"configuration file does not exist: {path}") from exc
+    except PermissionError as exc:
+        raise ConfigError(f"configuration file is not readable: {path}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"invalid TOML in {path}: {exc}") from exc
+    if not isinstance(contents, dict):  # pragma: no cover - tomllib guarantees this
+        raise ConfigError(f"configuration root must be a table: {path}")
+    return contents
+
+
+def find_config_file(start: Path) -> Path | None:
+    """Find the nearest ``ascend.toml`` at or above ``start``."""
+
+    resolved = start.resolve()
+    if resolved.is_file():
+        resolved = resolved.parent
+    for candidate in (resolved, *resolved.parents):
+        path = candidate / "ascend.toml"
+        if path.is_file():
+            return path
+    return None
+
+
+def load_config(
+    path: Path | None = None,
+    *,
+    project_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    cli_overrides: ConfigMapping | None = None,
+) -> AppConfig:
+    """Load and validate resolved application configuration.
+
+    An explicit ``path`` is required to exist.  Without one, ``ascend.toml`` is
+    searched for from ``project_root`` (or the current directory); absence simply
+    selects built-in defaults.
+    """
+
+    defaults = AppConfig()
+    data = defaults.model_dump(mode="python", exclude={"project_root"})
+    migration_notice: ConfigMigrationNotice | None = None
+
+    explicit_path = path.expanduser().resolve() if path is not None else None
+    discovered_path = explicit_path or find_config_file(project_root or Path.cwd())
+    if discovered_path is not None:
+        file_data, inferred_api = _migrate_config_mapping(_read_toml(discovered_path))
+        data = _deep_merge(data, file_data)
+        if inferred_api:
+            migration_notice = ConfigMigrationNotice()
+
+    data = _deep_merge(data, environment_overrides(env, defaults=defaults))
+    data = _deep_merge(data, normalize_cli_overrides(cli_overrides))
+
+    root = project_root
+    if root is None and discovered_path is not None:
+        root = discovered_path.parent
+    if root is not None:
+        data["project_root"] = root.expanduser().resolve()
+    if migration_notice is not None:
+        data["migration_notice"] = migration_notice.model_dump(mode="python")
+
+    try:
+        return AppConfig.model_validate(data)
+    except ValidationError as exc:
+        source = discovered_path or "built-in/environment/CLI configuration"
+        raise ConfigError(f"invalid configuration from {source}: {exc}") from exc
+
+
+def resolve_backend_provider(
+    config: AppConfig,
+    *,
+    cli_provider: str | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> BackendProvider:
+    """Resolve CLI > ``ASCEND_BACKEND`` > config > Codex without fallback."""
+
+    source = os.environ if environment is None else environment
+    candidate = cli_provider if cli_provider is not None else source.get("ASCEND_BACKEND")
+    if candidate is None:
+        return config.backend.provider
+    normalized = candidate.strip()
+    if normalized not in {"codex", "api"}:
+        raise ConfigError(f"invalid backend provider {candidate!r}; expected 'codex' or 'api'")
+    return cast(BackendProvider, normalized)
+
+
+def consume_config_migration_notice(config: AppConfig) -> str | None:
+    """Return a legacy migration notice once per project, using a durable marker.
+
+    Loading configuration remains read-only.  A CLI surface calls this helper when it
+    is ready to display notices; the helper creates no marker when no migration was
+    needed.  If a marker cannot be persisted safely, the notice is returned rather
+    than silently suppressed.
+    """
+
+    notice = config.migration_notice
+    if notice is None:
+        return None
+    if config.project_root is None:
+        return notice.message
+
+    root = config.project_root.expanduser().resolve()
+    ascend_dir = root / ".ascend"
+    marker_dir = ascend_dir / "config-migrations"
+    for directory in (ascend_dir, marker_dir):
+        try:
+            if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
+                return notice.message
+            directory.mkdir(mode=0o700, exist_ok=True)
+        except OSError:
+            return notice.message
+
+    marker = marker_dir / notice.migration_id
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(marker, flags, 0o600)
+    except FileExistsError:
+        return None
+    except OSError:
+        return notice.message
+    try:
+        os.write(descriptor, f"{notice.message}\n".encode())
+    finally:
+        os.close(descriptor)
+    return notice.message
+
+
+def config_as_toml(config: AppConfig) -> str:
+    """Serialize a resolved, secret-free config snapshot as TOML."""
+
+    try:
+        import tomli_w
+    except ImportError as exc:  # pragma: no cover - declared runtime dependency
+        raise ConfigError("tomli-w is required to serialize configuration") from exc
+    data = config.model_dump(mode="python", exclude={"project_root"}, exclude_none=True)
+    return tomli_w.dumps(data)
+
+
+__all__ = [
+    "BACKEND_MIGRATION_ID",
+    "BACKEND_MIGRATION_MESSAGE",
+    "CURRENT_CONFIG_VERSION",
+    "ApiSettings",
+    "AppConfig",
+    "BackendProvider",
+    "BackendSettings",
+    "CodexLimits",
+    "CodexSettings",
+    "ConfigError",
+    "ConfigMigrationNotice",
+    "LeanSettings",
+    "Limits",
+    "LoggingSettings",
+    "ManuscriptSettings",
+    "ModelPricingSettings",
+    "ModelSettings",
+    "ModelsSettings",
+    "PricingSettings",
+    "ResearchSettings",
+    "config_as_toml",
+    "consume_config_migration_notice",
+    "environment_overrides",
+    "find_config_file",
+    "load_config",
+    "merge_config",
+    "normalize_cli_overrides",
+    "resolve_backend_provider",
+]

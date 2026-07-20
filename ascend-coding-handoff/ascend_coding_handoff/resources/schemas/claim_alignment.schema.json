@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "status",
+    "mathematical_back_translation",
+    "checks",
+    "required_edits"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "aligned",
+        "revision_required",
+        "rejected"
+      ]
+    },
+    "mathematical_back_translation": {
+      "type": "string"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "required_edits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "verdict",
+    "issues",
+    "unresolved_obligations",
+    "target_matches"
+  ],
+  "properties": {
+    "verdict": {
+      "enum": [
+        "pass",
+        "repairable",
+        "fail",
+        "partial_only"
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "unresolved_obligations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "target_matches": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,130 @@
+config_version = 2
+
+[backend]
+provider = "codex"
+allow_automatic_fallback = false
+
+[codex]
+executable = "codex"
+model = ""
+research_effort = "xhigh"
+audit_effort = "xhigh"
+manuscript_effort = "high"
+formalization_effort = "xhigh"
+max_parallel_agents = 3
+max_parallel_web_agents = 2
+persist_sessions = true
+skip_git_repo_check = false
+extra_args = []
+
+[codex.limits]
+max_agent_calls = 100
+max_research_rounds = 8
+max_codex_threads = 40
+max_wall_clock_minutes = 480
+max_formalization_iterations = 60
+
+[api]
+max_parallel_agents = 8
+
+[api.models.prompt_compiler]
+model = "gpt-5.6-sol"
+reasoning_mode = "pro"
+reasoning_effort = "xhigh"
+web_search = true
+maximum_web_search_calls = 8
+max_output_tokens = 100000
+
+[api.models.research]
+model = "gpt-5.6-sol"
+reasoning_mode = "pro"
+reasoning_effort = "max"
+web_search = true
+maximum_web_search_calls = 8
+max_output_tokens = 120000
+
+[api.models.audit]
+model = "gpt-5.6-sol"
+reasoning_mode = "pro"
+reasoning_effort = "max"
+web_search = true
+maximum_web_search_calls = 8
+max_output_tokens = 120000
+
+[api.models.manuscript]
+model = "gpt-5.6-sol"
+reasoning_mode = "pro"
+reasoning_effort = "xhigh"
+web_search = true
+maximum_web_search_calls = 8
+max_output_tokens = 120000
+
+[research]
+minimum_initial_agents = 4
+maximum_concurrent_agents = 8
+maximum_rounds = 8
+require_foundational_audit = true
+require_domain_audit = true
+require_hostile_audit = true
+require_source_theorem_audit = true
+
+[manuscript]
+enabled = true
+latex_command = ["latexmk", "-pdf", "-interaction=nonstopmode", "paper.tex"]
+maximum_revision_rounds = 3
+require_verified_bibliography = true
+require_related_work = true
+
+[lean]
+enabled = true
+execution_backend = "native"
+docker_image = "ascend-math-agent:latest"
+allow_project_edits = false
+codex_command = "codex"
+maximum_codex_iterations = 50
+prohibit_sorry = true
+prohibit_admit = true
+check_axioms = true
+approved_axioms = ["propext", "Classical.choice", "Quot.sound"]
+
+[api.limits]
+maximum_cost_usd = 150.0
+maximum_wall_clock_hours = 12
+maximum_api_retries = 4
+
+[logging]
+level = "INFO"
+store_reasoning_summaries = false
+
+[api.pricing]
+as_of = "2026-07-19"
+
+[api.pricing.models."gpt-5.6-sol"]
+input_per_million = 5.0
+output_per_million = 30.0
+cached_input_per_million = 0.5
+cache_write_per_million = 6.25
+web_search_per_call = 0.01
+long_context_threshold = 272000
+long_input_multiplier = 2.0
+long_output_multiplier = 1.5
+
+[api.pricing.models."gpt-5.6-terra"]
+input_per_million = 2.5
+output_per_million = 15.0
+cached_input_per_million = 0.25
+cache_write_per_million = 3.125
+web_search_per_call = 0.01
+long_context_threshold = 272000
+long_input_multiplier = 2.0
+long_output_multiplier = 1.5
+
+[api.pricing.models."gpt-5.6-luna"]
+input_per_million = 1.0
+output_per_million = 6.0
+cached_input_per_million = 0.1
+cache_write_per_million = 1.25
+web_search_per_call = 0.01
+long_context_threshold = 272000
+long_input_multiplier = 2.0
+long_output_multiplier = 1.5
