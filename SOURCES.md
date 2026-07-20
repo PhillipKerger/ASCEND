@@ -26,7 +26,7 @@ spreading API assumptions throughout the codebase.
   https://developers.openai.com/codex/agent-approvals-security
 - Codex pricing and plan availability:
   https://chatgpt.com/codex/pricing/
-- OpenAI Agents SDK, optional rather than required for v0.1:
+- OpenAI Agents SDK, optional rather than required:
   https://openai.github.io/openai-agents-python/
 
 Implementation rule: feature-detect and validate installed versions where possible. Keep

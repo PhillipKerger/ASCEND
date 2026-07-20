@@ -23,15 +23,14 @@ both:
 2. the ASCEND whitepaper preprint on arXiv.
 
 Generated manuscripts must also include a **Statement of AI Usage** disclosing that the ASCEND
-system with GPT 5.6 was used and citing both items. The canonical GitHub owner and arXiv
-identifier have not yet been assigned in this handoff checkout, so do not invent them. Before a
-public release, replace `OWNER` and `ARXIV_ID` in the following citation templates with the
-canonical metadata:
+system with GPT 5.6 was used and citing both items. The canonical GitHub repository is linked
+below. The arXiv identifier has not yet been assigned, so do not invent it; replace `ARXIV_ID`
+with the canonical identifier once the preprint is published:
 
 ```text
 ASCEND contributors. ASCEND: Autonomous System for Conjecture Exploration and
 Verified Deduction. Software repository,
-https://github.com/OWNER/ascend-math-agent.
+https://github.com/PhillipKerger/ASCEND.
 
 ASCEND contributors. ASCEND: Autonomous System for Conjecture Exploration and
 Verified Deduction. arXiv preprint arXiv:ARXIV_ID.
@@ -92,17 +91,15 @@ credential files.
 
 ## Install ASCEND
 
-The GitHub commands below are release templates. Repository publication and end-to-end
-`pipx`/`uv` installation validation remain pending; replace `OWNER` only after the canonical
-repository URL is assigned:
+Install directly from the canonical GitHub repository:
 
 ```bash
-pipx install 'git+https://github.com/OWNER/ascend-math-agent.git'
+pipx install 'git+https://github.com/PhillipKerger/ASCEND.git'
 # or
-uv tool install 'git+https://github.com/OWNER/ascend-math-agent.git'
+uv tool install 'git+https://github.com/PhillipKerger/ASCEND.git'
 ```
 
-For development from this checkout:
+For development from a source checkout:
 
 ```bash
 python3 -m venv .venv
@@ -123,7 +120,7 @@ Run these commands inside the existing Git and Lean/Lake project that should own
 ```bash
 codex login
 ascend init
-cp problem.example.md problem.md
+cp examples/problem.md problem.md
 # Edit problem.md into a self-contained problem with an exact requested conclusion.
 ascend doctor
 ascend run problem.md
@@ -307,7 +304,7 @@ ruff check .
 ruff format --check .
 mypy src
 pytest -q
-python scripts/verify_handoff.py
+python scripts/verify_project.py
 ```
 
 Live smoke tests require explicit opt-in and may consume Codex allowance or API funds. See

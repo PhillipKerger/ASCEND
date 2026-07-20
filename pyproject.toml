@@ -42,6 +42,11 @@ dev = [
 [project.scripts]
 ascend = "ascend_math_agent.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/PhillipKerger/ASCEND"
+Repository = "https://github.com/PhillipKerger/ASCEND.git"
+Issues = "https://github.com/PhillipKerger/ASCEND/issues"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/ascend_math_agent"]
 

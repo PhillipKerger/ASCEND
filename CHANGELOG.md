@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Repository publication cleanup
+
+- Moved the package, tests, resources, documentation, and CI workflow to the repository root.
+- Excluded local coding-agent handoff instructions and generated development state from Git.
+- Added canonical GitHub project metadata and corrected source-install and example paths.
+- Renamed the project integrity check to `scripts/verify_project.py`.
+
 ## 0.2.0 — 2026-07-19
 
 ### Codex is now the default backend

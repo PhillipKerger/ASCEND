@@ -1,3 +1,0 @@
-See the actual repository tree. Core implementation documents are at the root, immutable
-prompt assets are under `resources/prompts`, schemas under `resources/schemas`, and a minimal
-Python starter scaffold under `src/ascend_math_agent`.

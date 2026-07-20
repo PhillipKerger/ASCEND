@@ -93,7 +93,7 @@ class StageRecord(_StateModel):
     completed_at: datetime | None = None
     updated_at: datetime = Field(default_factory=utc_now)
     failure: FailureInfo | None = None
-    # Kept for backwards compatibility with the handoff scaffold. New code should
+    # Kept for backwards compatibility with the initial scaffold. New code should
     # prefer the structured ``failure`` field.
     error: str | None = None
     invalidated_reason: str | None = None

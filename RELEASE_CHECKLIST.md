@@ -2,7 +2,7 @@
 
 ## Installation and publication
 
-- [ ] Assign the canonical GitHub owner/URL and replace every `OWNER` placeholder.
+- [x] Assign the canonical GitHub owner/URL and replace every `OWNER` placeholder.
 - [ ] Publish the ASCEND whitepaper on arXiv and replace every `ARXIV_ID` placeholder.
 - [ ] Test `pipx install git+https://...` from the published repository.
 - [ ] Test `uv tool install git+https://...` from the published repository.

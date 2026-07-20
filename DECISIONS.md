@@ -1,7 +1,7 @@
 # Locked Product Decisions
 
-These decisions define version 0.1 and should not be reopened unless implementation reveals
-a concrete blocker.
+These decisions define the current v0.x product line and should not be reopened unless
+implementation reveals a concrete blocker.
 
 ## Distribution and execution
 

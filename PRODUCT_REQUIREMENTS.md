@@ -36,7 +36,7 @@ formalization, and generates a reproducible final report.
 ### FR-2 Framework compilation
 
 - Load `resources/prompts/research_prompt_framework.txt` verbatim.
-- Expected SHA-256 at handoff: `bd724294a261f4bc2e5da2191813e40c1340bc6ee039c753cb5c60276e7a512c`.
+- Expected bundled SHA-256: `bd724294a261f4bc2e5da2191813e40c1340bc6ee039c753cb5c60276e7a512c`.
 - Use xhigh reasoning and web search by default.
 - Produce both a complete adapted prompt and structured metadata.
 - Fill every applicable bracketed placeholder; explicitly remove or mark inapplicable

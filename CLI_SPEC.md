@@ -124,7 +124,7 @@ uses the run's selected provider; model prose cannot override deterministic stat
 ## `ascend verify [RUN_ID]`
 
 Re-runs deterministic LaTeX, bibliography consistency, file-integrity, and Lean checks without
-calling either model backend. In v0.1 these subprocess checks use the native command backend,
+calling either model backend. These subprocess checks currently use the native command backend,
 even when the frozen run used Docker.
 
 ## Exit codes

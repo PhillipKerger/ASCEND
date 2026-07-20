@@ -15,7 +15,7 @@ def main() -> None:
         raise SystemExit(f"Framework hash mismatch: {actual}")
     for schema_path in (ROOT / "resources" / "schemas").glob("*.json"):
         json.loads(schema_path.read_text(encoding="utf-8"))
-    print("Handoff integrity checks passed.")
+    print("Project integrity checks passed.")
 
 
 if __name__ == "__main__":

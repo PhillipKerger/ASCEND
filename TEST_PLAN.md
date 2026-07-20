@@ -63,5 +63,5 @@ ruff check .
 ruff format --check .
 mypy src
 pytest -q
-python scripts/verify_handoff.py
+python scripts/verify_project.py
 ```

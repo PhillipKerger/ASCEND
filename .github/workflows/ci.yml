@@ -24,6 +24,6 @@ jobs:
       - run: ruff format --check .
       - run: mypy src
       - run: pytest -q
-      - run: python scripts/verify_handoff.py
+      - run: python scripts/verify_project.py
       - run: python -m build
         if: matrix.python-version == '3.12'
