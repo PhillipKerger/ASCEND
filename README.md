@@ -1,4 +1,4 @@
-# ASCEND
+# ASCEND: An Orchstrator for Agentic Mathematical Research with Lean Verification
 
 ASCEND (Autonomous System for Conjecture ExploratioN and verified Deduction) is a local,
 auditable workflow for mathematical research and formal verification. Starting from a concise
