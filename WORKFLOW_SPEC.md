@@ -35,6 +35,11 @@ repair. An unresolved marker blocks the workflow only in the exact target or suc
 an optional sentence is removed with a recorded warning. Partial/full resolution claims require
 verified sources and an exact statement-and-hypothesis comparison.
 
+The adapted prompt front-loads a compact research-mandate snapshot modeled at a high level on
+the public Cycle Double Cover prompt: exact target, boundary conventions, near-misses, adaptive
+independent search, persistence, adversarial review, search policy, and a proof-only completion
+condition. The longer framework then expands each item into ASCEND's auditable protocol.
+
 ## Stage 2 — Adaptive research
 
 ### Initial round

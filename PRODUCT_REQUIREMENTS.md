@@ -42,6 +42,9 @@ formalization, and generates a reproducible final report.
 - Expected bundled SHA-256: `bd724294a261f4bc2e5da2191813e40c1340bc6ee039c753cb5c60276e7a512c`.
 - Use xhigh reasoning and web search by default.
 - Produce both a complete adapted prompt and structured metadata.
+- Front-load a compact research-mandate snapshot containing the exact target, boundary cases,
+  insufficient outcomes, adaptive independent search, persistence, adversarial review, public
+  search boundary, and audited completion condition before the expanded protocol.
 - Fill every applicable bracketed placeholder; explicitly remove or mark inapplicable
   optional branches rather than leaving template placeholders unresolved.
 - Verify literature/background claims used in the compiled prompt.

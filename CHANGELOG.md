@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Aligned generated prompts more visibly with the public Cycle Double Cover prompting pattern by
+  requiring a compact, problem-specific research mandate before the expanded ASCEND protocol.
+- Added a standalone, compiled LaTeX methodology report covering orchestration, provenance,
+  stage resilience, bibliography gates, the `challenge.lean` trust boundary, and limitations.
 - Added hash-validated stage-boundary guards so downstream work cannot start from incomplete or
   modified upstream checkpoints.
 - Added a durable post-manuscript Lean confirmation. Interactive users may decline; five minutes

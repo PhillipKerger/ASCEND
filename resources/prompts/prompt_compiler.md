@@ -12,6 +12,20 @@ Requirements:
   and any plausible competing interpretations. Leave the compiled prompt and claim contract
   empty. Do not continue by silently choosing a target.
 - Use the full framework and preserve its section order and methodological strength.
+- Make the opening read as a compact, self-contained research mandate before the expanded
+  literature and orchestration detail. Within `Exact success criterion`, add a short subsection
+  titled `Research mandate snapshot` that states, in problem-specific language:
+  1. the exact target and intended proof/disproof posture rather than a request for a survey or
+     open-problem status report;
+  2. the boundary conventions and most important outcomes that do not count;
+  3. that the search begins with independent, genuinely different approaches, is managed
+     adaptively rather than by fixed quotas, and persists through new rounds when early routes
+     fail;
+  4. that candidate arguments must survive problem-specific adversarial checks;
+  5. the permitted public-search boundary; and
+  6. that only an audited complete solution satisfies the primary completion condition, while a
+     forced resource stop must report the strongest proved result and its exact remaining gap.
+  Keep this snapshot concise; the later framework sections must still provide the full protocol.
 - Produce a self-contained, technically precise prompt with no unresolved editorial
   placeholders.
 - Use public web search aggressively to verify definitions, known results, primary sources,

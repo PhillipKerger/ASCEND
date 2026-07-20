@@ -22,6 +22,10 @@ ASCEND never accepts a model's claim of success as verification. Manuscript gene
 the research acceptance gate, every citation must pass independent source checks, and
 `LEAN_VERIFIED` is issued only after deterministic Lean compiler and placeholder/axiom checks.
 
+The standalone [ASCEND methodology technical report](technical-report/ascend_methodology.pdf)
+describes the orchestration, its relationship to the public Cycle Double Cover prompt, the
+`challenge.lean` trust boundary, and the framework's current evaluation limitations.
+
 ## Quickstart
 
 You need Python 3.11 or newer, Git, and the official Codex CLI. A complete run also requires an

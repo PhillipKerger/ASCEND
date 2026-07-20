@@ -87,6 +87,7 @@ from ascend_math_agent.stages.research import (
 
 PROJECT = Path(__file__).resolve().parents[1]
 FRAMEWORK = PROJECT / "resources" / "prompts" / "research_prompt_framework.txt"
+PROMPT_COMPILER_INSTRUCTIONS = PROJECT / "resources" / "prompts" / "prompt_compiler.md"
 
 
 def test_stage_atomic_write_rejects_symlink_destination_without_touching_target(
@@ -122,6 +123,22 @@ VERIFIED_SOURCE_URL = "https://doi.org/10.5555/12345678"
 ASCEND_FIXTURE_REPOSITORY_URL = "https://github.com/ascend-test-fixtures/ascend-math-agent"
 ASCEND_FIXTURE_WHITEPAPER_ID = "2099.99999"
 ASCEND_FIXTURE_WHITEPAPER_URL = f"https://arxiv.org/abs/{ASCEND_FIXTURE_WHITEPAPER_ID}"
+
+
+def test_prompt_compiler_requires_compact_cdc_aligned_research_mandate() -> None:
+    instructions = PROMPT_COMPILER_INSTRUCTIONS.read_text(encoding="utf-8")
+    normalized = " ".join(instructions.split())
+
+    assert "Research mandate snapshot" in normalized
+    for requirement in (
+        "exact target",
+        "boundary conventions",
+        "managed adaptively rather than by fixed quotas",
+        "problem-specific adversarial checks",
+        "permitted public-search boundary",
+        "audited complete solution",
+    ):
+        assert requirement in normalized
 
 
 def web_source_metadata(url: str = VERIFIED_SOURCE_URL) -> tuple[dict[str, Any], ...]:
