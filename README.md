@@ -1,6 +1,6 @@
 # ASCEND
 
-ASCEND (Autonomous System for Conjecture Exploration and Verified Deduction) is a local,
+ASCEND (Autonomous System for Conjecture ExploratioN and verified Deduction) is a local,
 auditable workflow for mathematical research and formal verification. Starting from a concise
 problem description, it coordinates independent research and adversarial review, writes and
 validates a LaTeX manuscript, and attempts Lean verification of the accepted main result.
