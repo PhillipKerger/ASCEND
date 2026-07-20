@@ -28,6 +28,11 @@ You need Python 3.11 or newer, Git, and the official Codex CLI. A complete run a
 existing Lean/Lake project and a LaTeX distribution with `latexmk`; both can be omitted for a
 research-only run.
 
+To have a coding agent prepare and verify the environment, point it to
+[`setup-instructions-for-agent.md`](setup-instructions-for-agent.md) and ask it to follow that
+document. The guide keeps interactive authentication and privileged changes under user control,
+runs the offline-first diagnostics, and does not start a paid or allowance-consuming research run.
+
 ### 1. Install and sign in to Codex
 
 On macOS or Linux, use the official standalone installer:

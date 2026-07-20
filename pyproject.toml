@@ -61,6 +61,7 @@ include = [
   "/scripts",
   "/examples",
   "/README.md",
+  "/setup-instructions-for-agent.md",
   "/CHANGELOG.md",
   "/LICENSE",
   "/SECURITY.md",
