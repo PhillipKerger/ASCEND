@@ -56,6 +56,9 @@ class FinalReport(BaseModel):
     backend: dict[str, Any] = Field(default_factory=dict)
     backend_history: list[dict[str, Any]] = Field(default_factory=list)
     configuration: dict[str, Any] = Field(default_factory=dict)
+    problem_clarification: dict[str, Any] = Field(default_factory=dict)
+    literature_status: str = "unknown"
+    literature_resolution_summary: str | None = None
     reproducibility: list[str] = Field(default_factory=list)
     narrative: ReportNarrative | None = None
 
@@ -158,6 +161,7 @@ def build_final_report(
         else []
     )
     configuration = metadata.get("configuration_summary", {})
+    clarification = metadata.get("problem_clarification", {})
     return FinalReport(
         run_id=state.run_id,
         scientific_status=scientific,
@@ -171,6 +175,13 @@ def build_final_report(
         backend=dict(backend) if isinstance(backend, dict) else {},
         backend_history=backend_history,
         configuration=dict(configuration) if isinstance(configuration, dict) else {},
+        problem_clarification=(dict(clarification) if isinstance(clarification, dict) else {}),
+        literature_status=str(metadata.get("literature_status", "unknown")),
+        literature_resolution_summary=(
+            str(metadata["literature_resolution_summary"])
+            if metadata.get("literature_resolution_summary")
+            else None
+        ),
         reproducibility=[
             f"ascend status {state.run_id}",
             f"ascend verify {state.run_id}",
@@ -197,13 +208,64 @@ def render_report_markdown(report: FinalReport) -> str:
         f"| Manuscript | `{report.manuscript_status}` |",
         f"| Lean | `{report.lean_status}` |",
         "",
-        "## Strongest established result",
-        "",
-        report.strongest_result,
-        "",
-        "## Unresolved obligations",
-        "",
     ]
+    if report.problem_clarification.get("required") is True:
+        lines.extend(
+            [
+                "## Problem clarification required",
+                "",
+                "ASCEND stopped before research because the supplied description did not "
+                "uniquely identify one mathematical target.",
+                "",
+                str(
+                    report.problem_clarification.get(
+                        "reason",
+                        "The intended problem and exact success criterion were ambiguous.",
+                    )
+                ),
+                "",
+                "Please revise the problem file and address:",
+                "",
+            ]
+        )
+        raw_questions = report.problem_clarification.get("questions", [])
+        if isinstance(raw_questions, list) and raw_questions:
+            lines.extend(f"- {question}" for question in raw_questions)
+        else:
+            lines.append("- State the exact mathematical target and intended conclusion.")
+        lines.extend(
+            [
+                "",
+                str(
+                    report.problem_clarification.get(
+                        "next_action",
+                        "Revise the problem file, then start a new ASCEND run.",
+                    )
+                ),
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "## Prior literature assessment",
+            "",
+            f"- Classification: `{report.literature_status}`",
+        ]
+    )
+    if report.literature_resolution_summary:
+        lines.append(f"- Assessment: {report.literature_resolution_summary}")
+    lines.extend(
+        [
+            "",
+            "## Strongest established result",
+            "",
+            report.strongest_result,
+            "",
+            "## Unresolved obligations",
+            "",
+        ]
+    )
     if report.unresolved_obligations:
         lines.extend(f"- {obligation}" for obligation in report.unresolved_obligations)
     else:

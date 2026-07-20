@@ -2,14 +2,24 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "required": [
+    "status",
     "title",
     "normalized_statement",
     "claim_contract",
     "compiled_prompt",
     "source_ledger",
-    "unresolved_ambiguities"
+    "unresolved_ambiguities",
+    "clarification_reason",
+    "clarification_questions",
+    "candidate_interpretations",
+    "literature_status",
+    "literature_resolution_summary"
   ],
   "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["compiled", "needs_clarification"]
+    },
     "title": {
       "type": "string"
     },
@@ -33,6 +43,33 @@
       "items": {
         "type": "string"
       }
+    },
+    "clarification_reason": {
+      "type": ["string", "null"]
+    },
+    "clarification_questions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "candidate_interpretations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "literature_status": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "no_exact_match_found",
+        "partially_resolved",
+        "fully_resolved"
+      ]
+    },
+    "literature_resolution_summary": {
+      "type": ["string", "null"]
     }
   },
   "additionalProperties": false

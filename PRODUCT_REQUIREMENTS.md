@@ -29,6 +29,9 @@ formalization, and generates a reproducible final report.
 ### FR-1 Problem intake
 
 - Accept UTF-8 `.md` or `.txt` input.
+- Accept concise problem descriptions when they uniquely identify the mathematical setting,
+  target, and essential constraints; do not require a user-supplied literature review or proof
+  plan.
 - Preserve the original bytes and a normalized copy.
 - Record a content hash, timestamp, CLI arguments, config snapshot, and tool versions.
 - Reject empty input and provide a useful diagnostic.
@@ -42,6 +45,14 @@ formalization, and generates a reproducible final report.
 - Fill every applicable bracketed placeholder; explicitly remove or mark inapplicable
   optional branches rather than leaving template placeholders unresolved.
 - Verify literature/background claims used in the compiled prompt.
+- Classify whether the exact target is unknown in the checked literature, has no exact match
+  found, is partially resolved, or is fully resolved by an existing theorem. Verify any claimed
+  match against authoritative sources and compare its exact hypotheses and conclusion.
+- If the exact target is already known, preserve that provenance and prohibit unsupported novelty
+  claims while allowing proof reconstruction, exposition, and formalization.
+- If the input does not uniquely identify a target, stop before research, persist a clarification
+  request and focused questions, report the outcome to the user, and require a new run from a
+  clarified problem file.
 - Save source citations and search evidence separately from the prompt text.
 
 ### FR-3 Adaptive research

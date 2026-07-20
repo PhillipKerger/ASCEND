@@ -1,6 +1,11 @@
 """Dependency-injected workflow stage services and their gate result models."""
 
-from .compile_prompt import PromptCompilationResult, compile_prompt
+from .compile_prompt import (
+    LiteratureStatus,
+    PromptCompilationResult,
+    PromptCompilationStatus,
+    compile_prompt,
+)
 from .lean import LeanPipelineResult, run_lean_pipeline
 from .manuscript import (
     ManuscriptResult,
@@ -11,8 +16,10 @@ from .research import ResearchResult, run_adaptive_research
 
 __all__ = [
     "LeanPipelineResult",
+    "LiteratureStatus",
     "ManuscriptResult",
     "PromptCompilationResult",
+    "PromptCompilationStatus",
     "ResearchResult",
     "compile_prompt",
     "generate_manuscript",

@@ -288,7 +288,7 @@ def test_checked_in_example_config_loads() -> None:
 
     assert config.config_version == 2
     assert config.backend.provider == "codex"
-    assert config.codex.max_parallel_agents == 3
+    assert config.codex.max_parallel_agents == 8
     assert config.models.research.model == "gpt-5.6-sol"
     assert config.lean.docker_image == "ascend-math-agent:latest"
     assert set(config.pricing.models) == {

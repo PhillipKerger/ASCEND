@@ -9,7 +9,9 @@ problem.md + CLI/environment/project configuration
        -> OpenAI Responses API backend (advanced; explicit API selection)
   -> intake + contract extraction
   -> framework compiler (live search enabled)
-  -> compiled_research_prompt.md + compiled_problem.json
+       -> clarification request + final report, when no unique target can be identified
+       -> compiled_research_prompt.md + compiled_problem.json, otherwise
+  -> verified prior-literature classification
   -> adaptive research coordinator
        -> round plans
        -> parallel independent workers
@@ -111,6 +113,11 @@ attempts, artifact hashes, failure information, provider call/session IDs, and c
 Writes use a temporary file and atomic rename. Resume preserves the original provider unless the
 user explicitly requests and records a provenance-changing migration.
 
+A successful prompt-compilation call may terminate with `NEEDS_PROBLEM_CLARIFICATION`. This is a
+truthful completed outcome rather than a guessed claim contract: downstream stages are skipped,
+clarification questions are persisted, and the final report directs the user to revise the input
+and start a new run.
+
 ### Research engine
 
 The application-managed coordinator loop is provider-independent:
@@ -120,6 +127,10 @@ The application-managed coordinator loop is provider-independent:
 3. The coordinator ingests visible reports and updates the `ApproachRegistry`.
 4. It chooses focused follow-up work, candidate packaging, or a budget-aware stop.
 5. Fresh independent audits and the final judge gate any candidate.
+
+The compiled problem carries a prior-literature classification. Exact known solutions remain
+eligible for source verification, proof reconstruction, exposition, and formalization, but must
+never be reported as mathematically novel.
 
 Codex internal subagents are not a substitute for ASCEND's independent roles and checkpoints.
 

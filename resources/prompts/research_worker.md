@@ -8,3 +8,7 @@ Do not return vague progress reports. Do not silently alter the target. State ev
 theorem precisely and identify its source. Mark any unproved step explicitly. Computational
 work must have a stated mathematical purpose and cannot substitute for an unbounded proof
 without a complete finite-reduction theorem.
+
+If existing literature already proves the exact target, report the precise theorem and source,
+compare every hypothesis and conclusion with the claim contract, and distinguish reconstruction
+or verification from a novel result.

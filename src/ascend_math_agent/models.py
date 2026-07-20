@@ -48,6 +48,7 @@ class ScientificStatus(StrEnum):
     """Truthful user-facing statuses required by the product contract."""
 
     RECEIVED = "RECEIVED"
+    NEEDS_PROBLEM_CLARIFICATION = "NEEDS_PROBLEM_CLARIFICATION"
     PROMPT_COMPILED = "PROMPT_COMPILED"
     RESEARCH_RUNNING = "RESEARCH_RUNNING"
     RESEARCH_PARTIAL = "RESEARCH_PARTIAL"

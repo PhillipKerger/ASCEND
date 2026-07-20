@@ -34,6 +34,15 @@
     },
     "artifacts": {
       "type": "object"
+    },
+    "problem_clarification": {
+      "type": "object"
+    },
+    "literature_status": {
+      "type": "string"
+    },
+    "literature_resolution_summary": {
+      "type": ["string", "null"]
     }
   },
   "additionalProperties": true

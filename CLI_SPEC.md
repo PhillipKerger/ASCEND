@@ -141,3 +141,6 @@ even when the frozen run used Docker.
 ```
 
 Scientific failure is represented in the report/status, not necessarily as a process crash.
+An input that does not uniquely identify a mathematical target similarly completes with
+`NEEDS_PROBLEM_CLARIFICATION`: research is not launched, and the terminal output and report ask
+the user to revise the problem file and start a new run.

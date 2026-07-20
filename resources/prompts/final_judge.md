@@ -12,3 +12,7 @@ Allowed verdicts:
 
 Acceptance requires no unresolved theorem-strength obligation and a proof that withstands all
 mandatory audits. State exact reasons and obligations in structured form.
+
+Acceptance may rest on a verified existing theorem that exactly matches the target. In that
+case, explicitly characterize the resolution as known literature and reject any unsupported
+novelty claim.

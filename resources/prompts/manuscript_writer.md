@@ -9,6 +9,11 @@ context of the problem where identifiable, strongest known results, nearby metho
 precise advance made here. Every factual or theorem-level characterization must be supported
 by a real source.
 
+If the exact target was already resolved in the literature, state that prominently and describe
+the manuscript as verification, reconstruction, exposition, or formalization as appropriate.
+Do not claim mathematical novelty merely because ASCEND independently reconstructed or
+formalized a known result.
+
 Generate complete `paper.tex` and `references.bib`. Never invent citations or bibliographic
 fields. Prefer primary sources. State uncertainty rather than guessing. Include enough proof
 detail that the manuscript is mathematically self-contained apart from explicitly cited

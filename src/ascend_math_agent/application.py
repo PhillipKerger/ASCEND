@@ -579,6 +579,16 @@ class WorkflowRunner:
         logger.event("workflow.resumed", data={"run_id": state.run_id})
         try:
             compiled = await self._prompt_stage(state, store, logger, budget, options)
+            if compiled.needs_clarification:
+                self._skip_after_prompt(
+                    state,
+                    "prompt compiler could not identify a unique mathematical target",
+                )
+                store.save(state)
+                return WorkflowResult(
+                    state=state,
+                    report=self._report_stage(state, store, logger),
+                )
             research = await self._research_stage(state, store, logger, budget, compiled)
             if not research.accepted_for_manuscript:
                 self._skip_manuscript_and_lean(state, "research acceptance gate did not pass")
@@ -867,8 +877,43 @@ class WorkflowRunner:
         except Exception as exc:
             self._failure(state, store, logger, StageName.PROMPT_COMPILATION, exc)
             raise
-        state.scientific_status = ScientificStatus.PROMPT_COMPILED
-        state.metadata["research_status"] = ScientificStatus.PROMPT_COMPILED.value
+        state.metadata.update(
+            {
+                "literature_status": result.compiled_problem.literature_status.value,
+                "literature_resolution_summary": (
+                    result.compiled_problem.literature_resolution_summary
+                ),
+            }
+        )
+        if result.needs_clarification:
+            state.scientific_status = ScientificStatus.NEEDS_PROBLEM_CLARIFICATION
+            state.metadata.update(
+                {
+                    "research_status": ScientificStatus.NEEDS_PROBLEM_CLARIFICATION.value,
+                    "strongest_result": (
+                        "No research claim was attempted because ASCEND could not identify "
+                        "a unique mathematical problem from the supplied description."
+                    ),
+                    "unresolved_obligations": result.compiled_problem.clarification_questions,
+                    "problem_clarification": {
+                        "required": True,
+                        "reason": result.compiled_problem.clarification_reason,
+                        "questions": result.compiled_problem.clarification_questions,
+                        "candidate_interpretations": (
+                            result.compiled_problem.candidate_interpretations
+                        ),
+                        "next_action": (
+                            "Revise the problem file to identify one exact target, then start "
+                            "a new ASCEND run."
+                        ),
+                    },
+                    "manuscript_status": "SKIPPED_PROBLEM_CLARIFICATION",
+                    "lean_status": "SKIPPED_PROBLEM_CLARIFICATION",
+                }
+            )
+        else:
+            state.scientific_status = ScientificStatus.PROMPT_COMPILED
+            state.metadata["research_status"] = ScientificStatus.PROMPT_COMPILED.value
         self._checkpoint(
             state,
             store,
@@ -1289,6 +1334,19 @@ class WorkflowRunner:
         self._skip_pending(state, StageName.MANUSCRIPT, reason)
         self._skip_pending(state, StageName.BIBLIOGRAPHY, reason)
         self._skip_lean(state, reason)
+
+    def _skip_after_prompt(self, state: RunState, reason: str) -> None:
+        for stage in (
+            StageName.RESEARCH,
+            StageName.RESEARCH_AUDIT,
+            StageName.MANUSCRIPT,
+            StageName.BIBLIOGRAPHY,
+            StageName.LEAN_FEASIBILITY,
+            StageName.LEAN_ALIGNMENT,
+            StageName.LEAN_FORMALIZATION,
+            StageName.LEAN_VERIFICATION,
+        ):
+            self._skip_pending(state, stage, reason)
 
     @staticmethod
     def _interrupt_current_stage(state: RunState, message: str) -> None:

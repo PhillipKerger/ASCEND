@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from ..config import ModelSettings
 from ..openai_client import ModelClient, ModelRequest
@@ -50,6 +51,22 @@ _FRAMEWORK_SECTIONS = (
 _MINIMUM_SECTION_WORDS = 8
 
 
+class PromptCompilationStatus(StrEnum):
+    """Whether a unique research target could be compiled safely."""
+
+    COMPILED = "compiled"
+    NEEDS_CLARIFICATION = "needs_clarification"
+
+
+class LiteratureStatus(StrEnum):
+    """Best verified relationship between the requested target and prior literature."""
+
+    UNKNOWN = "unknown"
+    NO_EXACT_MATCH_FOUND = "no_exact_match_found"
+    PARTIALLY_RESOLVED = "partially_resolved"
+    FULLY_RESOLVED = "fully_resolved"
+
+
 class SourceLedgerEntry(BaseModel):
     """A permissive but traceable source record returned by the compiler."""
 
@@ -67,19 +84,91 @@ class CompiledProblem(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    title: str
-    normalized_statement: str
-    claim_contract: dict[str, Any]
-    compiled_prompt: str
-    source_ledger: list[dict[str, Any]]
-    unresolved_ambiguities: list[str]
+    status: PromptCompilationStatus = PromptCompilationStatus.COMPILED
+    title: str = ""
+    normalized_statement: str = ""
+    claim_contract: dict[str, Any] = Field(default_factory=dict)
+    compiled_prompt: str = ""
+    source_ledger: list[dict[str, Any]] = Field(default_factory=list)
+    unresolved_ambiguities: list[str] = Field(default_factory=list)
+    clarification_reason: str | None = None
+    clarification_questions: list[str] = Field(default_factory=list)
+    candidate_interpretations: list[str] = Field(default_factory=list)
+    literature_status: LiteratureStatus = LiteratureStatus.UNKNOWN
+    literature_resolution_summary: str | None = None
 
-    @field_validator("title", "normalized_statement", "compiled_prompt")
+    @property
+    def needs_clarification(self) -> bool:
+        return self.status is PromptCompilationStatus.NEEDS_CLARIFICATION
+
+    @field_validator(
+        "unresolved_ambiguities",
+        "clarification_questions",
+        "candidate_interpretations",
+    )
     @classmethod
-    def require_nonempty_text(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
+    def normalize_nonempty_lists(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("entries must not be blank")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("entries must be unique")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_outcome(self) -> CompiledProblem:
+        if self.status is PromptCompilationStatus.NEEDS_CLARIFICATION:
+            if not self.clarification_reason or not self.clarification_reason.strip():
+                raise ValueError("needs_clarification requires a concrete clarification_reason")
+            if not self.clarification_questions:
+                raise ValueError("needs_clarification requires at least one clarification question")
+            if self.compiled_prompt.strip() or self.claim_contract:
+                raise ValueError(
+                    "needs_clarification must not include a compiled prompt or claim contract"
+                )
+            if (
+                self.literature_status is not LiteratureStatus.UNKNOWN
+                or self.literature_resolution_summary is not None
+            ):
+                raise ValueError(
+                    "needs_clarification cannot classify literature for an unidentified target"
+                )
+            return self
+
+        required_text = {
+            "title": self.title,
+            "normalized_statement": self.normalized_statement,
+            "compiled_prompt": self.compiled_prompt,
+        }
+        for name, value in required_text.items():
+            if not value.strip():
+                raise ValueError(f"compiled output requires nonempty {name}")
+        if not self.claim_contract:
+            raise ValueError("compiled output requires a nonempty claim_contract")
+        if self.clarification_reason is not None or self.clarification_questions:
+            raise ValueError("compiled output must not contain a clarification request")
+        if self.literature_status is LiteratureStatus.NO_EXACT_MATCH_FOUND and (
+            not self.literature_resolution_summary or not self.literature_resolution_summary.strip()
+        ):
+            raise ValueError(
+                "no_exact_match_found requires a summary of the search scope and limitations"
+            )
+        if self.literature_status in {
+            LiteratureStatus.PARTIALLY_RESOLVED,
+            LiteratureStatus.FULLY_RESOLVED,
+        }:
+            if (
+                not self.literature_resolution_summary
+                or not self.literature_resolution_summary.strip()
+            ):
+                raise ValueError(
+                    "a literature resolution claim requires a precise resolution summary"
+                )
+            if not self.source_ledger:
+                raise ValueError(
+                    "a literature resolution claim requires at least one source-ledger entry"
+                )
+        return self
 
 
 class PromptCompilationResult(BaseModel):
@@ -89,6 +178,10 @@ class PromptCompilationResult(BaseModel):
     framework_sha256: str
     artifacts: ArtifactManifest = Field(default_factory=ArtifactManifest)
     calls: CallManifest
+
+    @property
+    def needs_clarification(self) -> bool:
+        return self.compiled_problem.status is PromptCompilationStatus.NEEDS_CLARIFICATION
 
     @property
     def title(self) -> str:
@@ -260,6 +353,45 @@ def _ledger_identifiers(source_ledger: list[dict[str, Any]]) -> frozenset[str]:
     return frozenset(identifiers)
 
 
+def _render_clarification_request(compiled: CompiledProblem) -> str:
+    lines = [
+        "# Problem clarification required",
+        "",
+        (
+            "ASCEND stopped before mathematical research because it could not identify one "
+            "unique problem and exact success criterion from the supplied description."
+        ),
+        "",
+        "## Why clarification is needed",
+        "",
+        (compiled.clarification_reason or "The requested target was ambiguous.").strip(),
+        "",
+        "## Questions to answer",
+        "",
+        *(f"- {question}" for question in compiled.clarification_questions),
+    ]
+    if compiled.candidate_interpretations:
+        lines.extend(
+            [
+                "",
+                "## Possible interpretations that could not safely be chosen",
+                "",
+                *(f"- {item}" for item in compiled.candidate_interpretations),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            (
+                "Revise the problem file so that it uniquely identifies the intended target, "
+                "then start a new ASCEND run. The intake snapshot of this run remains immutable."
+            ),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 async def compile_prompt(
     *,
     client: ModelClient,
@@ -323,20 +455,6 @@ async def compile_prompt(
         CompiledProblem,
     )
     compiled = model_result.parsed
-    unresolved = find_unresolved_placeholders(
-        compiled.compiled_prompt, allowlist=placeholder_allowlist
-    )
-    if unresolved:
-        rendered = ", ".join(unresolved[:8])
-        suffix = " ..." if len(unresolved) > 8 else ""
-        raise StageValidationError(
-            f"Compiled prompt contains unresolved editorial placeholders: {rendered}{suffix}"
-        )
-    coverage_issues = validate_framework_coverage(compiled.compiled_prompt)
-    if coverage_issues:
-        raise StageValidationError(
-            "Compiled prompt does not preserve the reusable framework: " + " ".join(coverage_issues)
-        )
     provider_identifiers = tool_metadata_source_identifiers(model_result.tool_metadata)
     ledger_issues = validate_source_ledger(
         compiled.source_ledger,
@@ -344,28 +462,51 @@ async def compile_prompt(
     )
     if ledger_issues:
         raise StageValidationError("Source ledger verification failed: " + " ".join(ledger_issues))
-    ledger_identifiers = _ledger_identifiers(compiled.source_ledger)
-    prompt_identifiers = source_identifiers(compiled.compiled_prompt)
-    unrepresented_prompt_sources = sorted(prompt_identifiers - ledger_identifiers)
-    if unrepresented_prompt_sources:
-        raise StageValidationError(
-            "Compiled prompt cites identifiers absent from its verified source ledger: "
-            + ", ".join(unrepresented_prompt_sources)
+
+    if compiled.status is PromptCompilationStatus.COMPILED:
+        unresolved = find_unresolved_placeholders(
+            compiled.compiled_prompt, allowlist=placeholder_allowlist
         )
+        if unresolved:
+            rendered = ", ".join(unresolved[:8])
+            suffix = " ..." if len(unresolved) > 8 else ""
+            raise StageValidationError(
+                f"Compiled prompt contains unresolved editorial placeholders: {rendered}{suffix}"
+            )
+        coverage_issues = validate_framework_coverage(compiled.compiled_prompt)
+        if coverage_issues:
+            raise StageValidationError(
+                "Compiled prompt does not preserve the reusable framework: "
+                + " ".join(coverage_issues)
+            )
+        ledger_identifiers = _ledger_identifiers(compiled.source_ledger)
+        prompt_identifiers = source_identifiers(compiled.compiled_prompt)
+        unrepresented_prompt_sources = sorted(prompt_identifiers - ledger_identifiers)
+        if unrepresented_prompt_sources:
+            raise StageValidationError(
+                "Compiled prompt cites identifiers absent from its verified source ledger: "
+                + ", ".join(unrepresented_prompt_sources)
+            )
 
     artifacts = ArtifactManifest()
     if prompts_dir is not None:
         destination = ensure_stage_directory(prompts_dir)
         paths = {
             "framework": atomic_write_bytes(destination / "framework.txt", framework_bytes),
-            "compiled_prompt": atomic_write_text(
-                destination / "compiled_research_prompt.md", compiled.compiled_prompt
-            ),
             "compiled_problem": atomic_write_json(destination / "compiled_problem.json", compiled),
             "source_ledger": atomic_write_json(
                 destination / "source_ledger.json", compiled.source_ledger
             ),
         }
+        if compiled.status is PromptCompilationStatus.COMPILED:
+            paths["compiled_prompt"] = atomic_write_text(
+                destination / "compiled_research_prompt.md", compiled.compiled_prompt
+            )
+        else:
+            paths["clarification_request"] = atomic_write_text(
+                destination / "clarification_request.md",
+                _render_clarification_request(compiled),
+            )
         if model_result.tool_metadata:
             paths["source_provider_metadata"] = atomic_write_json(
                 destination / "source_provider_metadata.json",

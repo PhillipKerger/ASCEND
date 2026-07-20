@@ -124,7 +124,7 @@ class CodexSettings(_StrictSettings):
     formalization_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
         "xhigh"
     )
-    max_parallel_agents: int = Field(default=3, gt=0)
+    max_parallel_agents: int = Field(default=8, gt=0)
     max_parallel_web_agents: int = Field(default=2, gt=0)
     persist_sessions: bool = True
     skip_git_repo_check: bool = False

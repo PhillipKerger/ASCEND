@@ -15,9 +15,18 @@ The compiler receives:
 - web search;
 - the structured output schema.
 
-It must return a full adapted prompt plus a formal claim contract and a source ledger.
-A validation step rejects unresolved bracket placeholders except an explicit allowlist of
-literal mathematical notation.
+It first decides whether the input uniquely identifies one mathematical target and exact success
+criterion. A concise input is sufficient when it does. If choosing a target would require
+guessing between materially different interpretations, the compiler returns
+`needs_clarification` with a reason and focused questions. ASCEND persists that request, skips
+all research/manuscript/Lean stages, writes the final report, and asks the user to revise the
+problem file and start a new run.
+
+Otherwise it returns a full adapted prompt plus a formal claim contract, a source ledger, and a
+literature classification: `unknown`, `no_exact_match_found`, `partially_resolved`, or
+`fully_resolved`. A validation step rejects unresolved bracket placeholders except an explicit
+allowlist of literal mathematical notation. Partial/full resolution claims require verified
+sources and an exact statement-and-hypothesis comparison.
 
 ## Stage 2 — Adaptive research
 
@@ -27,6 +36,10 @@ A coordinator creates at least four materially distinct assignments. Suggested r
 fixed quotas; examples include direct proof, alternative structural formulation, hostile
 counterexample search, literature/known-theorem mapping, computation, and formalization-aware
 lemma decomposition.
+
+If the compiler found that existing literature resolves the target, the portfolio emphasizes
+independent source verification, hypothesis matching, proof reconstruction, and formalization.
+Known results must remain labeled as known rather than novel.
 
 ### Later rounds
 

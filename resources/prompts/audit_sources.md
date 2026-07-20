@@ -4,3 +4,8 @@ Verify every external theorem used in the proof against an authoritative source.
 the cited result exists, is stated accurately, and applies under every actual hypothesis. Do
 not infer a theorem from a paper title or secondary summary. Record source evidence and any
 uncertainty.
+
+When the target is reported as already solved, independently verify that the literature theorem
+matches the exact claim contract rather than only a nearby statement. Record differences in
+hypotheses, quantifiers, domains, exceptional cases, and conclusion, and reject unsupported
+novelty claims.

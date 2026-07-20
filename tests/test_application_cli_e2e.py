@@ -29,7 +29,10 @@ from ascend_math_agent.intake import ingest_problem
 from ascend_math_agent.models import ScientificStatus, StageName, StageStatus
 from ascend_math_agent.openai_client import ModelRequest, ModelResult
 from ascend_math_agent.stages.common import sha256_json, sha256_text
-from ascend_math_agent.stages.compile_prompt import CompiledProblem
+from ascend_math_agent.stages.compile_prompt import (
+    CompiledProblem,
+    PromptCompilationStatus,
+)
 from ascend_math_agent.stages.lean import (
     MANDATORY_ALIGNMENT_FIELDS,
     AlignmentCheck,
@@ -648,6 +651,88 @@ def make_problem(project_root: Path) -> Path:
     problem = project_root / "problem.md"
     problem.write_text("# Problem\n\nProve P(n) for every natural number n.\n", encoding="utf-8")
     return problem
+
+
+class ClarificationOnlyModel:
+    def __init__(self) -> None:
+        self.requests: list[tuple[ModelRequest, type[BaseModel]]] = []
+
+    async def generate_structured(
+        self,
+        request: ModelRequest,
+        output_type: type[Any],
+    ) -> ModelResult[Any]:
+        self.requests.append((request, output_type))
+        assert output_type is CompiledProblem
+        parsed = CompiledProblem(
+            status=PromptCompilationStatus.NEEDS_CLARIFICATION,
+            clarification_reason=(
+                "The description names an extension problem but not its domain or target."
+            ),
+            clarification_questions=[
+                "What mathematical objects are being extended?",
+                "What exact conclusion should be proved?",
+            ],
+            candidate_interpretations=[
+                "An operator-extension theorem.",
+                "A combinatorial extension problem.",
+            ],
+            unresolved_ambiguities=["The domain and success criterion are both ambiguous."],
+        )
+        return ModelResult(
+            parsed=parsed,
+            response_id="clarification-response",
+            input_tokens=10,
+            output_tokens=5,
+            total_tokens=15,
+            estimated_cost_usd=None,
+        )
+
+
+def test_ambiguous_problem_stops_before_research_and_asks_for_clarification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / ".git").mkdir()
+    problem = project / "problem.md"
+    problem.write_text("Solve the extension problem.\n", encoding="utf-8")
+    model = ClarificationOnlyModel()
+    backend = ForbiddenBackend()
+    codex = ForbiddenCodex()
+    runner = WorkflowRunner(
+        AppConfig(project_root=project),
+        WorkflowDependencies(
+            model_client=model,  # type: ignore[arg-type]
+            execution_backend=backend,
+            codex_client=codex,
+        ),
+    )
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(cli_module, "_live_runner", lambda config: runner)
+
+    invocation = CliRunner().invoke(app, ["run", str(problem)])
+
+    assert invocation.exit_code == 0, invocation.output
+    assert "stopped before research" in invocation.output
+    assert "What mathematical objects are being extended?" in invocation.output
+    [run_root] = (project / ".ascend" / "runs").iterdir()
+    state = StateStore(run_root).load()
+    assert state.scientific_status is ScientificStatus.NEEDS_PROBLEM_CLARIFICATION
+    assert state.stages[StageName.PROMPT_COMPILATION].status is StageStatus.SUCCEEDED
+    assert state.stages[StageName.RESEARCH].status is StageStatus.SKIPPED
+    assert state.stages[StageName.MANUSCRIPT].status is StageStatus.SKIPPED
+    assert state.stages[StageName.LEAN_VERIFICATION].status is StageStatus.SKIPPED
+    assert state.stages[StageName.REPORT].status is StageStatus.SUCCEEDED
+    assert len(model.requests) == 1
+    assert backend.calls == 0
+    assert codex.calls == 0
+    clarification = (run_root / "prompts" / "clarification_request.md").read_text(encoding="utf-8")
+    report = (run_root / "report" / "REPORT.md").read_text(encoding="utf-8")
+    assert "start a new ASCEND run" in clarification
+    assert "Problem clarification required" in report
+    assert "revise the problem file" in report.lower()
 
 
 @pytest.mark.parametrize("provider", ["codex", "api"])

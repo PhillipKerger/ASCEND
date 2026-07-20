@@ -22,6 +22,8 @@ from ascend_math_agent.stages.common import (
 from ascend_math_agent.stages.compile_prompt import (
     EXPECTED_FRAMEWORK_SHA256,
     CompiledProblem,
+    LiteratureStatus,
+    PromptCompilationStatus,
     compile_prompt,
 )
 from ascend_math_agent.stages.lean import (
@@ -224,6 +226,77 @@ async def test_prompt_compiler_checks_hash_placeholders_and_writes_contract(
             framework_path=FRAMEWORK,
             prompts_dir=tmp_path / "bad",
         )
+
+
+@pytest.mark.asyncio
+async def test_prompt_compiler_returns_a_terminal_clarification_request(
+    tmp_path: Path,
+) -> None:
+    clarification = CompiledProblem(
+        status=PromptCompilationStatus.NEEDS_CLARIFICATION,
+        clarification_reason=(
+            "The phrase 'extension problem' could refer to two inequivalent targets."
+        ),
+        clarification_questions=[
+            "Which objects are being extended?",
+            "Is the requested conclusion existence, uniqueness, or classification?",
+        ],
+        candidate_interpretations=[
+            "Extend a bounded operator from a subspace.",
+            "Extend a partial combinatorial structure.",
+        ],
+        unresolved_ambiguities=["The mathematical domain and conclusion are unspecified."],
+    )
+
+    result = await compile_prompt(
+        client=StaticClient([clarification]),
+        problem_text="Solve the extension problem.",
+        framework_path=FRAMEWORK,
+        prompts_dir=tmp_path,
+    )
+
+    assert result.needs_clarification
+    assert "compiled_prompt" not in result.artifacts.paths
+    assert (tmp_path / "compiled_problem.json").is_file()
+    request = (tmp_path / "clarification_request.md").read_text(encoding="utf-8")
+    assert "stopped before mathematical research" in request
+    assert "Which objects are being extended?" in request
+    assert "start a new ASCEND run" in request
+
+
+@pytest.mark.asyncio
+async def test_prompt_compiler_marks_verified_existing_literature_without_novelty(
+    tmp_path: Path,
+) -> None:
+    payload = compiled_problem().model_dump(mode="python")
+    payload.update(
+        {
+            "literature_status": LiteratureStatus.FULLY_RESOLVED,
+            "literature_resolution_summary": (
+                "The cited theorem has the same domain, quantifiers, hypotheses, and conclusion."
+            ),
+            "source_ledger": [
+                {
+                    "title": "Verified fixture theorem",
+                    "stable_identifier": "10.5555/12345678",
+                    "url": VERIFIED_SOURCE_URL,
+                    "verified": True,
+                    "evidence": VERIFIED_SOURCE_URL,
+                }
+            ],
+        }
+    )
+    known = CompiledProblem.model_validate(payload)
+
+    result = await compile_prompt(
+        client=StaticClient([known], tool_metadata=web_source_metadata()),
+        problem_text="Reconstruct the verified fixture theorem.",
+        framework_path=FRAMEWORK,
+        prompts_dir=tmp_path,
+    )
+
+    assert result.compiled_problem.literature_status is LiteratureStatus.FULLY_RESOLVED
+    assert result.compiled_problem.literature_resolution_summary
 
 
 @pytest.mark.asyncio

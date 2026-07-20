@@ -253,6 +253,23 @@ def _print_result(result: WorkflowResult) -> None:
     console.print(f"Research: {result.report.report.scientific_status}")
     console.print(f"Manuscript: {result.report.report.manuscript_status}")
     console.print(f"Lean: {result.report.report.lean_status}")
+    clarification = result.report.report.problem_clarification
+    if clarification.get("required") is True:
+        console.print(
+            "[yellow]ASCEND stopped before research because it could not uniquely identify "
+            "the mathematical problem to solve.[/yellow]"
+        )
+        reason = clarification.get("reason")
+        if reason:
+            console.print(f"Reason: {reason}")
+        questions = clarification.get("questions", [])
+        if isinstance(questions, list):
+            for question in questions:
+                console.print(f"  - {question}")
+        console.print(
+            "Revise the problem file with the requested details, then start a new run with "
+            "[bold]ascend run PROBLEM_FILE[/bold]."
+        )
     console.print(f"Report: {result.report.report_markdown}")
 
 
@@ -483,6 +500,13 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
     try:
         state = _load_state(_project_root(), run_id)
         console.print(f"Run [bold]{state.run_id}[/bold] — {state.scientific_status.value}")
+        clarification = state.metadata.get("problem_clarification", {})
+        if isinstance(clarification, dict) and clarification.get("required") is True:
+            console.print(
+                "[yellow]Problem clarification required:[/yellow] "
+                f"{clarification.get('reason', 'the intended target is ambiguous')}"
+            )
+            console.print("Revise the problem file and start a new run.")
         backend = state.metadata.get("backend", {})
         if not isinstance(backend, dict):
             backend = {}

@@ -15,6 +15,9 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 - Stage transition legality.
 - Artifact hash and framework integrity checks.
 - Placeholder detection in compiled prompts.
+- Ambiguous input produces a clarification request and no downstream model or command calls.
+- Fully resolved literature matches require verified primary-source evidence and retain known
+  result provenance.
 - Budget accounting and concurrency limits.
 - Retry classification and incomplete API responses.
 - Redaction of keys/tokens.
@@ -37,6 +40,8 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 9. Resume does not repeat paid model calls.
 10. Framework file modified: doctor/run fail with actionable integrity message unless a
     custom framework is explicitly selected.
+11. Ambiguous problem: clarification is reported and all research/manuscript/Lean stages skip.
+12. Existing theorem: exact source/hypothesis matching is recorded without a novelty claim.
 
 ## Optional live tests
 

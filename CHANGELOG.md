@@ -9,6 +9,23 @@
 - Added canonical GitHub project metadata and corrected source-install and example paths.
 - Renamed the project integrity check to `scripts/verify_project.py`.
 
+### Problem identification and prior literature
+
+- Concise problem files are explicitly supported when they uniquely identify the target.
+- Prompt compilation can now stop with a persisted clarification request instead of guessing an
+  ambiguous problem; downstream stages are skipped and the report asks the user to revise the
+  input and start a new run.
+- Compiled problems now classify their relationship to existing literature. Exact known results
+  require verified source and hypothesis matching and cannot be presented as novel merely because
+  ASCEND reconstructed or formalized them.
+
+### Configuration and documentation
+
+- Raised the default Codex `max_parallel_agents` ceiling from 3 to 8; the separate web-agent
+  ceiling remains configurable and defaults to 2.
+- Documented the per-run `.ascend/runs/<run-id>/` output layout, including manuscript, Lean,
+  report, and trace locations.
+
 ## 0.2.0 — 2026-07-19
 
 ### Codex is now the default backend

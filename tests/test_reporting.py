@@ -69,3 +69,35 @@ def test_optional_narrative_cannot_replace_authoritative_report_fields(tmp_path:
     assert "Optional model-assisted narrative" in markdown
     assert "deterministic status table" in markdown
     assert "[`input/problem.md`]" in markdown
+
+
+def test_report_exposes_literature_and_problem_clarification_outcomes(tmp_path: Path) -> None:
+    run_root = create_run_root(
+        tmp_path,
+        run_id="20260720T120000Z-clarify-abcdef",
+    )
+    (run_root / "input" / "problem.md").write_text(
+        "Solve the extension problem.\n", encoding="utf-8"
+    )
+    state = new_run_state("20260720T120000Z-clarify-abcdef", tmp_path, run_root)
+    state.metadata.update(
+        {
+            "research_status": "NEEDS_PROBLEM_CLARIFICATION",
+            "literature_status": "unknown",
+            "problem_clarification": {
+                "required": True,
+                "reason": "The domain and intended conclusion were not specified.",
+                "questions": ["Which objects should be extended?"],
+                "next_action": "Revise the problem file and start a new ASCEND run.",
+            },
+        }
+    )
+
+    result = write_final_report(state)
+
+    assert result.report.problem_clarification["required"] is True
+    assert result.report.literature_status == "unknown"
+    markdown = result.report_markdown.read_text(encoding="utf-8")
+    assert "Problem clarification required" in markdown
+    assert "Which objects should be extended?" in markdown
+    assert "Prior literature assessment" in markdown
