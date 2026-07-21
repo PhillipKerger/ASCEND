@@ -332,10 +332,10 @@ class ResearchAcceptanceGate(BaseModel):
 
 
 class ResearchWorkflowSettings(BaseModel):
-    minimum_initial_assignments: int = Field(default=8, ge=4)
+    minimum_initial_assignments: int = Field(default=16, ge=4)
     maximum_concurrent_agents: int = Field(default=16, ge=1)
     maximum_rounds: int = Field(default=8, ge=1)
-    maximum_research_subagents: int = Field(default=24, ge=4)
+    maximum_research_subagents: int = Field(default=32, ge=4)
     maximum_assignments_per_round: int = Field(default=24, ge=1)
     maximum_model_calls: int | None = Field(default=None, ge=1)
     run_complexity_audit: bool | None = None

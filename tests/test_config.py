@@ -33,7 +33,7 @@ maximum_concurrent_agents = 5
         cli_overrides={"max_rounds": 4},
     )
 
-    assert config.research.minimum_initial_agents == 8  # default
+    assert config.research.minimum_initial_agents == 16  # default
     assert config.research.maximum_concurrent_agents == 5  # project
     assert config.research.maximum_rounds == 4  # CLI beats environment
 
@@ -355,9 +355,9 @@ def test_checked_in_example_config_loads() -> None:
     assert config.codex.max_parallel_agents == 16
     assert config.codex.max_parallel_web_agents == 4
     assert config.api.max_parallel_agents == 16
-    assert config.research.minimum_initial_agents == 8
+    assert config.research.minimum_initial_agents == 16
     assert config.research.maximum_concurrent_agents == 16
-    assert config.research.maximum_research_subagents == 24
+    assert config.research.maximum_research_subagents == 32
     assert config.research.maximum_assignments_per_round == 24
     assert config.models.research.model == "gpt-5.6-sol"
     assert config.lean.docker_image == "ascend-math-agent:latest"

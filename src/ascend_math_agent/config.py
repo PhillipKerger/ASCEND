@@ -194,9 +194,9 @@ class CodexSettings(_StrictSettings):
 
 
 class ResearchSettings(_StrictSettings):
-    minimum_initial_agents: int = Field(default=8, ge=4)
+    minimum_initial_agents: int = Field(default=16, ge=4)
     maximum_concurrent_agents: int = Field(default=16, gt=0)
-    maximum_research_subagents: int = Field(default=24, ge=4)
+    maximum_research_subagents: int = Field(default=32, ge=4)
     maximum_assignments_per_round: int = Field(default=24, gt=0)
     maximum_rounds: int = Field(default=8, gt=0)
     require_foundational_audit: bool = True

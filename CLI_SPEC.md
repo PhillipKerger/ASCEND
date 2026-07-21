@@ -111,8 +111,8 @@ also bounds each in-flight model call. There is no wall-clock limit by default.
 `ASCEND_TIME_LIMIT_MINUTES=N` is the environment form.
 
 `--max-research-subagents N` caps logical research-worker assignments across all adaptive rounds.
-It is distinct from `--max-agents`, which caps simultaneous workers. The environment form is
-`ASCEND_MAX_RESEARCH_SUBAGENTS=N`.
+The built-in default is 32. It is distinct from `--max-agents`, which caps simultaneous workers.
+The environment form is `ASCEND_MAX_RESEARCH_SUBAGENTS=N`.
 
 Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
@@ -126,7 +126,7 @@ worker completion. A full run may show:
 ASCENSION 0: Fetching problem.
 ASCENSION 1: Formulating technical research prompt.
 ASCENSION 2: Planning research round 1.
-ASCENSION 3: Launching 8 research agents for round 1.
+ASCENSION 3: Launching 16 research agents for round 1.
 ASCENSION 4: Packaging the candidate solution for independent audits.
 ASCENSION 5: Writing manuscript and verifying bibliography.
 ASCENSION 6: Assessing and verifying the Lean formalization.

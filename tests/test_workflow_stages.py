@@ -631,6 +631,14 @@ class SuccessfulResearchClient:
                             "computational",
                             "inductive",
                             "algebraic",
+                            "geometric",
+                            "topological",
+                            "analytic",
+                            "combinatorial",
+                            "variational",
+                            "spectral",
+                            "logical",
+                            "formalization-aware",
                         ),
                         start=1,
                     )
@@ -826,12 +834,12 @@ def passing_audit() -> AuditVerdict:
     )
 
 
-def test_research_workflow_defaults_double_portfolio_and_capacity() -> None:
+def test_research_workflow_defaults_use_sixteen_initial_and_thirty_two_total() -> None:
     settings = ResearchWorkflowSettings()
 
-    assert settings.minimum_initial_assignments == 8
+    assert settings.minimum_initial_assignments == 16
     assert settings.maximum_concurrent_agents == 16
-    assert settings.maximum_research_subagents == 24
+    assert settings.maximum_research_subagents == 32
     assert settings.maximum_assignments_per_round == 24
 
 
@@ -1079,6 +1087,14 @@ class RepairResearchClient(SuccessfulResearchClient):
                             "computational",
                             "inductive",
                             "algebraic",
+                            "geometric",
+                            "topological",
+                            "analytic",
+                            "combinatorial",
+                            "variational",
+                            "spectral",
+                            "logical",
+                            "formalization-aware",
                         ),
                         start=1,
                     )

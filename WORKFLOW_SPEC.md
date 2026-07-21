@@ -50,10 +50,11 @@ the worker calls. The total number of logical workers across all rounds is bound
 
 ### Initial round
 
-A coordinator creates eight initial assignments by default, spanning at least four materially
-distinct approach families. Suggested roles are not fixed quotas; examples include direct proof,
-alternative structural formulation, hostile counterexample search, literature/known-theorem
-mapping, computation, and formalization-aware lemma decomposition.
+The research orchestrator creates sixteen initial assignments by default, spanning at least four
+materially distinct approach families. Suggested roles are not fixed quotas; examples include
+direct proof, alternative structural formulation, hostile counterexample search,
+literature/known-theorem mapping, computation, and formalization-aware lemma decomposition. The
+default logical-worker ceiling across the complete adaptive search is 32.
 
 If the compiler found that existing literature resolves the target, the portfolio emphasizes
 independent source verification, hypothesis matching, proof reconstruction, and formalization.

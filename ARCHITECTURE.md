@@ -12,7 +12,7 @@ problem.md + CLI/environment/project configuration
        -> clarification request + final report, when no unique target can be identified
        -> compiled_research_prompt.md + compiled_problem.json, otherwise
   -> verified prior-literature classification
-  -> adaptive research coordinator
+  -> dedicated adaptive research orchestrator
        -> round plans
        -> parallel independent workers
        -> approach registry
@@ -139,8 +139,8 @@ The application-managed coordinator loop is provider-independent:
 Every later orchestrator call receives the original compiled prompt and claim contract, the
 continuity state, the registry, all visible reports, and audit obligations. This explicit handoff
 preserves continuity across providers and process restarts without relying on hidden model memory.
-`research.maximum_research_subagents` is a hard logical-worker ceiling across rounds; per-round
-assignment and concurrent-call ceilings remain separate controls.
+`research.maximum_research_subagents` is a hard logical-worker ceiling across rounds and defaults
+to 32; per-round assignment and concurrent-call ceilings remain separate controls.
 
 The compiled problem carries a prior-literature classification. Exact known solutions remain
 eligible for source verification, proof reconstruction, exposition, and formalization, but must

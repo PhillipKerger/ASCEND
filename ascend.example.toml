@@ -60,9 +60,9 @@ maximum_web_search_calls = 8
 max_output_tokens = 120000
 
 [research]
-minimum_initial_agents = 8
+minimum_initial_agents = 16
 maximum_concurrent_agents = 16
-maximum_research_subagents = 24
+maximum_research_subagents = 32
 maximum_assignments_per_round = 24
 maximum_rounds = 8
 require_foundational_audit = true

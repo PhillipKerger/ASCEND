@@ -62,7 +62,8 @@ formalization, and generates a reproducible final report.
 
 ### FR-3 Adaptive research
 
-- Start with a coordinator-generated portfolio of eight research assignments by default,
+- Start with a research-orchestrator-generated portfolio of sixteen research assignments by
+  default,
   spanning at least four materially different approaches unless the configured budget is lower.
 - Keep initial workers independent; do not reveal the favored route to all workers.
 - Run research under a dedicated model-driven research orchestrator that receives the complete

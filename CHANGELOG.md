@@ -8,9 +8,10 @@
   configurable total `maximum_research_subagents` cap and distinct recorded model roles.
 - Fixed the bounded worker-window launcher so assignments after the first concurrent window are
   not lost when that window finishes without a proof candidate.
-- Doubled the default research portfolio and capacity: eight initial assignments, up to 24
-  assignments admitted per adaptive round, 16-agent research/backend concurrency ceilings, and
-  four concurrent web-enabled Codex agents. The existing four-family diversity floor remains.
+- Expanded the default research portfolio and capacity: sixteen initial assignments, a
+  32-assignment logical-worker ceiling across the run, up to 24 assignments admitted per adaptive
+  round, 16-agent research/backend concurrency ceilings, and four concurrent web-enabled Codex
+  agents. The existing four-family diversity floor remains.
 - Research now audits the first worker claiming a complete proof immediately. Worker launch uses
   a bounded active window, so routes that have not started consume no tokens when that proof
   passes; failed early audits resume the remaining portfolio with their obligations preserved.
