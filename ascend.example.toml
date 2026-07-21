@@ -11,21 +11,20 @@ research_effort = "xhigh"
 audit_effort = "xhigh"
 manuscript_effort = "high"
 formalization_effort = "xhigh"
-max_parallel_agents = 16
-max_parallel_web_agents = 4
+max_parallel_agents = 32
+max_parallel_web_agents = 32
 persist_sessions = true
 skip_git_repo_check = false
 extra_args = []
 
 [codex.limits]
 # No wall-clock limit is imposed unless --time-limit-minutes or an explicit limit is set.
-max_agent_calls = 100
+# No call-count limit is imposed unless max_agent_calls or max_codex_threads is set explicitly.
 max_research_rounds = 8
-max_codex_threads = 40
 max_formalization_iterations = 60
 
 [api]
-max_parallel_agents = 16
+max_parallel_agents = 32
 
 [api.models.prompt_compiler]
 model = "gpt-5.6-sol"
@@ -61,9 +60,8 @@ max_output_tokens = 120000
 
 [research]
 minimum_initial_agents = 16
-maximum_concurrent_agents = 16
-maximum_research_subagents = 32
-maximum_assignments_per_round = 24
+maximum_concurrent_agents = 32
+maximum_assignments_per_round = 32
 maximum_rounds = 8
 require_foundational_audit = true
 require_domain_audit = true

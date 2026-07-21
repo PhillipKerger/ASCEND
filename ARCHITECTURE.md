@@ -139,8 +139,8 @@ The application-managed coordinator loop is provider-independent:
 Every later orchestrator call receives the original compiled prompt and claim contract, the
 continuity state, the registry, all visible reports, and audit obligations. This explicit handoff
 preserves continuity across providers and process restarts without relying on hidden model memory.
-`research.maximum_research_subagents` is a hard logical-worker ceiling across rounds and defaults
-to 32; per-round assignment and concurrent-call ceilings remain separate controls.
+There is no cumulative logical-worker ceiling across rounds. Per-round assignment and
+concurrent-call ceilings are separate controls and both default to 32 research workers.
 
 The compiled problem carries a prior-literature classification. Exact known solutions remain
 eligible for source verification, proof reconstruction, exposition, and formalization, but must

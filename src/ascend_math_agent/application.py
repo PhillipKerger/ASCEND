@@ -259,7 +259,7 @@ class WorkflowRunner:
 
         # Subscription/credit-backed Codex usage has no authoritative per-call USD
         # conversion. Preserve observed unknown-cost usage without applying the API
-        # dollar gate, while enforcing conservative call/thread and wall-clock limits.
+        # dollar gate, while enforcing explicitly configured call/thread and wall-clock limits.
         codex_limits = self.config.codex.limits
         configured_wall_limits = [
             limit
@@ -280,14 +280,19 @@ class WorkflowRunner:
                 )
             }
         )
+        configured_call_limits = [
+            limit
+            for limit in (
+                codex_limits.max_agent_calls,
+                codex_limits.max_codex_threads,
+            )
+            if limit is not None
+        ]
         return BudgetTracker(
             effective_limits,
             scoped_usage,
             prior_elapsed_seconds=prior_elapsed_seconds,
-            maximum_calls=min(
-                codex_limits.max_agent_calls,
-                codex_limits.max_codex_threads,
-            ),
+            maximum_calls=min(configured_call_limits) if configured_call_limits else None,
             enforce_cost_budget=False,
         )
 
@@ -1335,9 +1340,6 @@ class WorkflowRunner:
                                 self.config.api.max_parallel_agents,
                             )
                         ),
-                        maximum_research_subagents=(
-                            self.config.research.maximum_research_subagents
-                        ),
                         maximum_assignments_per_round=(
                             self.config.research.maximum_assignments_per_round
                         ),
@@ -1566,8 +1568,17 @@ class WorkflowRunner:
                 remaining_threads = (
                     max(0, codex_limits.max_codex_threads - budget.snapshot().calls)
                     if self.config.backend.provider == "codex"
-                    else codex_limits.max_codex_threads
+                    and codex_limits.max_codex_threads is not None
+                    else None
                 )
+                lean_iteration_limits = [
+                    self.config.lean.maximum_codex_iterations,
+                    codex_limits.max_formalization_iterations,
+                ]
+                if codex_limits.max_agent_calls is not None:
+                    lean_iteration_limits.append(codex_limits.max_agent_calls)
+                if remaining_threads is not None:
+                    lean_iteration_limits.append(remaining_threads)
                 result = await run_lean_pipeline(
                     client=self._stage_client(StageName.LEAN_FEASIBILITY, budget, logger),
                     codex_client=self.dependencies.codex_client,
@@ -1580,12 +1591,7 @@ class WorkflowRunner:
                     lean_dir=state.run_root / "lean",
                     lean_project_root=state.project_root,
                     workflow_settings=LeanWorkflowSettings(
-                        maximum_codex_iterations=min(
-                            self.config.lean.maximum_codex_iterations,
-                            codex_limits.max_formalization_iterations,
-                            codex_limits.max_agent_calls,
-                            remaining_threads,
-                        ),
+                        maximum_codex_iterations=min(lean_iteration_limits),
                         approved_axioms=self.config.lean.approved_axioms,
                         prohibited_tokens=prohibited,
                         allow_project_edits=options.allow_project_edits,

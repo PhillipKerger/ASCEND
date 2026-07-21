@@ -244,7 +244,6 @@ def ingest_problem(
                 "automatic_fallback": False,
                 "prompt_compiler_model": config.models.prompt_compiler.model,
                 "minimum_initial_agents": config.research.minimum_initial_agents,
-                "maximum_research_subagents": (config.research.maximum_research_subagents),
                 "maximum_assignments_per_round": (config.research.maximum_assignments_per_round),
                 "maximum_rounds": config.research.maximum_rounds,
                 "maximum_concurrent_agents": config.research.maximum_concurrent_agents,

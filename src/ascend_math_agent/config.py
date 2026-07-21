@@ -106,9 +106,9 @@ class BackendSettings(_StrictSettings):
 class CodexLimits(_StrictSettings):
     """Subscription/credit limits, intentionally separate from API dollars."""
 
-    max_agent_calls: int = Field(default=100, gt=0)
+    max_agent_calls: int | None = Field(default=None, gt=0)
     max_research_rounds: int = Field(default=8, gt=0)
-    max_codex_threads: int = Field(default=40, gt=0)
+    max_codex_threads: int | None = Field(default=None, gt=0)
     max_wall_clock_minutes: int | None = Field(default=None, gt=0)
     max_formalization_iterations: int = Field(default=60, gt=0)
 
@@ -124,8 +124,8 @@ class CodexSettings(_StrictSettings):
     formalization_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
         "xhigh"
     )
-    max_parallel_agents: int = Field(default=16, gt=0)
-    max_parallel_web_agents: int = Field(default=4, gt=0)
+    max_parallel_agents: int = Field(default=32, gt=0)
+    max_parallel_web_agents: int = Field(default=32, gt=0)
     persist_sessions: bool = True
     skip_git_repo_check: bool = False
     extra_args: list[str] = Field(default_factory=list)
@@ -195,9 +195,8 @@ class CodexSettings(_StrictSettings):
 
 class ResearchSettings(_StrictSettings):
     minimum_initial_agents: int = Field(default=16, ge=4)
-    maximum_concurrent_agents: int = Field(default=16, gt=0)
-    maximum_research_subagents: int = Field(default=32, ge=4)
-    maximum_assignments_per_round: int = Field(default=24, gt=0)
+    maximum_concurrent_agents: int = Field(default=32, gt=0)
+    maximum_assignments_per_round: int = Field(default=32, gt=0)
     maximum_rounds: int = Field(default=8, gt=0)
     require_foundational_audit: bool = True
     require_domain_audit: bool = True
@@ -206,11 +205,6 @@ class ResearchSettings(_StrictSettings):
 
     @model_validator(mode="after")
     def round_assignment_cap_funds_initial_portfolio(self) -> ResearchSettings:
-        if self.maximum_research_subagents < self.minimum_initial_agents:
-            raise ValueError(
-                "research.maximum_research_subagents cannot be less than "
-                "research.minimum_initial_agents"
-            )
         if self.maximum_assignments_per_round < self.minimum_initial_agents:
             raise ValueError(
                 "research.maximum_assignments_per_round cannot be less than "
@@ -347,7 +341,7 @@ class PricingSettings(_StrictSettings):
 class ApiSettings(_StrictSettings):
     """Existing Responses API configuration, namespaced without changing semantics."""
 
-    max_parallel_agents: int = Field(default=16, gt=0)
+    max_parallel_agents: int = Field(default=32, gt=0)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
     limits: Limits = Field(default_factory=Limits)
     pricing: PricingSettings = Field(default_factory=PricingSettings)
@@ -465,8 +459,6 @@ _CONVENIENCE_PATHS: dict[str, tuple[str, ...]] = {
     "MAXIMUM_ROUNDS": ("research", "maximum_rounds"),
     "MAX_AGENTS": ("research", "maximum_concurrent_agents"),
     "MAXIMUM_CONCURRENT_AGENTS": ("research", "maximum_concurrent_agents"),
-    "MAX_RESEARCH_SUBAGENTS": ("research", "maximum_research_subagents"),
-    "MAXIMUM_RESEARCH_SUBAGENTS": ("research", "maximum_research_subagents"),
     "LEAN_ENABLED": ("lean", "enabled"),
     "SANDBOX": ("lean", "execution_backend"),
 }
@@ -476,7 +468,6 @@ _CLI_PATHS: dict[str, tuple[str, ...]] = {
     "budget_usd": ("api", "limits", "maximum_cost_usd"),
     "max_rounds": ("research", "maximum_rounds"),
     "max_agents": ("research", "maximum_concurrent_agents"),
-    "max_research_subagents": ("research", "maximum_research_subagents"),
     "sandbox": ("lean", "execution_backend"),
     "no_lean": ("lean", "enabled"),
 }

@@ -264,7 +264,6 @@ def _config_overrides(
     budget_usd: float | None = None,
     max_rounds: int | None = None,
     max_agents: int | None = None,
-    max_research_subagents: int | None = None,
     time_limit_minutes: int | None = None,
     no_lean: bool | None = None,
     no_web_search: bool | None = None,
@@ -276,7 +275,6 @@ def _config_overrides(
         "budget_usd": budget_usd,
         "max_rounds": max_rounds,
         "max_agents": max_agents,
-        "max_research_subagents": max_research_subagents,
         "time_limit_minutes": time_limit_minutes,
         "no_lean": True if no_lean else None,
         "no_web_search": True if no_web_search else None,
@@ -437,12 +435,6 @@ def run(
     budget_usd: float | None = typer.Option(None, "--budget-usd", min=0.0),
     max_rounds: int | None = typer.Option(None, "--max-rounds", min=1),
     max_agents: int | None = typer.Option(None, "--max-agents", min=1),
-    max_research_subagents: int | None = typer.Option(
-        None,
-        "--max-research-subagents",
-        min=4,
-        help="Limit the total logical research workers assigned across all rounds.",
-    ),
     time_limit_minutes: int | None = typer.Option(
         None,
         "--time-limit-minutes",
@@ -471,7 +463,6 @@ def run(
             budget_usd=budget_usd,
             max_rounds=max_rounds,
             max_agents=max_agents,
-            max_research_subagents=max_research_subagents,
             time_limit_minutes=time_limit_minutes,
             no_lean=no_lean,
             no_web_search=no_web_search,
@@ -522,13 +513,16 @@ def run(
                     "enabled per stage" if config.web_search_enabled else "disabled globally"
                 ),
                 "initial research agents": config.research.minimum_initial_agents,
-                "total research-subagent limit": (config.research.maximum_research_subagents),
                 "maximum assignments per round": (config.research.maximum_assignments_per_round),
                 "research rounds": config.research.maximum_rounds,
                 "concurrent agents": config.research.maximum_concurrent_agents,
                 "total active time limit": _time_limit_display(config),
                 "usage limit": (
-                    f"{config.codex.limits.max_agent_calls} Codex agent calls"
+                    (
+                        f"{config.codex.limits.max_agent_calls} Codex agent calls"
+                        if config.codex.limits.max_agent_calls is not None
+                        else "no configured Codex call-count limit"
+                    )
                     if config.backend.provider == "codex"
                     else f"${config.limits.maximum_cost_usd:g} API spend"
                 ),
@@ -567,7 +561,6 @@ def run(
                         "budget_usd": budget_usd,
                         "max_rounds": max_rounds,
                         "max_agents": max_agents,
-                        "max_research_subagents": max_research_subagents,
                         "time_limit_minutes": time_limit_minutes,
                         "no_web_search": no_web_search,
                         "sandbox": sandbox.value if sandbox else None,
@@ -716,12 +709,6 @@ def resume(
     budget_usd: float | None = typer.Option(None, "--budget-usd", min=0.0),
     max_rounds: int | None = typer.Option(None, "--max-rounds", min=1),
     max_agents: int | None = typer.Option(None, "--max-agents", min=1),
-    max_research_subagents: int | None = typer.Option(
-        None,
-        "--max-research-subagents",
-        min=4,
-        help="Set the total logical research-worker limit across all rounds.",
-    ),
     time_limit_minutes: int | None = typer.Option(
         None,
         "--time-limit-minutes",
@@ -757,7 +744,6 @@ def resume(
             budget_usd=budget_usd,
             max_rounds=max_rounds,
             max_agents=max_agents,
-            max_research_subagents=max_research_subagents,
             time_limit_minutes=time_limit_minutes,
             no_web_search=no_web_search,
             verbose=verbose,

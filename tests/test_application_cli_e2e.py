@@ -1696,7 +1696,7 @@ def test_cli_time_limit_is_resolved_without_starting_a_run(
     assert not (tmp_path / ".ascend").exists()
 
 
-def test_cli_total_research_subagent_limit_is_resolved_in_dry_run(
+def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1706,12 +1706,16 @@ def test_cli_total_research_subagent_limit_is_resolved_in_dry_run(
 
     result = CliRunner().invoke(
         app,
-        ["run", str(problem), "--max-research-subagents", "32", "--dry-run"],
+        ["run", str(problem), "--dry-run"],
     )
 
     assert result.exit_code == 0, result.output
-    assert "total research-subagent limit" in result.output
-    assert "32" in result.output
+    assert "initial research agents" in result.output
+    assert "16" in result.output
+    assert "maximum assignments per round" in result.output
+    assert "concurrent agents" in result.output
+    assert result.output.count("32") >= 2
+    assert "total research-subagent limit" not in result.output
     assert not (tmp_path / ".ascend").exists()
 
 

@@ -83,7 +83,6 @@ Without a backend flag, a new installation uses Codex. Important options:
 --budget-usd FLOAT
 --max-rounds INTEGER
 --max-agents INTEGER
---max-research-subagents INTEGER
 --time-limit-minutes INTEGER
 --no-web-search
 --no-lean
@@ -110,9 +109,10 @@ and carried into resume; time while ASCEND is not running is excluded. The remai
 also bounds each in-flight model call. There is no wall-clock limit by default.
 `ASCEND_TIME_LIMIT_MINUTES=N` is the environment form.
 
-`--max-research-subagents N` caps logical research-worker assignments across all adaptive rounds.
-The built-in default is 32. It is distinct from `--max-agents`, which caps simultaneous workers.
-The environment form is `ASCEND_MAX_RESEARCH_SUBAGENTS=N`.
+`--max-agents N` caps simultaneous research workers. The built-in concurrency default is 32,
+matching the default ceiling of 32 assignments in any one round. There is no CLI or configuration
+limit on the cumulative number of logical research workers assigned across all rounds. Codex
+global call-count limits remain configurable in TOML but are unset by default.
 
 Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and

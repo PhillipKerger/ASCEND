@@ -45,16 +45,18 @@ condition. The longer framework then expands each item into ASCEND's auditable p
 Research is a nested orchestration boundary. The deterministic outer workflow hands the complete
 compiled research prompt and exact claim contract to a dedicated model-driven research
 orchestrator. That orchestrator proposes structured assignments; ASCEND launches and accounts for
-the worker calls. The total number of logical workers across all rounds is bounded by
-`research.maximum_research_subagents`, separately from per-round and concurrency ceilings.
+the worker calls. No cumulative worker-count ceiling applies across rounds. Per-round assignment,
+concurrency, round, cost, token, and optional wall-clock limits remain independent. Codex
+call-count limits are available explicitly but are unset by default.
 
 ### Initial round
 
 The research orchestrator creates sixteen initial assignments by default, spanning at least four
 materially distinct approach families. Suggested roles are not fixed quotas; examples include
 direct proof, alternative structural formulation, hostile counterexample search,
-literature/known-theorem mapping, computation, and formalization-aware lemma decomposition. The
-default logical-worker ceiling across the complete adaptive search is 32.
+literature/known-theorem mapping, computation, and formalization-aware lemma decomposition. Every
+round may contain up to 32 assignments by default, and the default backend and research
+concurrency ceilings permit all 32 workers in one round to execute concurrently.
 
 If the compiler found that existing literature resolves the target, the portfolio emphasizes
 independent source verification, hypothesis matching, proof reconstruction, and formalization.

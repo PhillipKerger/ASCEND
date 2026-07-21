@@ -4,14 +4,15 @@
 
 - Made the dedicated research-orchestrator boundary explicit. Every coordinator round now
   receives the full compiled prompt, claim contract, registry, visible reports, and a durable
-  continuity handoff classifying promising, partial, refuted, and blocked routes. Added the
-  configurable total `maximum_research_subagents` cap and distinct recorded model roles.
+  continuity handoff classifying promising, partial, refuted, and blocked routes. Added distinct
+  recorded model roles and removed the cumulative logical-worker ceiling across rounds.
 - Fixed the bounded worker-window launcher so assignments after the first concurrent window are
   not lost when that window finishes without a proof candidate.
-- Expanded the default research portfolio and capacity: sixteen initial assignments, a
-  32-assignment logical-worker ceiling across the run, up to 24 assignments admitted per adaptive
-  round, 16-agent research/backend concurrency ceilings, and four concurrent web-enabled Codex
-  agents. The existing four-family diversity floor remains.
+- Expanded the default research portfolio and capacity: sixteen initial assignments, up to 32
+  assignments in every adaptive round, and 32-agent research, backend, and web-enabled Codex
+  concurrency ceilings. The existing four-family diversity floor remains, and there is no
+  cumulative research-worker count cap. Global Codex call/thread ceilings are now optional and
+  unset by default so they do not silently undercut the 32-worker research configuration.
 - Research now audits the first worker claiming a complete proof immediately. Worker launch uses
   a bounded active window, so routes that have not started consume no tokens when that proof
   passes; failed early audits resume the remaining portfolio with their obligations preserved.

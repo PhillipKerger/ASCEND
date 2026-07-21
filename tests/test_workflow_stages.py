@@ -834,17 +834,17 @@ def passing_audit() -> AuditVerdict:
     )
 
 
-def test_research_workflow_defaults_use_sixteen_initial_and_thirty_two_total() -> None:
+def test_research_workflow_defaults_use_sixteen_initial_and_thirty_two_per_round() -> None:
     settings = ResearchWorkflowSettings()
 
     assert settings.minimum_initial_assignments == 16
-    assert settings.maximum_concurrent_agents == 16
-    assert settings.maximum_research_subagents == 32
-    assert settings.maximum_assignments_per_round == 24
+    assert settings.maximum_concurrent_agents == 32
+    assert settings.maximum_assignments_per_round == 32
+    assert "maximum_research_subagents" not in type(settings).model_fields
 
 
 @pytest.mark.asyncio
-async def test_research_orchestrator_receives_full_cross_round_continuity(
+async def test_research_orchestrator_has_continuity_without_a_cumulative_worker_cap(
     tmp_path: Path,
 ) -> None:
     client = ContinuityResearchClient()
@@ -856,20 +856,21 @@ async def test_research_orchestrator_receives_full_cross_round_continuity(
         workflow_settings=ResearchWorkflowSettings(
             minimum_initial_assignments=4,
             maximum_concurrent_agents=2,
-            maximum_research_subagents=5,
             maximum_assignments_per_round=4,
             maximum_rounds=2,
         ),
     )
 
     assert result.outcome is ResearchOutcome.ACCEPTED
+    assert result.research_subagents_assigned == 5
     assert result.research_subagents_used == 5
+    assert result.research_subagents_assigned > 4  # the per-round ceiling, not a run-wide cap
     assert len(client.coordinator_payloads) == 2
     later = client.coordinator_payloads[1]
     assert later["compiled_prompt"] == compiled.compiled_prompt
     assert later["claim_contract"] == compiled.claim_contract.as_dict()
-    assert later["remaining_research_subagents"] == 1
-    assert later["maximum_assignments"] == 1
+    assert "remaining_research_subagents" not in later
+    assert later["maximum_assignments"] == 4
     continuity = later["research_continuity"]
     assert {route["assignment_id"] for route in continuity["promising_routes"]} == {
         "route-1",
@@ -883,36 +884,6 @@ async def test_research_orchestrator_receives_full_cross_round_continuity(
     assert "Prove the reduced boundary case." in continuity["open_gaps"]
     assert (tmp_path / "continuity.json").is_file()
     assert (tmp_path / "rounds" / "1" / "continuity.json").is_file()
-
-
-@pytest.mark.asyncio
-async def test_total_research_subagent_limit_stops_before_another_round(
-    tmp_path: Path,
-) -> None:
-    client = ContinuityResearchClient()
-    result = await run_adaptive_research(
-        client=client,
-        compiled_problem=compiled_problem(),
-        research_dir=tmp_path,
-        workflow_settings=ResearchWorkflowSettings(
-            minimum_initial_assignments=4,
-            maximum_concurrent_agents=2,
-            maximum_research_subagents=4,
-            maximum_assignments_per_round=4,
-            maximum_rounds=3,
-        ),
-    )
-
-    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
-    assert result.research_subagents_used == 4
-    assert len(client.coordinator_payloads) == 1
-    assert result.continuity is not None
-    assert set(result.continuity.completed_assignment_ids) == {
-        "route-1",
-        "route-2",
-        "route-3",
-        "route-4",
-    }
 
 
 @pytest.mark.asyncio

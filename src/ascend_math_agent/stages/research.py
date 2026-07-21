@@ -333,19 +333,14 @@ class ResearchAcceptanceGate(BaseModel):
 
 class ResearchWorkflowSettings(BaseModel):
     minimum_initial_assignments: int = Field(default=16, ge=4)
-    maximum_concurrent_agents: int = Field(default=16, ge=1)
+    maximum_concurrent_agents: int = Field(default=32, ge=1)
     maximum_rounds: int = Field(default=8, ge=1)
-    maximum_research_subagents: int = Field(default=32, ge=4)
-    maximum_assignments_per_round: int = Field(default=24, ge=1)
+    maximum_assignments_per_round: int = Field(default=32, ge=1)
     maximum_model_calls: int | None = Field(default=None, ge=1)
     run_complexity_audit: bool | None = None
 
     @model_validator(mode="after")
-    def subagent_limits_cover_initial_portfolio(self) -> ResearchWorkflowSettings:
-        if self.maximum_research_subagents < self.minimum_initial_assignments:
-            raise ValueError(
-                "maximum_research_subagents cannot be less than minimum_initial_assignments"
-            )
+    def round_assignment_limit_covers_initial_portfolio(self) -> ResearchWorkflowSettings:
         if self.maximum_assignments_per_round < self.minimum_initial_assignments:
             raise ValueError(
                 "maximum_assignments_per_round cannot be less than minimum_initial_assignments"
@@ -689,17 +684,7 @@ async def run_adaptive_research(
 
         progress(Ascension.PLAN_RESEARCH, f"Planning research round {round_number}.")
 
-        remaining_subagents = settings.maximum_research_subagents - research_subagents_assigned
-        if remaining_subagents <= 0:
-            return await finish(
-                ResearchOutcome.BUDGET_EXHAUSTED,
-                obligations=repair_obligations
-                or ["Configured research-subagent limit was exhausted without acceptance."],
-            )
-        maximum_round_assignments = min(
-            settings.maximum_assignments_per_round,
-            remaining_subagents,
-        )
+        maximum_round_assignments = settings.maximum_assignments_per_round
 
         if round_number == 1:
             coordinator_input = json.dumps(
@@ -709,7 +694,6 @@ async def run_adaptive_research(
                     "round_id": round_number,
                     "minimum_materially_diverse_assignments": settings.minimum_initial_assignments,
                     "maximum_assignments": maximum_round_assignments,
-                    "remaining_research_subagents": remaining_subagents,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -732,7 +716,6 @@ async def run_adaptive_research(
                     ],
                     "repair_obligations": repair_obligations,
                     "maximum_assignments": maximum_round_assignments,
-                    "remaining_research_subagents": remaining_subagents,
                 },
                 ensure_ascii=False,
                 sort_keys=True,

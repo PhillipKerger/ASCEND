@@ -72,15 +72,17 @@ formalization, and generates a reproducible final report.
 - Store every worker assignment and result.
 - Maintain an approach registry containing mechanism, result, assumptions, bottleneck,
   counterexamples, dependencies, and status.
-- Support multiple rounds within cost, token, wall-clock, and agent limits.
-- Expose a total research-subagent limit across all rounds, distinct from per-round assignment
-  and concurrency ceilings.
+- Support multiple rounds within cost, token, wall-clock, per-round assignment, and concurrency
+  limits.
+- Do not impose a cumulative research-worker count ceiling across rounds. Permit up to 32
+  assignments and 32 concurrent research workers in one round by default. Do not impose a
+  global Codex call-count limit by default; retain explicit configurable call-count limits.
 - Persist an explicit cross-round continuity handoff separating promising routes, partial
   results, ruled-out directions and counterexamples, blocked routes and exact gaps, dependencies,
   prior directives, and audit repair obligations. Supply it and the visible underlying reports
   to every later research-orchestrator call.
 - Launch targeted counterexample and lemma-audit tasks when promising claims arise.
-- Produce a candidate proof package when the coordinator recommends it or a worker explicitly
+- Produce a candidate proof package when the research orchestrator recommends it or a worker explicitly
   reports a full proof of the exact success criterion.
 - When a worker reports a complete proof, pause unfinished work and run the full independent
   acceptance gate immediately. Advance only if it passes; otherwise resume remaining routes

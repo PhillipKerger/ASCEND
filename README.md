@@ -14,8 +14,8 @@ validates a LaTeX manuscript, and attempts Lean verification of the accepted mai
 | --- | --- |
 | Model access | Official Codex CLI with ChatGPT sign-in; no OpenAI API key required |
 | Run outputs | `.ascend/runs/<run-id>/` inside your project |
-| Research breadth | A dedicated research orchestrator assigns 16 initial workers and up to 32 total by default; later work uses a durable cross-round handoff |
-| Parallelism | Configurable; the default Codex run admits at most 4 web-enabled research agents at once |
+| Research breadth | A dedicated research orchestrator assigns 16 initial workers and may assign up to 32 in every later round; there is no cumulative worker-count cap |
+| Parallelism | Configurable; the default Codex run admits up to 32 web-enabled research agents at once |
 | Write boundary | `.ascend/` only, unless `--allow-project-edits` is explicitly supplied |
 | Verification | Independent source checks, LaTeX compilation, and deterministic Lean checks |
 
@@ -109,7 +109,9 @@ The most important research settings are configurable in `ascend.toml`. ASCEND d
 fixed agent count: by default it starts with sixteen assignments spanning at least four materially
 different approach families, then may launch targeted agents in later rounds in response to
 promising lemmas, counterexamples, and audit findings. The number of agents that run
-*simultaneously* is a separate setting from the total number attempted over the run.
+*simultaneously* is separate from the number assigned in one round. ASCEND imposes no dedicated
+cumulative research-worker count limit across rounds; general round, model-call, cost, token, and
+optional time budgets still apply.
 
 For the default Codex backend, this is a useful starting configuration:
 
@@ -118,29 +120,30 @@ For the default Codex backend, this is a useful starting configuration:
 model = ""                    # empty: use the current Codex default model
 research_effort = "xhigh"     # prompt compiler, research orchestrator, and research workers
 audit_effort = "xhigh"        # independent proof auditors and final judge
-max_parallel_agents = 16      # backend-wide concurrent model-call ceiling
-max_parallel_web_agents = 4   # concurrent calls that have web search enabled
+max_parallel_agents = 32      # backend-wide concurrent model-call ceiling
+max_parallel_web_agents = 32  # concurrent calls that have web search enabled
 
 [codex.limits]
-max_agent_calls = 100         # model-call ceiling across the complete workflow
 max_research_rounds = 8       # second ceiling on adaptive research rounds
+# max_agent_calls = 512       # optional; no call-count ceiling is imposed by default
+# max_codex_threads = 512     # optional second global call-count ceiling
 
 [research]
 minimum_initial_agents = 16   # initial assignments; configurable down to the safety floor of 4
-maximum_concurrent_agents = 16 # research-worker concurrency ceiling
-maximum_research_subagents = 32 # total logical workers across every adaptive round
-maximum_assignments_per_round = 24 # research-orchestrator ceiling for each round plan
+maximum_concurrent_agents = 32 # research-worker concurrency ceiling
+maximum_assignments_per_round = 32 # research-orchestrator ceiling for each round plan
 maximum_rounds = 8            # adaptive research-round ceiling
 ```
 
 Reasoning effort accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`, subject
 to what the selected Codex model and account support. `xhigh` is the default for Codex research
 and audits. The direct API backend instead configures research and audit level/model under
-`[api.models.research]` and `[api.models.audit]`, and uses `api.max_parallel_agents`; its total
-usage is bounded by `api.limits.maximum_cost_usd` rather than `codex.limits.max_agent_calls`.
+`[api.models.research]` and `[api.models.audit]`, and uses `api.max_parallel_agents`; its usage is
+bounded by `api.limits.maximum_cost_usd`. Codex has no call-count ceiling by default, but users
+may set `codex.limits.max_agent_calls` or `codex.limits.max_codex_threads` explicitly.
 
 The effective research concurrency is the lowest applicable ceiling. With the defaults and web
-search enabled, that is `min(16, 16, 4) = 4` simultaneous research workers. Raising only
+search enabled, that is `min(32, 32, 32) = 32` simultaneous research workers. Raising only
 `research.maximum_concurrent_agents` therefore has no effect until the corresponding Codex
 backend ceilings are also high enough. With `--no-web-search`, the web-agent ceiling no longer
 constrains calls at the backend; the current orchestration nevertheless includes that configured
@@ -151,23 +154,22 @@ These controls have different expected effects:
 | Setting | Expected effect | Main tradeoff |
 | --- | --- | --- |
 | `minimum_initial_agents` | More independent starting approaches and better route diversity | More model calls and allowance usage in the first round; the default is 16 and the safety floor is 4 |
-| `maximum_research_subagents` | Caps the total logical research workers assigned across the entire adaptive search | A low value can stop before a promising route is repaired; default 32 |
-| `maximum_assignments_per_round` | Allows the research orchestrator to propose more targeted workers in any one round | Raises a ceiling rather than forcing every round to use that many agents; default 24 |
+| `maximum_assignments_per_round` | Allows the research orchestrator to propose more targeted workers in any one round | Raises a ceiling rather than forcing every round to use that many agents; default 32 |
 | `maximum_rounds` | More opportunities to repair gaps and pursue audit-directed follow-ups | Potentially much more elapsed time and total usage |
-| `maximum_concurrent_agents` | Finishes a given worker batch sooner when backend limits permit | Does not increase research breadth by itself; high concurrency can encounter provider rate limits |
+| `maximum_concurrent_agents` | Allows up to 32 research workers to run simultaneously by default when backend limits permit | Does not increase research breadth by itself; high concurrency can encounter provider rate limits |
 | `research_effort` | Gives compilation, coordination, and proof-search calls a larger reasoning effort | Usually slower and more allowance-intensive; stronger results are not guaranteed |
 | `audit_effort` | Gives fresh proof audits and the final judge a larger reasoning effort | More verification time and usage, but reducing it can make subtle gaps easier to miss |
 | `model` | Selects the Codex model used for model-driven stages | Capability, speed, availability, and allowance consumption depend on the selected model/account |
-| `max_agent_calls` | Hard cap on model calls across research and the rest of the workflow | A low value can stop a promising run before later audits, manuscript work, or Lean work |
+| `max_agent_calls` | Optional hard cap on model calls across research and the rest of the workflow; unset by default | A low value can stop a promising run before later audits, manuscript work, or Lean work |
 
 For a one-off run, the CLI exposes the two most common scheduling controls:
 
 ```bash
-# At most 4 research workers active at once, for at most 6 adaptive rounds
-ascend run problem.md --max-agents 4 --max-research-subagents 32 --max-rounds 6
+# At most 32 research workers active at once, for at most 6 adaptive rounds
+ascend run problem.md --max-agents 32 --max-rounds 6
 
 # Inspect the resolved ceilings, model, and effort without starting any agents
-ascend run problem.md --max-agents 4 --max-research-subagents 32 --max-rounds 6 --dry-run
+ascend run problem.md --max-agents 32 --max-rounds 6 --dry-run
 ```
 
 Despite its short name, `--max-agents` sets the maximum *concurrent* research workers; it does
@@ -187,9 +189,9 @@ The prompt flow is:
 
 1. The prompt compiler turns `problem.md` and the preserved framework into the complete compiled
    research prompt (the “big prompt”) and an exact machine-readable claim contract.
-2. The dedicated research orchestrator receives that complete prompt and claim contract. It also
-   receives the remaining total subagent budget and per-round assignment ceiling, then returns a
-   structured plan of precise, materially different assignments.
+2. The dedicated research orchestrator receives that complete prompt, claim contract, and the
+   per-round assignment ceiling, then returns a structured plan of precise, materially different
+   assignments.
 3. Every concurrent research subagent receives the complete big prompt, the exact claim contract,
    and one assignment containing its route, inputs, expected output, and stopping condition. The
    assignment narrows the route but cannot change the target. Workers do not see or coordinate
@@ -205,9 +207,10 @@ The prompt flow is:
    backend uses a fresh model context. A ruled-out route should not be restarted without new
    information that changes its status.
 
-`--max-research-subagents N` sets the total logical worker limit across all rounds;
-`--max-agents N` only controls how many may run concurrently. The defaults are 32 total logical
-research subagents and, with web search enabled, 4 running concurrently. Research-orchestrator, worker,
+`--max-agents N` controls how many research workers may run concurrently. The initial portfolio
+contains 16 assignments by default; every round may contain up to 32 assignments, and all 32 may
+run concurrently with the default Codex settings, including when web search is enabled. There is
+no cumulative research-worker count cap across rounds. Research-orchestrator, worker,
 candidate-packager, auditor, and final-judge calls use role-isolated execution contexts; Codex
 traces record those roles explicitly. Each worker starts in a fresh context.
 
@@ -216,10 +219,10 @@ cancels the unfinished active window, packages the triggering proof, and runs ev
 independent audit plus the final judge immediately. If the gate passes, queued work is never
 launched and the workflow advances without waiting for the rest of the research portfolio. If
 the gate fails, its exact repair obligations are preserved and interrupted or queued assignments
-resume. The result records `research_subagents_assigned` (all validated plan assignments charged
-against the total limit) separately from `research_subagents_used` (worker contexts actually
-launched). A worker's self-declared success therefore changes scheduling but never verifies its
-own proof.
+resume. The result records `research_subagents_assigned` (all validated plan assignments)
+separately from `research_subagents_used` (worker contexts actually launched); these are
+telemetry, not cumulative limits. A worker's self-declared success therefore changes scheduling
+but never verifies its own proof.
 
 ## Writing `problem.md`
 
@@ -382,8 +385,7 @@ run and returns an actionable error; it cannot unexpectedly create Platform API 
 | `ascend report [RUN_ID] [--rewrite]` | Regenerate the deterministic report, optionally rewriting prose |
 | `ascend verify [RUN_ID]` | Re-run integrity, bibliography, LaTeX, and Lean checks without a model |
 
-Important `run` options include `--backend codex|api`, `--max-agents`,
-`--max-research-subagents`, `--max-rounds`,
+Important `run` options include `--backend codex|api`, `--max-agents`, `--max-rounds`,
 `--time-limit-minutes`, `--no-web-search`, `--no-lean`, `--research-only`, `--dry-run`,
 `--sandbox native|docker`, and `--allow-project-edits`.
 
@@ -433,8 +435,8 @@ research_effort = "xhigh"
 audit_effort = "xhigh"
 manuscript_effort = "high"
 formalization_effort = "xhigh"
-max_parallel_agents = 16
-max_parallel_web_agents = 4
+max_parallel_agents = 32
+max_parallel_web_agents = 32
 persist_sessions = true
 ```
 

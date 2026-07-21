@@ -105,11 +105,11 @@ def test_flat_environment_names_are_supported(tmp_path: Path) -> None:
         project_root=tmp_path,
         env={
             "ASCEND_MODELS_PROMPT_COMPILER_MAX_OUTPUT_TOKENS": "123",
-            "ASCEND_MAX_RESEARCH_SUBAGENTS": "32",
+            "ASCEND_MAX_AGENTS": "27",
         },
     )
     assert config.models.prompt_compiler.max_output_tokens == 123
-    assert config.research.maximum_research_subagents == 32
+    assert config.research.maximum_concurrent_agents == 27
 
 
 def test_legacy_api_environment_names_remain_supported(tmp_path: Path) -> None:
@@ -352,13 +352,14 @@ def test_checked_in_example_config_loads() -> None:
 
     assert config.config_version == 2
     assert config.backend.provider == "codex"
-    assert config.codex.max_parallel_agents == 16
-    assert config.codex.max_parallel_web_agents == 4
-    assert config.api.max_parallel_agents == 16
+    assert config.codex.max_parallel_agents == 32
+    assert config.codex.max_parallel_web_agents == 32
+    assert config.codex.limits.max_agent_calls is None
+    assert config.codex.limits.max_codex_threads is None
+    assert config.api.max_parallel_agents == 32
     assert config.research.minimum_initial_agents == 16
-    assert config.research.maximum_concurrent_agents == 16
-    assert config.research.maximum_research_subagents == 32
-    assert config.research.maximum_assignments_per_round == 24
+    assert config.research.maximum_concurrent_agents == 32
+    assert config.research.maximum_assignments_per_round == 32
     assert config.models.research.model == "gpt-5.6-sol"
     assert config.lean.docker_image == "ascend-math-agent:latest"
     assert set(config.pricing.models) == {
@@ -376,20 +377,6 @@ def test_research_assignment_cap_cannot_undercut_initial_portfolio(tmp_path: Pat
     )
 
     with pytest.raises(ConfigError, match="maximum_assignments_per_round"):
-        load_config(path, env={})
-
-
-def test_total_research_subagent_cap_cannot_undercut_initial_portfolio(
-    tmp_path: Path,
-) -> None:
-    path = tmp_path / "ascend.toml"
-    path.write_text(
-        "[research]\nminimum_initial_agents = 12\nmaximum_research_subagents = 8\n"
-        "maximum_assignments_per_round = 12\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(ConfigError, match="maximum_research_subagents"):
         load_config(path, env={})
 
 
