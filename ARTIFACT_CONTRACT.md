@@ -54,12 +54,21 @@ Every run must follow this layout:
 ├── research-history/  # present after a forced research generation or provider migration
 │   └── checkpoint-<generation>[-<suffix>]/...
 ├── manuscript/
+│   ├── drafts/<revision>/
+│   │   ├── paper.tex
+│   │   ├── references.bib
+│   │   ├── validation.json
+│   │   ├── bibliography_audit.json
+│   │   ├── source_verification.json
+│   │   └── build.log
 │   ├── paper.tex
 │   ├── references.bib
 │   ├── claims.json
 │   ├── proof_dependency_graph.json
 │   ├── bibliography_audit.json
 │   ├── bibliography_audit.md
+│   ├── validation.json
+│   ├── result.json
 │   ├── paper.pdf
 │   └── build.log
 ├── lean/

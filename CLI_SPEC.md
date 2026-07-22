@@ -159,10 +159,12 @@ persisted initial count and effective concurrency. They do not repeat at artific
 boundaries; candidate-audit milestones may recur for distinct candidate attempts. Skipped or
 already checkpointed stages do not print misleading progress lines.
 
-After a manuscript compiles and its bibliography is verified, an interactive full run asks:
+After research is accepted and a safe manuscript draft is durable, an interactive full run asks.
+Publication warnings or a failed bibliography gate do not misrepresent the scientific result and
+do not independently block statement-aligned formalization:
 
 ```text
-The verified manuscript is ready. Proceed with formal Lean verification? [Y/n]
+The accepted result is ready. Proceed with formal Lean verification? [Y/n]
 ```
 
 `n` skips Lean and prepares the final report. An empty/affirmative answer proceeds. If the user

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import unicodedata
 from collections.abc import Collection, Mapping
 from enum import StrEnum
 from pathlib import Path
@@ -62,13 +64,53 @@ class BibliographyEntryStatus(StrEnum):
 
 class ManuscriptOutcome(StrEnum):
     COMPILED = "compiled"
+    DRAFT_WITH_WARNINGS = "draft_with_warnings"
+    PUBLICATION_BLOCKED = "publication_blocked"
     CONTENT_REJECTED = "content_rejected"
     BIBLIOGRAPHY_REJECTED = "bibliography_rejected"
     LATEX_FAILED = "latex_failed"
 
 
+class ManuscriptStatus(StrEnum):
+    PUBLICATION_READY = "PUBLICATION_READY"
+    DRAFT_WITH_WARNINGS = "DRAFT_WITH_WARNINGS"
+    PUBLICATION_BLOCKED = "PUBLICATION_BLOCKED"
+
+
+class PublicationStatus(StrEnum):
+    READY = "READY"
+    BLOCKED_METADATA = "BLOCKED_METADATA"
+    BLOCKED_CONTENT = "BLOCKED_CONTENT"
+    BLOCKED_BIBLIOGRAPHY = "BLOCKED_BIBLIOGRAPHY"
+    BLOCKED_LATEX = "BLOCKED_LATEX"
+    BLOCKED_INTEGRITY = "BLOCKED_INTEGRITY"
+
+
+class ManuscriptFindingSeverity(StrEnum):
+    HARD_FAILURE = "hard_failure"
+    REPAIRABLE = "repairable"
+    PUBLICATION_WARNING = "publication_warning"
+
+
+class ManuscriptFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: ManuscriptFindingSeverity
+    message: str
+    repair: str | None = None
+
+    @field_validator("code", "message")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("manuscript finding code and message must not be blank")
+        return normalized
+
+
 class IntroductionCoverage(BaseModel):
-    """Exact manuscript excerpts supporting the introduction content gate."""
+    """Structured claims and source keys supporting the introduction content gate."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -270,6 +312,8 @@ class RelatedWorkValidation(BaseModel):
     ai_usage_disclosure_verified: bool = False
     matek_repository_citation_key: str | None = None
     matek_whitepaper_citation_key: str | None = None
+    matek_technical_report_citation_key: str | None = None
+    matek_whitepaper_citation_pending: bool = False
     introduction_word_count: int = 0
     related_work_word_count: int = 0
     introduction_coverage_verified: bool = False
@@ -278,6 +322,7 @@ class RelatedWorkValidation(BaseModel):
     bibliography_keys: list[str]
     missing_bibliography_keys: list[str]
     issues: list[str]
+    findings: list[ManuscriptFinding] = Field(default_factory=list)
 
 
 class LatexBuildResult(BaseModel):
@@ -297,17 +342,44 @@ class ManuscriptResult(BaseModel):
     latex_build: LatexBuildResult | None
     correction_cycles: int
     research_gate: ResearchAcceptanceGate
+    manuscript_status: ManuscriptStatus = ManuscriptStatus.PUBLICATION_BLOCKED
+    publication_status: PublicationStatus = PublicationStatus.BLOCKED_CONTENT
+    findings: list[ManuscriptFinding] = Field(default_factory=list)
+    selected_draft_cycle: int = 0
+    revision_rounds_exhausted: bool = False
     artifacts: ArtifactManifest = Field(default_factory=ArtifactManifest)
     calls: CallManifest
 
     @property
-    def passed_lean_gate(self) -> bool:
-        return (
-            self.outcome == ManuscriptOutcome.COMPILED
-            and self.bibliography_verified
-            and self.latex_build is not None
-            and self.latex_build.passed
+    def has_terminating_failure(self) -> bool:
+        return any(
+            finding.severity is ManuscriptFindingSeverity.HARD_FAILURE for finding in self.findings
         )
+
+    @property
+    def permits_formalization(self) -> bool:
+        if not self.research_gate.accepted:
+            return False
+        if not self.findings:
+            return self.outcome is ManuscriptOutcome.COMPILED
+        return not self.has_terminating_failure
+
+    @property
+    def passed_lean_gate(self) -> bool:
+        """Compatibility alias for the formalization-entry decision."""
+
+        return self.permits_formalization
+
+
+class ManuscriptDraftValidation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cycle: int
+    related_work: RelatedWorkValidation
+    bibliography_audit: BibliographyAudit | None
+    bibliography_gate_issues: list[str]
+    latex_build: LatexBuildResult | None
+    findings: list[ManuscriptFinding]
 
 
 _RELATED_SECTION = re.compile(
@@ -339,6 +411,43 @@ _DANGEROUS_TEX_PACKAGES = frozenset(
 _SHELL_ESCAPE_FLAGS = frozenset(
     {"-shell-escape", "--shell-escape", "-enable-write18", "--enable-write18"}
 )
+_DELIBERATE_TEX_FAILURE = re.compile(
+    r"\\(?:PackageError|ClassError|GenericError|errmessage|stop)\b",
+    re.IGNORECASE,
+)
+_TEX_MACRO_DEFINITION = re.compile(
+    r"\\(?:newcommand|renewcommand|providecommand)\s*\{\\([A-Za-z@]+)\}"
+    r"(?:\s*\[[0-9]+\])?\s*\{([^{}]*)\}",
+)
+_SEMANTIC_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "has",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "our",
+        "that",
+        "the",
+        "their",
+        "this",
+        "to",
+        "we",
+        "with",
+    }
+)
 
 
 def _section_body(paper_tex: str, section_match: re.Match[str] | None) -> str:
@@ -355,6 +464,78 @@ def _word_count(value: str) -> int:
 
 def _normalized_excerpt(value: str) -> str:
     return " ".join(value.replace("~", " ").split()).casefold()
+
+
+def _expand_simple_tex_macros(value: str, macro_source: str) -> str:
+    macros = {
+        name: replacement for name, replacement in _TEX_MACRO_DEFINITION.findall(macro_source)
+    }
+    expanded = value
+    for _ in range(4):
+        previous = expanded
+        for name, replacement in macros.items():
+
+            def replace_macro(_: re.Match[str], replacement_text: str = replacement) -> str:
+                return replacement_text
+
+            expanded = re.sub(
+                rf"\\{re.escape(name)}\b",
+                replace_macro,
+                expanded,
+            )
+        if expanded == previous:
+            break
+    return expanded
+
+
+def _canonical_claim_text(value: str, *, macro_source: str = "") -> str:
+    normalized = unicodedata.normalize("NFKC", _expand_simple_tex_macros(value, macro_source))
+    substitutions = {
+        r"\neq": "≠",
+        r"\ne": "≠",
+        r"\leq": "≤",
+        r"\le": "≤",
+        r"\geq": "≥",
+        r"\ge": "≥",
+        r"\in": "∈",
+        r"\forall": "∀",
+        r"\exists": "∃",
+        r"\chi": "χ",
+        r"\prime": "'",
+    }
+    for tex, rendered in substitutions.items():
+        normalized = normalized.replace(tex, rendered)
+    normalized = re.sub(
+        r"\\(?:operatorname|mathrm|mathbf|mathit|mathsf|text|mbox)\s*\{([^{}]*)\}",
+        r"\1",
+        normalized,
+    )
+    normalized = re.sub(r"\\(?:left|right|quad|qquad)\b|\\[,;!]", "", normalized)
+    normalized = normalized.replace("\\(", "").replace("\\)", "")
+    normalized = normalized.replace("\\[", "").replace("\\]", "")
+    normalized = normalized.replace("$", "").replace("{", "").replace("}", "")
+    normalized = normalized.replace("~", " ").casefold()
+    return re.sub(r"[^0-9a-z_χ∀∃∈≤≥≠'=()\[\]+\-*/.,:]", "", normalized)
+
+
+def _semantic_tokens(value: str) -> set[str]:
+    prose = re.sub(r"\\cite[a-zA-Z*]*\s*(?:\[[^]]*\]\s*)*\{[^}]+\}", " ", value)
+    prose = re.sub(r"\\[A-Za-z@]+", " ", prose)
+    tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]{3,}", unicodedata.normalize("NFKC", prose).casefold())
+        if token not in _SEMANTIC_STOP_WORDS
+    }
+    return tokens
+
+
+def _semantic_claim_present(claim: str, body: str) -> bool:
+    claim_tokens = _semantic_tokens(claim)
+    body_tokens = _semantic_tokens(body)
+    if not claim_tokens:
+        return False
+    overlap = len(claim_tokens.intersection(body_tokens)) / len(claim_tokens)
+    return overlap >= 0.45
 
 
 def _strip_tex_comments(value: str) -> str:
@@ -391,6 +572,12 @@ def validate_tex_safety(paper_tex: str, references_bib: str) -> list[str]:
             issues.append(f"{label} contains a prohibited active or local-file URI.")
 
     paper_source = _strip_tex_comments(paper_tex)
+    deliberate_failure = _DELIBERATE_TEX_FAILURE.search(paper_source)
+    if deliberate_failure is not None:
+        issues.append(
+            "paper.tex contains a deliberate LaTeX build-failure command "
+            f"{deliberate_failure.group(0)!r}."
+        )
     for match in re.finditer(
         r"(?i)\\(?:usepackage|RequirePackage)(?:\[[^]]*\])?\s*\{([^}]*)\}", paper_source
     ):
@@ -452,12 +639,19 @@ def validate_related_work(
     expected_claim_contract_sha256: str | None = None,
     expected_exact_theorem: str | None = None,
 ) -> RelatedWorkValidation:
-    """Run deterministic manuscript-content checks before source verification.
+    """Classify deterministic content findings without requiring byte-for-byte prose."""
 
-    The two positional parameters remain compatible with the original structural checker.
-    Manuscript generation supplies the frozen values and thereby enables the stronger claim
-    fidelity gate.
-    """
+    findings: list[ManuscriptFinding] = []
+
+    def add(
+        code: str,
+        severity: ManuscriptFindingSeverity,
+        message: str,
+        repair: str | None = None,
+    ) -> None:
+        findings.append(
+            ManuscriptFinding(code=code, severity=severity, message=message, repair=repair)
+        )
 
     cited = sorted(
         {
@@ -479,25 +673,71 @@ def validate_related_work(
     related_body = _section_body(paper_tex, section_match)
     introduction_words = _word_count(introduction_body)
     related_words = _word_count(related_body)
-    issues = validate_tex_safety(paper_tex, references_bib)
-    issues.extend(issue.message for issue in ai_usage_report.issues)
+    for message in validate_tex_safety(paper_tex, references_bib):
+        code = (
+            "deliberate_latex_failure"
+            if "deliberate LaTeX build-failure" in message
+            else "unsafe_tex_output"
+        )
+        add(
+            code,
+            ManuscriptFindingSeverity.HARD_FAILURE,
+            message,
+            "Remove the unsafe or deliberate failure command before any TeX execution.",
+        )
+    for issue in ai_usage_report.issues:
+        severity = (
+            ManuscriptFindingSeverity.HARD_FAILURE
+            if issue.code == "fabricated_or_placeholder_matek_citation"
+            else ManuscriptFindingSeverity.REPAIRABLE
+        )
+        add(issue.code, severity, issue.message, "Correct the AI-usage statement or citation.")
+    for warning in ai_usage_report.warnings:
+        add(
+            warning.code,
+            ManuscriptFindingSeverity.PUBLICATION_WARNING,
+            warning.message,
+            "Add the canonical whitepaper citation after its metadata becomes available.",
+        )
     if not has_introduction:
-        issues.append("The manuscript has no explicit Introduction section.")
+        add(
+            "missing_introduction_section",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "The manuscript has no explicit Introduction section.",
+        )
     elif introduction_words < _MINIMUM_INTRODUCTION_WORDS:
-        issues.append(
+        add(
+            "short_introduction",
+            ManuscriptFindingSeverity.REPAIRABLE,
             "The Introduction is not substantial enough to establish context, difference, "
             f"and advance (found {introduction_words} words; require at least "
-            f"{_MINIMUM_INTRODUCTION_WORDS})."
+            f"{_MINIMUM_INTRODUCTION_WORDS}).",
         )
     if not has_section:
-        issues.append("The manuscript has no explicit Related Work section.")
+        add(
+            "missing_related_work_section",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "The manuscript has no explicit Related Work section.",
+        )
     if not cited:
-        issues.append("The related-work manuscript contains no source citations.")
+        add(
+            "missing_source_citations",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "The related-work manuscript contains no source citations.",
+        )
     if section_match is not None:
         if related_words < _MINIMUM_RELATED_WORK_WORDS:
-            issues.append("The Related Work section has no substantive characterization.")
+            add(
+                "short_related_work",
+                ManuscriptFindingSeverity.REPAIRABLE,
+                "The Related Work section has no substantive characterization.",
+            )
         if not _CITATION.search(related_body):
-            issues.append("The Related Work section contains no inline source citation.")
+            add(
+                "related_work_missing_inline_citation",
+                ManuscriptFindingSeverity.REPAIRABLE,
+                "The Related Work section contains no inline source citation.",
+            )
 
     coverage_verified = (
         introduction_coverage is not None
@@ -506,29 +746,41 @@ def validate_related_work(
     )
     if introduction_coverage is None:
         if expected_candidate_sha256 is not None:
-            issues.append("The draft has no structured Introduction coverage record.")
+            add(
+                "missing_introduction_coverage",
+                ManuscriptFindingSeverity.REPAIRABLE,
+                "The draft has no structured Introduction coverage record.",
+            )
         coverage_verified = False
     else:
-        normalized_introduction = _normalized_excerpt(introduction_body)
         excerpts = {
             "related work": introduction_coverage.related_work_excerpt,
             "difference from prior work": introduction_coverage.difference_from_prior_work_excerpt,
             "advance over prior work": introduction_coverage.advance_over_prior_work_excerpt,
         }
-        normalized_values: list[str] = []
+        semantic_values: list[frozenset[str]] = []
         for label, excerpt in excerpts.items():
-            normalized = _normalized_excerpt(excerpt)
-            normalized_values.append(normalized)
+            semantic_values.append(frozenset(_semantic_tokens(excerpt)))
             if _word_count(excerpt) < _MINIMUM_COVERAGE_EXCERPT_WORDS:
-                issues.append(f"The structured {label} excerpt is not substantive.")
-                coverage_verified = False
-            if normalized not in normalized_introduction:
-                issues.append(
-                    f"The structured {label} excerpt does not occur verbatim in the Introduction."
+                add(
+                    f"insubstantial_{label.replace(' ', '_')}",
+                    ManuscriptFindingSeverity.REPAIRABLE,
+                    f"The structured {label} claim is not substantive.",
                 )
                 coverage_verified = False
-        if len(set(normalized_values)) != len(normalized_values):
-            issues.append("Introduction coverage uses the same text for distinct scientific roles.")
+            if not _semantic_claim_present(excerpt, introduction_body):
+                add(
+                    f"uncovered_{label.replace(' ', '_')}",
+                    ManuscriptFindingSeverity.REPAIRABLE,
+                    f"The Introduction does not semantically cover the structured {label} claim.",
+                )
+                coverage_verified = False
+        if len(set(semantic_values)) != len(semantic_values):
+            add(
+                "duplicated_introduction_coverage",
+                ManuscriptFindingSeverity.REPAIRABLE,
+                "Introduction coverage uses the same claim for distinct scientific roles.",
+            )
             coverage_verified = False
         introduction_citations = {
             key.strip()
@@ -538,12 +790,18 @@ def validate_related_work(
         }
         coverage_keys = {key.strip() for key in introduction_coverage.citation_keys if key.strip()}
         if not coverage_keys:
-            issues.append("The Introduction coverage record cites no source keys.")
+            add(
+                "introduction_coverage_missing_citations",
+                ManuscriptFindingSeverity.REPAIRABLE,
+                "The Introduction coverage record cites no source keys.",
+            )
             coverage_verified = False
         elif not coverage_keys.issubset(introduction_citations):
-            issues.append(
+            add(
+                "introduction_coverage_citation_mismatch",
+                ManuscriptFindingSeverity.REPAIRABLE,
                 "Introduction coverage cites keys not present inline in the Introduction: "
-                + ", ".join(sorted(coverage_keys - introduction_citations))
+                + ", ".join(sorted(coverage_keys - introduction_citations)),
             )
             coverage_verified = False
 
@@ -555,44 +813,98 @@ def validate_related_work(
     )
     if any(value is not None for value in frozen_expectations):
         if frozen_claim_fidelity is None:
-            issues.append("The draft has no structured frozen-claim fidelity record.")
+            add(
+                "missing_frozen_claim_fidelity",
+                ManuscriptFindingSeverity.HARD_FAILURE,
+                "The draft has no structured frozen-claim fidelity record.",
+            )
             fidelity_verified = False
         else:
             fidelity = frozen_claim_fidelity
             if fidelity.candidate_sha256 != expected_candidate_sha256:
-                issues.append("The manuscript candidate hash does not match the accepted proof.")
-                fidelity_verified = False
-            if fidelity.claim_contract_sha256 != expected_claim_contract_sha256:
-                issues.append("The manuscript claim-contract hash does not match the frozen claim.")
-                fidelity_verified = False
-            if fidelity.exact_theorem != expected_exact_theorem:
-                issues.append("The manuscript fidelity record changes the accepted theorem.")
-                fidelity_verified = False
-            if fidelity.manuscript_main_claim != expected_exact_theorem or not fidelity.exact_match:
-                issues.append(
-                    "The manuscript main claim is not an exact copy of the frozen theorem."
+                add(
+                    "candidate_hash_mismatch",
+                    ManuscriptFindingSeverity.HARD_FAILURE,
+                    "The manuscript candidate hash does not match the accepted proof.",
                 )
                 fidelity_verified = False
-            elif _normalized_excerpt(fidelity.manuscript_main_claim) not in _normalized_excerpt(
-                paper_tex
-            ):
-                issues.append("The exact frozen theorem does not occur in paper.tex.")
+            if fidelity.claim_contract_sha256 != expected_claim_contract_sha256:
+                add(
+                    "claim_contract_hash_mismatch",
+                    ManuscriptFindingSeverity.HARD_FAILURE,
+                    "The manuscript claim-contract hash does not match the frozen claim.",
+                )
+                fidelity_verified = False
+            expected_canonical = _canonical_claim_text(
+                expected_exact_theorem or "", macro_source=paper_tex
+            )
+            fidelity_canonical = _canonical_claim_text(
+                fidelity.exact_theorem, macro_source=paper_tex
+            )
+            manuscript_canonical = _canonical_claim_text(
+                fidelity.manuscript_main_claim, macro_source=paper_tex
+            )
+            if fidelity_canonical != expected_canonical:
+                add(
+                    "frozen_theorem_drift",
+                    ManuscriptFindingSeverity.HARD_FAILURE,
+                    "The manuscript fidelity record changes the accepted theorem.",
+                )
+                fidelity_verified = False
+            if manuscript_canonical != expected_canonical or not fidelity.exact_match:
+                add(
+                    "manuscript_claim_drift",
+                    ManuscriptFindingSeverity.HARD_FAILURE,
+                    "The canonical manuscript main claim differs from the frozen theorem.",
+                )
                 fidelity_verified = False
     if not bibliography:
-        issues.append("references.bib contains no BibTeX entries.")
+        add(
+            "empty_bibliography",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "references.bib contains no BibTeX entries.",
+        )
     if missing:
-        issues.append("Cited keys missing from references.bib: " + ", ".join(missing))
-    issues.extend(issue.message for issue in bibliography_report.issues)
+        add(
+            "missing_bibliography_keys",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "Cited keys missing from references.bib: " + ", ".join(missing),
+        )
+    for issue in bibliography_report.issues:
+        add(
+            issue.code,
+            ManuscriptFindingSeverity.REPAIRABLE,
+            issue.message,
+            "Complete or correct the cited bibliography record.",
+        )
+    for warning in bibliography_report.warnings:
+        add(
+            warning.code,
+            ManuscriptFindingSeverity.PUBLICATION_WARNING,
+            warning.message,
+        )
     if "\\begin{document}" not in paper_tex or "\\end{document}" not in paper_tex:
-        issues.append("paper.tex is not a complete LaTeX document.")
+        add(
+            "incomplete_latex_document",
+            ManuscriptFindingSeverity.REPAIRABLE,
+            "paper.tex is not a complete LaTeX document.",
+        )
+    blocking_or_repairable = [
+        finding
+        for finding in findings
+        if finding.severity
+        in {ManuscriptFindingSeverity.HARD_FAILURE, ManuscriptFindingSeverity.REPAIRABLE}
+    ]
     return RelatedWorkValidation(
-        passed=not issues,
+        passed=not blocking_or_repairable,
         has_related_work_section=has_section,
         has_introduction_section=has_introduction,
         has_ai_usage_statement=ai_usage_report.has_statement_section,
         ai_usage_disclosure_verified=ai_usage_report.passed,
         matek_repository_citation_key=ai_usage_report.repository_citation_key,
         matek_whitepaper_citation_key=ai_usage_report.whitepaper_citation_key,
+        matek_technical_report_citation_key=ai_usage_report.technical_report_citation_key,
+        matek_whitepaper_citation_pending=ai_usage_report.matek_whitepaper_citation_pending,
         introduction_word_count=introduction_words,
         related_work_word_count=related_words,
         introduction_coverage_verified=coverage_verified,
@@ -600,7 +912,8 @@ def validate_related_work(
         cited_keys=cited,
         bibliography_keys=bibliography,
         missing_bibliography_keys=missing,
-        issues=issues,
+        issues=[finding.message for finding in findings],
+        findings=findings,
     )
 
 
@@ -735,6 +1048,52 @@ def _bibliography_markdown(audit: BibliographyAudit, issues: list[str]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _bibliography_findings(
+    audit: BibliographyAudit | None,
+    gate_issues: Collection[str],
+) -> list[ManuscriptFinding]:
+    nonexistent_keys = {
+        entry.citation_key
+        for entry in (audit.entries if audit is not None else [])
+        if entry.status is BibliographyEntryStatus.NONEXISTENT
+    }
+    findings: list[ManuscriptFinding] = []
+    for issue in gate_issues:
+        audit_unavailable = issue.startswith(
+            ("Independent bibliography audit failed:", "Bibliography audit is unavailable")
+        )
+        fabricated = any(repr(key) in issue or key in issue for key in nonexistent_keys)
+        findings.append(
+            ManuscriptFinding(
+                code=(
+                    "fabricated_citation"
+                    if fabricated
+                    else (
+                        "bibliography_audit_unavailable"
+                        if audit_unavailable
+                        else "bibliography_verification_failed"
+                    )
+                ),
+                severity=(
+                    ManuscriptFindingSeverity.HARD_FAILURE
+                    if fabricated
+                    else ManuscriptFindingSeverity.REPAIRABLE
+                ),
+                message=issue,
+                repair=(
+                    "Remove the nonexistent citation and any dependent claim."
+                    if fabricated
+                    else (
+                        "Retry the independent bibliography audit from this preserved draft."
+                        if audit_unavailable
+                        else "Correct the entry or qualify/remove the dependent literature claim."
+                    )
+                ),
+            )
+        )
+    return findings
+
+
 async def generate_manuscript(
     *,
     client: ModelClient,
@@ -785,13 +1144,8 @@ async def generate_manuscript(
     if claim_contract_sha256 != research_result.acceptance_gate.claim_contract_sha256:
         raise StageGateError("The manuscript claim contract does not match the research gate.")
     if resume_from is not None:
-        if (
-            resume_from.outcome != ManuscriptOutcome.BIBLIOGRAPHY_REJECTED
-            or resume_from.bibliography_audit is None
-        ):
-            raise StageGateError(
-                "Bibliography resume requires a persisted bibliography-rejected result."
-            )
+        if resume_from.has_terminating_failure:
+            raise StageGateError("A manuscript with a terminating trust failure cannot be resumed.")
         if (
             resume_from.research_gate.candidate_sha256
             != research_result.acceptance_gate.candidate_sha256
@@ -807,10 +1161,6 @@ async def generate_manuscript(
 
     writer_model = writer_settings or ModelSettings(reasoning_effort="xhigh", web_search=True)
     verifier_model = verifier_settings or ModelSettings(reasoning_effort="xhigh", web_search=True)
-    if not verifier_model.web_search:
-        raise StageValidationError(
-            "Independent bibliography verification requires web_search to be enabled."
-        )
 
     destination = ensure_stage_directory(manuscript_dir)
     drafts_dir = ensure_stage_directory(destination / "drafts")
@@ -842,8 +1192,9 @@ async def generate_manuscript(
         "knowledge_graph_context": knowledge_graph_context,
         "mandatory_structured_content": {
             "introduction_coverage": (
-                "Provide verbatim substantial Introduction excerpts for related work, "
-                "difference from prior work, and the precise advance, plus inline citation keys."
+                "Provide structured claims for related work, difference from prior work, and "
+                "the precise advance, plus the same inline citation keys. The prose may be a "
+                "semantically equivalent paraphrase."
             ),
             "frozen_claim_fidelity": (
                 "Copy both supplied SHA-256 values and the exact accepted theorem; the "
@@ -851,9 +1202,10 @@ async def generate_manuscript(
             ),
             "statement_of_ai_usage": (
                 "Include an explicit Statement of AI Usage saying verbatim that 'The MATEK "
-                "system with GPT 5.6 was used' and cite two distinct, independently verifiable "
-                "BibTeX entries there: the canonical MATEK GitHub repository and MATEK "
-                "whitepaper arXiv preprint. Never use placeholder or guessed identifiers."
+                "system with GPT 5.6 was used' and cite the canonical MATEK GitHub repository. "
+                "Cite the local MATEK technical report when available. If no canonical "
+                "whitepaper arXiv ID is supplied, leave that citation pending and never invent "
+                "metadata or insert a deliberate LaTeX build failure."
             ),
         },
     }
@@ -878,10 +1230,10 @@ async def generate_manuscript(
         payload: dict[str, Any] = dict(frozen_input)
         if previous is not None:
             payload["previous_manuscript"] = previous.model_dump(mode="json")
-            payload["mandatory_bibliography_corrections"] = correction_plan or []
+            payload["mandatory_validation_corrections"] = correction_plan or []
             payload["instruction"] = (
-                "Regenerate from the same frozen proof. Apply only source/citation corrections; "
-                "do not silently change the mathematical claim or proof."
+                "Regenerate from the same frozen proof. Repair the listed presentation, source, "
+                "metadata, or LaTeX findings without changing the mathematical claim or proof."
             )
         model_calls += 1
         result = await client.generate_structured(
@@ -914,8 +1266,9 @@ async def generate_manuscript(
                             "characterization against authoritative public sources. Evidence "
                             "must include the matching DOI, arXiv/ISBN/MR identifier, or a "
                             "non-placeholder authoritative HTTPS URL. Also verify that the "
-                            "Statement of AI Usage names the MATEK system with GPT 5.6 and "
-                            "cites distinct canonical MATEK GitHub and whitepaper arXiv records."
+                            "Statement of AI Usage names the MATEK system with GPT 5.6 and cites "
+                            "the canonical MATEK GitHub record. A missing canonical whitepaper "
+                            "arXiv ID is pending metadata, not permission to invent a record."
                         ),
                     },
                     ensure_ascii=False,
@@ -929,183 +1282,409 @@ async def generate_manuscript(
 
     if resume_from is None:
         draft = await write_draft()
-        audit: BibliographyAudit | None = None
     else:
-        previous_related = validate_draft(resume_from.draft)
-        previous_audit = resume_from.bibliography_audit
-        if previous_audit is None:  # narrowed explicitly for static and defensive safety
-            raise StageGateError("Persisted result has no bibliography audit to resume.")
-        previous_issues = _audit_gate_issues(
-            previous_audit,
-            previous_related,
-            resume_from.draft.paper_tex,
-            resume_from.draft.references_bib,
-        )
+        previous_repairs = [
+            finding.repair or finding.message
+            for finding in resume_from.findings
+            if finding.severity is ManuscriptFindingSeverity.REPAIRABLE
+        ]
+        if resume_from.bibliography_audit is not None:
+            previous_repairs = [
+                *resume_from.bibliography_audit.correction_plan,
+                *previous_repairs,
+            ]
         correction_cycles += 1
         draft = await write_draft(
             previous=resume_from.draft,
-            correction_plan=[*previous_audit.correction_plan, *previous_issues],
+            correction_plan=previous_repairs,
         )
-        audit = None
-    related = validate_draft(draft)
+    cycle_records: list[
+        tuple[
+            int,
+            ManuscriptDraft,
+            RelatedWorkValidation,
+            BibliographyAudit | None,
+            list[str],
+            LatexBuildResult | None,
+            list[ManuscriptFinding],
+            tuple[Mapping[str, Any], ...],
+            SourceVerificationReport,
+        ]
+    ] = []
+    terminal_findings: list[ManuscriptFinding] = []
 
-    while True:
-        cycle_dir = ensure_stage_directory(drafts_dir / str(correction_cycles))
-        atomic_write_text(cycle_dir / "paper.tex", draft.paper_tex)
-        atomic_write_text(cycle_dir / "references.bib", draft.references_bib)
-        artifact_paths["paper_tex"] = atomic_write_text(destination / "paper.tex", draft.paper_tex)
+    def publish_draft(candidate_draft: ManuscriptDraft) -> None:
+        artifact_paths["paper_tex"] = atomic_write_text(
+            destination / "paper.tex", candidate_draft.paper_tex
+        )
         artifact_paths["references_bib"] = atomic_write_text(
-            destination / "references.bib", draft.references_bib
+            destination / "references.bib", candidate_draft.references_bib
         )
         artifact_paths["claims"] = atomic_write_json(
             destination / "claims.json",
-            [claim.model_dump(mode="json") for claim in draft.claims],
+            [claim.model_dump(mode="json") for claim in candidate_draft.claims],
         )
         artifact_paths["proof_dependency_graph"] = atomic_write_json(
             destination / "proof_dependency_graph.json",
-            [dependency.model_dump(mode="json") for dependency in draft.proof_dependency_graph],
+            [
+                dependency.model_dump(mode="json")
+                for dependency in candidate_draft.proof_dependency_graph
+            ],
         )
         artifact_paths["introduction_coverage"] = atomic_write_json(
-            destination / "introduction_coverage.json", draft.introduction_coverage
+            destination / "introduction_coverage.json", candidate_draft.introduction_coverage
         )
         artifact_paths["frozen_claim_fidelity"] = atomic_write_json(
-            destination / "frozen_claim_fidelity.json", draft.frozen_claim_fidelity
+            destination / "frozen_claim_fidelity.json", candidate_draft.frozen_claim_fidelity
         )
 
-        related = validate_draft(draft)
-        if not related.passed:
-            result = ManuscriptResult(
-                outcome=ManuscriptOutcome.CONTENT_REJECTED,
-                draft=draft,
-                bibliography_audit=None,
-                bibliography_verified=False,
-                related_work=related,
-                latex_build=None,
-                correction_cycles=correction_cycles,
-                research_gate=research_result.acceptance_gate,
-                artifacts=build_artifact_manifest(artifact_paths),
-                calls=CallManifest(model_calls=model_calls, response_ids=response_ids),
+    async def build_draft(
+        *, cycle: int, cycle_dir: Path, safe_to_execute: bool
+    ) -> LatexBuildResult | None:
+        if not safe_to_execute:
+            return None
+        pdf_path = destination / "paper.pdf"
+        if pdf_path.exists():
+            backup = cycle_dir / "preexisting-paper.pdf"
+            suffix = 1
+            while backup.exists():
+                backup = cycle_dir / f"preexisting-paper-{suffix}.pdf"
+                suffix += 1
+            pdf_path.replace(backup)
+            artifact_paths[f"draft_{cycle}_preexisting_pdf"] = backup
+        command = CommandRequest(
+            argv=hardened_latex_command,
+            cwd=destination,
+            timeout_seconds=latex_timeout_seconds,
+        )
+        try:
+            command_result: CommandResult = await backend.run(command)
+            log_text = (
+                "$ "
+                + " ".join(command_result.argv)
+                + "\n\n[stdout]\n"
+                + command_result.stdout
+                + "\n\n[stderr]\n"
+                + command_result.stderr
             )
-            artifact_paths["result"] = atomic_write_json(destination / "result.json", result)
-            return result
+            classified = classify_latex_result(command_result, log_text)
+            diagnostics = [issue.message for issue in classified.issues]
+            exit_code: int | None = command_result.exit_code
+        except Exception as exc:
+            log_text = f"LaTeX backend failed before returning a command result: {exc}\n"
+            diagnostics = [str(exc)]
+            exit_code = None
+        cycle_log = atomic_write_text(cycle_dir / "build.log", log_text)
+        artifact_paths[f"draft_{cycle}_build_log"] = cycle_log
+        artifact_paths["build_log"] = atomic_write_text(destination / "build.log", log_text)
+        pdf_exists = pdf_path.is_file() and pdf_path.stat().st_size > 0
+        if not pdf_exists:
+            diagnostics.append("LaTeX did not produce a nonempty paper.pdf.")
+        build_passed = exit_code == 0 and not diagnostics and pdf_exists
+        cycle_pdf: Path | None = None
+        if pdf_exists:
+            cycle_pdf = cycle_dir / "paper.pdf"
+            shutil.copy2(pdf_path, cycle_pdf)
+            artifact_paths[f"draft_{cycle}_paper_pdf"] = cycle_pdf
+        return LatexBuildResult(
+            passed=build_passed,
+            argv=list(hardened_latex_command),
+            exit_code=exit_code,
+            diagnostics=list(dict.fromkeys(diagnostics)),
+            pdf_path=cycle_pdf,
+        )
 
-        audit, provider_metadata = await verify_draft(draft)
-        provider_identifiers = tool_metadata_source_identifiers(provider_metadata)
-        source_verification = await _verify_bibliography_identifiers(
-            draft.references_bib,
-            provider_identifiers=provider_identifiers,
-            verifier=source_verifier,
+    while True:
+        cycle_dir = ensure_stage_directory(drafts_dir / str(correction_cycles))
+        artifact_paths[f"draft_{correction_cycles}_paper_tex"] = atomic_write_text(
+            cycle_dir / "paper.tex", draft.paper_tex
         )
-        gate_issues = _audit_gate_issues(
-            audit,
-            related,
-            draft.paper_tex,
-            draft.references_bib,
-            source_verification.verified_identifiers,
+        artifact_paths[f"draft_{correction_cycles}_references_bib"] = atomic_write_text(
+            cycle_dir / "references.bib", draft.references_bib
         )
-        atomic_write_json(cycle_dir / "bibliography_audit.json", audit)
-        atomic_write_json(
-            cycle_dir / "bibliography_provider_metadata.json",
-            [dict(item) for item in provider_metadata],
+        publish_draft(draft)
+        related = validate_draft(draft)
+
+        audit: BibliographyAudit | None = None
+        provider_metadata: tuple[Mapping[str, Any], ...] = ()
+        source_verification = SourceVerificationReport(records=[], warnings=[])
+        gate_issues: list[str] = []
+        if not verifier_model.web_search:
+            gate_issues.append(
+                "Bibliography audit is unavailable because verifier web search is disabled."
+            )
+        else:
+            try:
+                audit, provider_metadata = await verify_draft(draft)
+                provider_identifiers = tool_metadata_source_identifiers(provider_metadata)
+                try:
+                    source_verification = await _verify_bibliography_identifiers(
+                        draft.references_bib,
+                        provider_identifiers=provider_identifiers,
+                        verifier=source_verifier,
+                    )
+                except Exception as exc:
+                    source_verification = SourceVerificationReport(
+                        records=[],
+                        warnings=[f"Deterministic identifier verification failed: {exc}"],
+                    )
+                gate_issues = _audit_gate_issues(
+                    audit,
+                    related,
+                    draft.paper_tex,
+                    draft.references_bib,
+                    source_verification.verified_identifiers,
+                )
+            except Exception as exc:
+                gate_issues.append(f"Independent bibliography audit failed: {exc}")
+
+        if audit is not None:
+            artifact_paths[f"draft_{correction_cycles}_bibliography_audit"] = atomic_write_json(
+                cycle_dir / "bibliography_audit.json", audit
+            )
+        artifact_paths[f"draft_{correction_cycles}_bibliography_provider_metadata"] = (
+            atomic_write_json(
+                cycle_dir / "bibliography_provider_metadata.json",
+                [dict(item) for item in provider_metadata],
+            )
         )
-        atomic_write_json(cycle_dir / "source_verification.json", source_verification)
+        artifact_paths[f"draft_{correction_cycles}_source_verification"] = atomic_write_json(
+            cycle_dir / "source_verification.json", source_verification
+        )
+
+        unsafe = any(
+            finding.code in {"unsafe_tex_output", "deliberate_latex_failure"}
+            for finding in related.findings
+        )
+        latex_build = await build_draft(
+            cycle=correction_cycles,
+            cycle_dir=cycle_dir,
+            safe_to_execute=not unsafe,
+        )
+        cycle_findings = [*related.findings, *_bibliography_findings(audit, gate_issues)]
+        if latex_build is not None and not latex_build.passed:
+            cycle_findings.extend(
+                ManuscriptFinding(
+                    code="latex_build_failed",
+                    severity=ManuscriptFindingSeverity.REPAIRABLE,
+                    message=diagnostic,
+                    repair="Repair the LaTeX source and rebuild in the next revision round.",
+                )
+                for diagnostic in latex_build.diagnostics
+            )
+        validation = ManuscriptDraftValidation(
+            cycle=correction_cycles,
+            related_work=related,
+            bibliography_audit=audit,
+            bibliography_gate_issues=gate_issues,
+            latex_build=latex_build,
+            findings=cycle_findings,
+        )
+        artifact_paths[f"draft_{correction_cycles}_validation"] = atomic_write_json(
+            cycle_dir / "validation.json", validation
+        )
+        cycle_records.append(
+            (
+                correction_cycles,
+                draft,
+                related,
+                audit,
+                gate_issues,
+                latex_build,
+                cycle_findings,
+                provider_metadata,
+                source_verification,
+            )
+        )
+
+        hard_failure = any(
+            finding.severity is ManuscriptFindingSeverity.HARD_FAILURE for finding in cycle_findings
+        )
+        repairable = [
+            finding
+            for finding in cycle_findings
+            if finding.severity is ManuscriptFindingSeverity.REPAIRABLE
+        ]
+        writer_repairable = [
+            finding for finding in repairable if finding.code != "bibliography_audit_unavailable"
+        ]
+        needs_revision = bool(writer_repairable) or latex_build is None or not latex_build.passed
+        if hard_failure or not needs_revision or correction_cycles >= maximum_correction_cycles:
+            break
+        correction_cycles += 1
+        correction_plan = [finding.repair or finding.message for finding in writer_repairable]
+        if audit is not None:
+            correction_plan = [*audit.correction_plan, *correction_plan]
+        try:
+            draft = await write_draft(previous=draft, correction_plan=correction_plan)
+        except Exception as exc:
+            terminal_findings.append(
+                ManuscriptFinding(
+                    code="manuscript_revision_failed",
+                    severity=ManuscriptFindingSeverity.REPAIRABLE,
+                    message=f"Manuscript revision round {correction_cycles} failed: {exc}",
+                    repair="Resume from the preserved best draft and retry this revision.",
+                )
+            )
+            break
+
+    def record_score(
+        record: tuple[
+            int,
+            ManuscriptDraft,
+            RelatedWorkValidation,
+            BibliographyAudit | None,
+            list[str],
+            LatexBuildResult | None,
+            list[ManuscriptFinding],
+            tuple[Mapping[str, Any], ...],
+            SourceVerificationReport,
+        ],
+    ) -> tuple[int, int, int, int, int]:
+        cycle, _, _, _, gate, build, findings, _, _ = record
+        hard_count = sum(
+            finding.severity is ManuscriptFindingSeverity.HARD_FAILURE for finding in findings
+        )
+        repair_count = sum(
+            finding.severity is ManuscriptFindingSeverity.REPAIRABLE for finding in findings
+        )
+        return (
+            hard_count,
+            repair_count + len(gate),
+            int(build is None or not build.passed),
+            len(findings),
+            -cycle,
+        )
+
+    selected = min(cycle_records, key=record_score)
+    (
+        selected_cycle,
+        draft,
+        related,
+        audit,
+        gate_issues,
+        latex_build,
+        selected_findings,
+        provider_metadata,
+        source_verification,
+    ) = selected
+    findings = [*selected_findings, *terminal_findings]
+    repairs_exhausted = (
+        any(finding.severity is ManuscriptFindingSeverity.REPAIRABLE for finding in findings)
+        and correction_cycles >= maximum_correction_cycles
+    )
+    selected_has_hard_failure = any(
+        finding.severity is ManuscriptFindingSeverity.HARD_FAILURE for finding in findings
+    )
+    latex_failed = latex_build is None or not latex_build.passed
+    if latex_failed and repairs_exhausted and not selected_has_hard_failure:
+        findings.append(
+            ManuscriptFinding(
+                code="irreparable_latex",
+                severity=ManuscriptFindingSeverity.HARD_FAILURE,
+                message=(
+                    "LaTeX remained unavailable or invalid after all configured repair attempts."
+                ),
+                repair="Repair the preserved draft and resume manuscript validation.",
+            )
+        )
+
+    publish_draft(draft)
+    selected_cycle_dir = drafts_dir / str(selected_cycle)
+    selected_pdf = selected_cycle_dir / "paper.pdf"
+    root_pdf = destination / "paper.pdf"
+    if selected_pdf.is_file() and selected_pdf.stat().st_size > 0:
+        shutil.copy2(selected_pdf, root_pdf)
+        artifact_paths["paper_pdf"] = root_pdf
+        if latex_build is not None:
+            latex_build = latex_build.model_copy(update={"pdf_path": root_pdf})
+    elif root_pdf.exists():
+        preserved = destination / "unselected-paper.pdf"
+        root_pdf.replace(preserved)
+        artifact_paths["unselected_paper_pdf"] = preserved
+
+    if audit is not None:
         artifact_paths["bibliography_audit"] = atomic_write_json(
             destination / "bibliography_audit.json", audit
         )
         artifact_paths["bibliography_audit_markdown"] = atomic_write_text(
-            destination / "bibliography_audit.md",
-            _bibliography_markdown(audit, gate_issues),
+            destination / "bibliography_audit.md", _bibliography_markdown(audit, gate_issues)
         )
-        artifact_paths["bibliography_provider_metadata"] = atomic_write_json(
-            destination / "bibliography_provider_metadata.json",
-            [dict(item) for item in provider_metadata],
-        )
-        artifact_paths["bibliography_source_verification"] = atomic_write_json(
-            destination / "bibliography_source_verification.json", source_verification
-        )
-        if not gate_issues:
-            break
-        if correction_cycles >= maximum_correction_cycles:
-            result = ManuscriptResult(
-                outcome=ManuscriptOutcome.BIBLIOGRAPHY_REJECTED,
-                draft=draft,
-                bibliography_audit=audit,
-                bibliography_verified=False,
-                related_work=related,
-                latex_build=None,
-                correction_cycles=correction_cycles,
-                research_gate=research_result.acceptance_gate,
-                artifacts=build_artifact_manifest(artifact_paths),
-                calls=CallManifest(model_calls=model_calls, response_ids=response_ids),
-            )
-            artifact_paths["result"] = atomic_write_json(destination / "result.json", result)
-            return result
-        correction_cycles += 1
-        correction_plan = [*audit.correction_plan, *gate_issues]
-        draft = await write_draft(previous=draft, correction_plan=correction_plan)
-
-    pdf_path = destination / "paper.pdf"
-    if pdf_path.exists():
-        backup_dir = ensure_stage_directory(drafts_dir / "prebuild_outputs")
-        backup = backup_dir / f"paper-before-build-{correction_cycles}.pdf"
-        suffix = 1
-        while backup.exists():
-            backup = backup_dir / f"paper-before-build-{correction_cycles}-{suffix}.pdf"
-            suffix += 1
-        pdf_path.replace(backup)
-        artifact_paths[f"previous_paper_pdf_{correction_cycles}"] = backup
-
-    command = CommandRequest(
-        argv=hardened_latex_command,
-        cwd=destination,
-        timeout_seconds=latex_timeout_seconds,
+    artifact_paths["bibliography_provider_metadata"] = atomic_write_json(
+        destination / "bibliography_provider_metadata.json",
+        [dict(item) for item in provider_metadata],
     )
-    command_result: CommandResult
-    try:
-        command_result = await backend.run(command)
-        log_text = (
-            "$ "
-            + " ".join(command_result.argv)
-            + "\n\n[stdout]\n"
-            + command_result.stdout
-            + "\n\n[stderr]\n"
-            + command_result.stderr
-        )
-        classified = classify_latex_result(command_result, log_text)
-        diagnostics = [issue.message for issue in classified.issues]
-        exit_code: int | None = command_result.exit_code
-    except Exception as exc:
-        log_text = f"LaTeX backend failed before returning a command result: {exc}\n"
-        diagnostics = [str(exc)]
-        exit_code = None
-    artifact_paths["build_log"] = atomic_write_text(destination / "build.log", log_text)
-    pdf_exists = pdf_path.is_file() and pdf_path.stat().st_size > 0
-    if not pdf_exists:
-        diagnostics.append("LaTeX did not produce a nonempty paper.pdf.")
-    build_passed = exit_code == 0 and not diagnostics and pdf_exists
-    latex_build = LatexBuildResult(
-        passed=build_passed,
-        argv=list(hardened_latex_command),
-        exit_code=exit_code,
-        diagnostics=diagnostics,
-        pdf_path=pdf_path if pdf_exists else None,
+    artifact_paths["bibliography_source_verification"] = atomic_write_json(
+        destination / "bibliography_source_verification.json", source_verification
     )
-    if pdf_exists:
-        artifact_paths["paper_pdf"] = pdf_path
-    outcome = ManuscriptOutcome.COMPILED if build_passed else ManuscriptOutcome.LATEX_FAILED
+    artifact_paths["validation"] = atomic_write_json(
+        destination / "validation.json",
+        ManuscriptDraftValidation(
+            cycle=selected_cycle,
+            related_work=related,
+            bibliography_audit=audit,
+            bibliography_gate_issues=gate_issues,
+            latex_build=latex_build,
+            findings=findings,
+        ),
+    )
+
+    bibliography_verified = audit is not None and not gate_issues
+    hard_failure = any(
+        finding.severity is ManuscriptFindingSeverity.HARD_FAILURE for finding in findings
+    )
+    warning_codes = {
+        finding.code
+        for finding in findings
+        if finding.severity is ManuscriptFindingSeverity.PUBLICATION_WARNING
+    }
+    repairable_codes = {
+        finding.code
+        for finding in findings
+        if finding.severity is ManuscriptFindingSeverity.REPAIRABLE
+    }
+    if hard_failure:
+        manuscript_status = ManuscriptStatus.PUBLICATION_BLOCKED
+        outcome = ManuscriptOutcome.PUBLICATION_BLOCKED
+        publication_status = (
+            PublicationStatus.BLOCKED_LATEX
+            if "irreparable_latex" in {finding.code for finding in findings}
+            else PublicationStatus.BLOCKED_INTEGRITY
+        )
+    elif repairable_codes or warning_codes or not bibliography_verified:
+        manuscript_status = ManuscriptStatus.DRAFT_WITH_WARNINGS
+        outcome = ManuscriptOutcome.DRAFT_WITH_WARNINGS
+        if latex_failed:
+            publication_status = PublicationStatus.BLOCKED_LATEX
+        elif gate_issues or not bibliography_verified:
+            publication_status = PublicationStatus.BLOCKED_BIBLIOGRAPHY
+        elif "matek_whitepaper_citation_pending" in warning_codes:
+            publication_status = PublicationStatus.BLOCKED_METADATA
+        else:
+            publication_status = PublicationStatus.BLOCKED_CONTENT
+    else:
+        manuscript_status = ManuscriptStatus.PUBLICATION_READY
+        outcome = ManuscriptOutcome.COMPILED
+        publication_status = PublicationStatus.READY
+
     result = ManuscriptResult(
         outcome=outcome,
         draft=draft,
         bibliography_audit=audit,
-        bibliography_verified=True,
+        bibliography_verified=bibliography_verified,
         related_work=related,
         latex_build=latex_build,
         correction_cycles=correction_cycles,
         research_gate=research_result.acceptance_gate,
+        manuscript_status=manuscript_status,
+        publication_status=publication_status,
+        findings=findings,
+        selected_draft_cycle=selected_cycle,
+        revision_rounds_exhausted=repairs_exhausted,
         artifacts=build_artifact_manifest(artifact_paths),
         calls=CallManifest(model_calls=model_calls, response_ids=response_ids),
     )
-    artifact_paths["result"] = atomic_write_json(destination / "result.json", result)
+    atomic_write_json(destination / "result.json", result)
     return result
 
 
@@ -1134,12 +1713,12 @@ async def resume_manuscript_bibliography(
     bibliography_prompt_path: Path | None = None,
     source_verifier: IdentifierVerifier | None = None,
 ) -> ManuscriptResult:
-    """Resume only a rejected bibliography/correction gate.
+    """Resume manuscript correction from a preserved non-terminating draft.
 
     The completed initial manuscript-writer call is never repeated.  The persisted draft and
-    audit seed one correction call, followed by a fresh independent bibliography verification
-    and, on success, deterministic LaTeX compilation.  ``manuscript_dir`` is the final stage
-    directory used by the original call.
+    findings seed one correction call, followed by fresh independent bibliography verification
+    and deterministic LaTeX compilation. ``manuscript_dir`` is the final stage directory used by
+    the original call.
     """
 
     if maximum_additional_correction_cycles < 1:

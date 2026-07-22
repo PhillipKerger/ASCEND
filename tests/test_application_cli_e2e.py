@@ -251,6 +251,9 @@ class ResearchWorkflowModel:
                 issues=[],
                 unresolved_obligations=[],
                 target_matches=True,
+                audit_role="fixture",
+                rationale="The fixture audit found no defect within its assigned scope.",
+                checks_performed=["Checked the frozen candidate against the role-specific prompt."],
             )
         elif output_type is FinalJudgeVerdict:
             if self.accepted:
@@ -1109,7 +1112,8 @@ async def test_complete_continuous_pipeline_is_lean_verified_and_resume_is_noop(
     assert len(research["coordinator_decisions"]) >= 2
     assert bibliography.status is BibliographyStatus.VERIFIED
     assert all(entry.status is BibliographyEntryStatus.VERIFIED for entry in bibliography.entries)
-    assert result.state.scientific_status is ScientificStatus.LEAN_VERIFIED
+    assert result.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert result.state.metadata["lean_status"] == ScientificStatus.LEAN_VERIFIED.value
     assert result.state.metadata["backend"]["provider"] == provider
     assert result.state.metadata["backend"]["automatic_fallback"] is False
     assert result.report.report.lean_status == ScientificStatus.LEAN_VERIFIED.value
@@ -1211,7 +1215,7 @@ def full_runner_with_consent(
 
 
 @pytest.mark.asyncio
-async def test_user_can_decline_lean_after_verified_manuscript(tmp_path: Path) -> None:
+async def test_user_can_decline_lean_after_safe_manuscript_draft(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     requests: list[LeanConsentRequest] = []
@@ -1230,8 +1234,11 @@ async def test_user_can_decline_lean_after_verified_manuscript(tmp_path: Path) -
 
     assert len(requests) == 1
     assert requests[0].timeout_seconds == LEAN_CONSENT_TIMEOUT_SECONDS == 300
-    assert result.state.scientific_status is ScientificStatus.LEAN_NOT_REQUESTED
+    assert requests[0].manuscript_path.name == "paper.tex"
+    assert result.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert result.state.metadata["lean_status"] == ScientificStatus.LEAN_NOT_REQUESTED.value
     assert result.state.metadata["lean_consent"]["outcome"] == "user_declined"
+    assert result.state.metadata["lean_consent"]["manuscript"] == "manuscript/paper.tex"
     assert result.report.report.lean_consent["proceed"] is False
     assert result.state.stages[StageName.MANUSCRIPT].status is StageStatus.SUCCEEDED
     assert result.state.stages[StageName.BIBLIOGRAPHY].status is StageStatus.SUCCEEDED
@@ -1247,7 +1254,8 @@ async def test_user_can_decline_lean_after_verified_manuscript(tmp_path: Path) -
     )
 
     assert len(requests) == 2
-    assert resumed.state.scientific_status is ScientificStatus.LEAN_VERIFIED
+    assert resumed.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert resumed.state.metadata["lean_status"] == ScientificStatus.LEAN_VERIFIED.value
     assert resumed.state.metadata["lean_consent"]["outcome"] == "user_approved"
     assert list((result.state.run_root / "lean" / "consent-history").glob("*.json"))
 
@@ -1266,7 +1274,8 @@ async def test_lean_consent_timeout_defaults_to_full_verification(tmp_path: Path
 
     assert result.state.metadata["lean_consent"]["outcome"] == "timed_out_auto_proceed"
     assert result.state.metadata["lean_consent"]["timeout_seconds"] == 300
-    assert result.state.scientific_status is ScientificStatus.LEAN_VERIFIED
+    assert result.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert result.state.metadata["lean_status"] == ScientificStatus.LEAN_VERIFIED.value
     assert result.state.stages[StageName.LEAN_VERIFICATION].status is StageStatus.SUCCEEDED
     assert len(codex.requests) == 1
 
@@ -1309,7 +1318,8 @@ async def test_saved_lean_consent_is_reused_after_boundary_failure(
     resumed = await runner.resume(project, run_id=interrupted.run_id)
 
     assert consent_calls == 1
-    assert resumed.state.scientific_status is ScientificStatus.LEAN_VERIFIED
+    assert resumed.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert resumed.state.metadata["lean_status"] == ScientificStatus.LEAN_VERIFIED.value
 
 
 @pytest.mark.asyncio
@@ -1858,7 +1868,7 @@ async def test_workflow_emits_sparse_progress_from_intake_to_prompt(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_resume_failed_bibliography_corrects_persisted_draft_without_restarting_writer(
+async def test_explicit_bibliography_retry_corrects_preserved_draft_without_restarting_writer(
     tmp_path: Path,
 ) -> None:
     project = tmp_path / "project"
@@ -1891,14 +1901,25 @@ async def test_resume_failed_bibliography_corrects_persisted_draft_without_resta
     )
 
     assert initial.state.stages[StageName.MANUSCRIPT].status is StageStatus.SUCCEEDED
-    assert initial.state.stages[StageName.BIBLIOGRAPHY].status is StageStatus.FAILED
+    assert initial.state.stages[StageName.BIBLIOGRAPHY].status is StageStatus.SUCCEEDED
+    assert initial.state.metadata["publication_status"] == "BLOCKED_BIBLIOGRAPHY"
+    assert initial.state.scientific_status is ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+    assert initial.report.report.scientific_status == (
+        ScientificStatus.RESEARCH_ACCEPTED_FOR_MANUSCRIPT.value
+    )
+    assert initial.report.report.manuscript_status == "DRAFT_WITH_WARNINGS"
+    assert initial.report.report.workflow_status == "COMPLETE_WITH_WARNINGS"
     initial_paid_ids = tuple(initial.state.paid_call_ids)
     initial_writer_requests = [
         request for request, output_type in model.requests if output_type is ManuscriptDraft
     ]
     assert len(initial_writer_requests) == 1
 
-    resumed = await runner.resume(project, run_id=initial.state.run_id)
+    resumed = await runner.resume(
+        project,
+        run_id=initial.state.run_id,
+        force_stage=StageName.BIBLIOGRAPHY,
+    )
 
     writer_requests = [
         request for request, output_type in model.requests if output_type is ManuscriptDraft
@@ -1911,7 +1932,7 @@ async def test_resume_failed_bibliography_corrects_persisted_draft_without_resta
     assert resumed.state.stages[StageName.LEAN_VERIFICATION].status is StageStatus.SKIPPED
     assert tuple(resumed.state.paid_call_ids[: len(initial_paid_ids)]) == initial_paid_ids
     assert len(resumed.state.paid_call_ids) == len(initial_paid_ids) + 2
-    assert backend.calls == 1
+    assert backend.calls == 2
     assert codex.calls == 0
 
 
@@ -2151,7 +2172,7 @@ async def test_noninteractive_lean_prompt_proceeds_without_waiting(
     monkeypatch.setattr(cli_module.sys, "stdin", io.StringIO(""))
     request = LeanConsentRequest(
         run_id="fixture-run",
-        manuscript_path=Path("paper.pdf"),
+        manuscript_path=Path("paper.tex"),
     )
 
     with cli_module.console.capture() as capture:

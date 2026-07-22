@@ -151,7 +151,9 @@ def node_id_from_wikilink(value: str) -> str:
 def wikilink_for(node: GraphNode | str, *, title: str | None = None) -> str:
     label: str | None
     if isinstance(node, GraphNode):
-        target = Path(node.path).stem if node.path is not None else node.matek_id
+        target = (
+            Path(node.path).with_suffix("").as_posix() if node.path is not None else node.matek_id
+        )
         label = node.title if title is None else title
     else:
         target = node
@@ -285,7 +287,10 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
     return node
 
 
-def _ordered_properties(node: GraphNode) -> dict[str, object]:
+def _ordered_properties(
+    node: GraphNode,
+    relation_targets: Mapping[str, GraphNode] | None = None,
+) -> dict[str, object]:
     properties: dict[str, object] = {
         "matek_id": node.matek_id,
         "node_type": node.node_type.value,
@@ -303,7 +308,10 @@ def _ordered_properties(node: GraphNode) -> dict[str, object]:
     }
     by_relation: dict[RelationType, list[str]] = {}
     for edge in sorted(node.relations, key=lambda item: (item.relation.value, item.target_id)):
-        by_relation.setdefault(edge.relation, []).append(wikilink_for(edge.target_id))
+        target = relation_targets.get(edge.target_id) if relation_targets is not None else None
+        by_relation.setdefault(edge.relation, []).append(
+            wikilink_for(target if target is not None else edge.target_id)
+        )
     for relation in RelationType:
         if relation in by_relation:
             properties[relation.value] = list(dict.fromkeys(by_relation[relation]))
@@ -325,13 +333,17 @@ def _ordered_properties(node: GraphNode) -> dict[str, object]:
     return properties
 
 
-def render_node_note(node: GraphNode) -> str:
+def render_node_note(
+    node: GraphNode,
+    *,
+    relation_targets: Mapping[str, GraphNode] | None = None,
+) -> str:
     body = node.body.replace("\r\n", "\n").replace("\r", "\n")
     if GENERATED_START not in body or GENERATED_END not in body:
         body = new_generated_body(node.title, body)
     if not body.endswith("\n"):
         body += "\n"
-    return format_flat_frontmatter(_ordered_properties(node)) + body
+    return format_flat_frontmatter(_ordered_properties(node, relation_targets)) + body
 
 
 def new_generated_body(title: str, generated_content: str, human_content: str = "") -> str:

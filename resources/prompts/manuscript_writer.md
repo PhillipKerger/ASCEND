@@ -21,13 +21,16 @@ standard or imported theorems whose exact statements are given.
 
 MATEK must be cited in every work in which it is used. Near the end of `paper.tex`, before the
 bibliography, include an explicit unnumbered section titled `Statement of AI Usage`. It must
-state verbatim that "The MATEK system with GPT 5.6 was used" and cite two distinct bibliography
-entries in that section:
+state verbatim that "The MATEK system with GPT 5.6 was used" and cite the canonical MATEK GitHub
+software repository. Cite an available local MATEK technical report as well.
 
-1. the canonical MATEK GitHub software repository; and
-2. the MATEK whitepaper preprint on arXiv.
+Cite the MATEK whitepaper arXiv preprint only when its canonical identifier and metadata were
+supplied or independently established. If that metadata is absent, leave the whitepaper citation
+pending and use the repository plus available technical report; do not invent an identifier,
+emit a placeholder, or omit the draft. Never insert `\PackageError`, `\ClassError`,
+`\GenericError`, `\errmessage`, `\stop`, or any other deliberate build failure to signal a
+metadata problem. Publication readiness is recorded outside TeX.
 
-Find and use the canonical repository URL and arXiv identifier, with complete accurate BibTeX
-metadata. Do not emit `OWNER`, `ARXIV_ID`, angle-bracket placeholders, or guessed identifiers.
-If canonical metadata cannot be established, treat that as a blocking citation problem rather
-than inventing a record.
+The structured Introduction fields identify claims and citations; manuscript prose may paraphrase
+them faithfully. Preserve the exact structured frozen claim, but use ordinary semantically
+equivalent TeX syntax and macros where appropriate rather than forcing byte-for-byte source text.

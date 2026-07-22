@@ -167,6 +167,7 @@ formalization, and generates a reproducible final report.
 
 - Run fresh-context foundational, domain-specialist, hostile counterexample, and, when
   relevant, complexity/quantitative audits.
+- Persist a role-specific rationale and nonempty list of checks performed for every audit.
 - Require the candidate package to classify quantitative or algorithmic content explicitly, and
   require the independent foundational auditor to block a false negative so the packager cannot
   bypass an applicable complexity audit.
@@ -186,10 +187,15 @@ formalization, and generates a reproducible final report.
 - Generate `paper.tex`, `references.bib`, a claim map, and a proof dependency map.
 - Include a thorough introduction and related-work discussion.
 - Explain how the result differs from and advances existing work.
-- Include a Statement of AI Usage naming MATEK with GPT 5.6 and cite both the canonical MATEK
-  GitHub repository and MATEK whitepaper arXiv preprint.
+- Include a Statement of AI Usage naming MATEK with GPT 5.6 and cite the canonical MATEK GitHub
+  repository, the available local technical report, and the MATEK whitepaper arXiv preprint when
+  its canonical identifier exists. Until then, persist `matek_whitepaper_citation_pending` and
+  never fabricate metadata or insert a deliberate TeX failure.
 - Do not cite a source solely because another model asserted that it exists.
 - Compile with `latexmk` or a configurable LaTeX command.
+- Classify claim drift, fabricated citations, and unsafe output as terminating trust failures.
+  Repair presentation, citation-field, metadata, and LaTeX findings through the configured
+  revision rounds; preserve every draft and validation, and keep the strongest exhausted draft.
 
 ### FR-6 Bibliography verification gate
 
@@ -205,13 +211,16 @@ For every cited work, independently verify:
 - that the cited theorem is applied under its actual hypotheses when used in a proof.
 
 Produce `bibliography_audit.json` and `bibliography_audit.md`. Any unverified entry blocks
-Lean progression unless the citation is removed and the manuscript is regenerated.
+publication readiness unless the citation is removed or corrected. It does not change an accepted
+research status or independently block Lean statement alignment and formalization.
 
 ### FR-7 Lean feasibility and statement alignment
 
-- After the compiled manuscript and verified bibliography are durable, ask the interactive user
-  whether to proceed with formal Lean verification. A negative answer skips every Lean stage and
-  produces the final report. If no answer is received within five minutes, proceed automatically.
+- After accepted research and a manuscript draft without a terminating claim-integrity or unsafe
+  output finding are durable, ask the interactive user whether to proceed with formal Lean
+  verification. Bibliography and section-layout defects affect publication readiness, not this
+  formalization entry. A negative answer skips every Lean stage and produces the final report. If
+  no answer is received within five minutes, proceed automatically.
 - Persist the decision so resume never repeats the prompt or completed manuscript work.
 - Assess whether full or main-result formalization is realistically attainable.
 - Generate `challenge.lean` as the human-auditable target theorem statement.
@@ -261,29 +270,59 @@ Generate machine-readable and human-readable reports with:
 
 ## Status taxonomy
 
-At minimum:
+Persist and report independent status dimensions. A downstream formatting or execution outcome
+must not overwrite the strongest scientific result:
 
 ```text
-RECEIVED
-PROMPT_COMPILED
-RESEARCH_RUNNING
-CANDIDATE_AWAITING_AUDIT
-RESEARCH_PARTIAL
-RESEARCH_REJECTED
-RESEARCH_ACCEPTED_FOR_MANUSCRIPT
-MANUSCRIPT_FAILED
-MANUSCRIPT_COMPILED
-BIBLIOGRAPHY_REJECTED
-BIBLIOGRAPHY_VERIFIED
-LEAN_NOT_REQUESTED
-LEAN_INFEASIBLE
-LEAN_STATEMENT_ONLY
-LEAN_PARTIAL
-LEAN_FAILED
-LEAN_VERIFIED_WITH_APPROVED_AXIOMS
-LEAN_VERIFIED
-REPORT_COMPLETE
+Scientific:
+  RECEIVED
+  NEEDS_PROBLEM_CLARIFICATION
+  PROMPT_COMPILED
+  RESEARCH_RUNNING
+  CANDIDATE_AWAITING_AUDIT
+  RESEARCH_PARTIAL
+  RESEARCH_REJECTED
+  RESEARCH_ACCEPTED_FOR_MANUSCRIPT
+
+Workflow:
+  RUNNING
+  PAUSED_RETRIABLE
+  COMPLETE
+  COMPLETE_WITH_WARNINGS
+  HARD_STOPPED
+
+Manuscript:
+  NOT_STARTED
+  NOT_REQUESTED
+  SKIPPED_PROBLEM_CLARIFICATION
+  PUBLICATION_READY
+  DRAFT_WITH_WARNINGS
+  PUBLICATION_BLOCKED
+
+Publication:
+  NOT_ASSESSED
+  READY
+  BLOCKED_METADATA
+  BLOCKED_CONTENT
+  BLOCKED_BIBLIOGRAPHY
+  BLOCKED_LATEX
+  BLOCKED_INTEGRITY
+
+Lean:
+  NOT_STARTED
+  LEAN_NOT_REQUESTED
+  SKIPPED_PROBLEM_CLARIFICATION
+  BLOCKED_MANUSCRIPT_INTEGRITY
+  LEAN_INFEASIBLE
+  LEAN_STATEMENT_ONLY
+  LEAN_PARTIAL
+  LEAN_FAILED
+  LEAN_VERIFIED_WITH_APPROVED_AXIOMS
+  LEAN_VERIFIED
 ```
+
+Readers may accept legacy combined manuscript/bibliography/Lean values when loading older run
+state, but new reports do not emit them as the scientific status.
 
 ## Nonfunctional requirements
 

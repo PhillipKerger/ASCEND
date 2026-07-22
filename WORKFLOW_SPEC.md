@@ -201,26 +201,32 @@ applied by default.
 The manuscript writer receives only the frozen accepted proof package, claim contract, audit
 reports, verified source ledger, dependency-ordered accepted graph slice, and manuscript prompt.
 It must not silently change the
-result. It must include a Statement of AI Usage disclosing MATEK with GPT 5.6 and cite both the
-canonical MATEK GitHub repository and MATEK whitepaper arXiv preprint.
+result. It must include a Statement of AI Usage disclosing MATEK with GPT 5.6 and cite the
+canonical MATEK GitHub repository plus an available local technical report. A missing canonical
+whitepaper arXiv identifier is recorded as pending publication metadata, never guessed.
 
 After the stage, graph nodes record claim/section and source/BibTeX mappings plus manuscript
 artifact nodes. Existing research, bibliography, and LaTeX gates remain authoritative.
 
 The bibliography verifier runs in a fresh context with web search. It checks every item and
-every substantive related-work characterization. It creates a correction plan. The writer
-may regenerate the manuscript, after which verification runs again. Limit cycles by config.
+every substantive related-work characterization. It creates a correction plan. Deterministic
+presentation, bibliography, and LaTeX findings are fed back to the writer up to the configured
+revision limit. Every draft and its validation is checkpointed; bibliography auditing and safe
+LaTeX compilation run even when presentation checks need repair.
 
-Only a fully verified bibliography may proceed.
+Only a fully verified bibliography may be promoted to publication-ready. An exhausted but safe
+draft is retained as `DRAFT_WITH_WARNINGS`; claim drift, fabricated citations, unsafe output, or
+irreparable LaTeX produce `PUBLICATION_BLOCKED`.
 
 `--no-web-search` also disables MATEK's deterministic public-identifier HTTP resolver. Any
 evidence that cannot be established from persisted provider metadata remains unavailable; gates
 fail truthfully instead of treating offline status as verification. Consequently, a fully
 search-free invocation is primarily intended for `--research-only` runs and cannot bypass the
-verified-bibliography prerequisite for manuscript-to-Lean progression.
+verified-bibliography prerequisite for publication readiness.
 
-Compile LaTeX deterministically. Undefined references, missing citations, compilation errors,
-or bibliography mismatches fail the stage.
+Compile every safe draft deterministically. Undefined references, missing citations, compilation
+errors, or bibliography mismatches become repair findings. Irreparable LaTeX after all configured
+attempts blocks publication and downstream work; bibliography and layout defects do not block Lean.
 
 Before entering Lean, an interactive run asks whether to continue with formal verification. A
 `no` answer skips all Lean stages and proceeds to the final report. No answer within five minutes

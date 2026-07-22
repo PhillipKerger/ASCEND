@@ -48,12 +48,27 @@
   },
   "additionalProperties": false,
   "properties": {
+    "audit_role": {
+      "title": "Audit Role",
+      "type": "string"
+    },
+    "checks_performed": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Checks Performed",
+      "type": "array"
+    },
     "issues": {
       "items": {
         "$ref": "#/$defs/AuditIssue"
       },
       "title": "Issues",
       "type": "array"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
     },
     "target_matches": {
       "title": "Target Matches",
@@ -74,7 +89,10 @@
     "verdict",
     "issues",
     "unresolved_obligations",
-    "target_matches"
+    "target_matches",
+    "audit_role",
+    "rationale",
+    "checks_performed"
   ],
   "title": "AuditVerdict",
   "type": "object"

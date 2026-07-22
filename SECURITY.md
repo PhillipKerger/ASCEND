@@ -121,8 +121,9 @@ the host Codex CLI. `verify` currently executes frozen deterministic checks nati
 - Verify existence, exact bibliographic metadata, claimed theorem, real hypotheses, and
   manuscript characterization for every citation.
 - Treat the generated Statement of AI Usage and MATEK citations as untrusted manuscript text;
-  validate that they cite the canonical GitHub repository and whitepaper arXiv identifier before
-  publication.
+  validate the canonical GitHub repository and, once metadata exists, the whitepaper arXiv
+  identifier before publication. Until then, require the explicit pending-citation marker and
+  never permit a fabricated identifier.
 
 ## Generated Lean integrity
 

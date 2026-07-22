@@ -14,11 +14,14 @@
 ## Citation and manuscript disclosure
 
 - [x] README says MATEK must be cited in every scholarly, technical, or public work using it.
-- [x] README requires citations to both the GitHub repository and MATEK arXiv whitepaper.
+- [x] README requires the GitHub citation now and the MATEK arXiv whitepaper citation once its
+  canonical metadata exists.
+- [x] Missing whitepaper metadata uses an honest repository/local-report fallback and persists
+  `matek_whitepaper_citation_pending`; it never fabricates metadata or deliberately breaks LaTeX.
 - [ ] Replace the honest citation placeholders with canonical software and preprint metadata.
 - [x] Generated manuscripts are gated on the required Statement of AI Usage naming MATEK with
-  GPT 5.6 and distinct repository/preprint citations (validated with non-placeholder fixture
-  metadata).
+  GPT 5.6 and the citations available for the current metadata state (validated with
+  non-placeholder fixture metadata).
 
 ## Default Codex experience
 
@@ -63,8 +66,11 @@
 - [x] Schema-invalid and schema-repair provider attempts are usage-accounted.
 - [x] No manuscript is generated after a rejected proof.
 - [x] Related-work requirement and independent bibliography verification are mandatory.
-- [x] False citations and unsupported theorem hypotheses block progression.
-- [x] LaTeX compile/citation gate implemented.
+- [x] False citations and unsupported theorem hypotheses block promotion at their applicable trust
+  boundaries without erasing accepted research.
+- [x] LaTeX compilation and the independent publication-readiness gate are implemented.
+- [x] Repairable manuscript findings consume configured revision rounds, preserve every draft,
+  and do not independently block bibliography auditing or Lean statement alignment.
 - [x] Persistent typed Markdown graph extends the same problem across runs and keeps claims,
   proofs, audits, sources, tasks, counterexamples, and formalizations separate.
 - [x] Problem filename stems select isolated default graphs; explicit existing-graph reuse,
@@ -101,4 +107,7 @@
 - [x] Offline unit suite passes on Linux without live accounts or network calls.
 - [x] Strict static checks (`ruff`, formatting, and `mypy`) are configured.
 - [x] Successful, partial, and rejected example reports are included.
+- [x] Contributor setup, quality gates, trust boundaries, and pull-request expectations are
+  documented.
+- [x] Project integrity checks detect version drift and missing, stale, or unexpected schemas.
 - [x] Re-run all quality gates after the backend migration and rebuild wheel/sdist artifacts.

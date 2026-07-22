@@ -97,6 +97,19 @@ GRAPH_DIRECTORIES = (
 _REVISION = re.compile(r"\A\d{8}-[0-9a-f]{16}\Z")
 _SLUG_UNSAFE = re.compile(r"[^a-z0-9]+")
 _GRAPH_NAME = re.compile(r"\A[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?\Z")
+_NOTE_FILENAME_UNSAFE = re.compile(r'[\x00-\x1f<>:"/\\|?*\[\]#^]')
+_WINDOWS_RESERVED_FILENAMES = {
+    "aux",
+    "clock$",
+    "con",
+    "nul",
+    "prn",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
+
+MAIN_RESULT_NEEDS_TAG = "MAIN_RESULT_NEEDS"
+_MAIN_RESULT_NEEDS_METADATA = "matek_main_result_needs"
 
 
 class KnowledgeGraphError(RuntimeError):
@@ -140,6 +153,19 @@ def _slug(value: str) -> str:
         .casefold()
     )
     return _SLUG_UNSAFE.sub("-", ascii_value).strip("-")[:56] or "note"
+
+
+def _note_filename(title: str) -> str:
+    """Keep a readable Obsidian node name while remaining portable."""
+
+    normalized = unicodedata.normalize("NFC", title)
+    cleaned = _NOTE_FILENAME_UNSAFE.sub("-", normalized)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .") or "Untitled"
+    if cleaned.casefold() in _WINDOWS_RESERVED_FILENAMES:
+        cleaned = f"Note {cleaned}"
+    while len(cleaned.encode("utf-8")) > 220:
+        cleaned = cleaned[:-1].rstrip(" .")
+    return cleaned or "Untitled"
 
 
 def normalize_graph_name(value: str) -> str:
@@ -324,6 +350,7 @@ class KnowledgeGraph:
                 atomic_write_json(self.state_path, state, confinement_root=self.graph_root)
                 self._write_snapshot_unlocked(state, [])
             nodes = self._load_nodes_unlocked(include_human_notes=True)
+            state, nodes = self._migrate_legacy_paths_unlocked(state, nodes)
             self._write_navigation_unlocked(state, nodes)
             self._rebuild_index_unlocked(state, nodes)
             return state
@@ -346,6 +373,23 @@ class KnowledgeGraph:
             )
         return state
 
+    def _unlink_graph_file_unlocked(self, relative: str) -> None:
+        requested = self.vault_root / relative
+        target = ensure_path_confined(self.vault_root, requested)
+        if target != requested.absolute():
+            raise GraphValidationError(
+                f"refusing graph transaction removal through a symlink: {relative}"
+            )
+        try:
+            status = requested.stat(follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISREG(status.st_mode):
+            raise GraphValidationError(
+                f"graph transaction removal is not a regular file: {relative}"
+            )
+        target.unlink()
+
     def load_state(self) -> GraphState:
         with self._locked():
             self._recover_pending_unlocked()
@@ -357,8 +401,14 @@ class KnowledgeGraph:
         try:
             pending = json.loads(self.pending_path.read_text(encoding="utf-8"))
             writes = pending["writes"]
+            removals = pending.get("removals", [])
             raw_state = pending["state_after"]
-            if not isinstance(writes, list) or not isinstance(raw_state, dict):
+            if (
+                not isinstance(writes, list)
+                or not isinstance(removals, list)
+                or any(not isinstance(item, str) for item in removals)
+                or not isinstance(raw_state, dict)
+            ):
                 raise TypeError("transaction fields have invalid types")
             state_after = GraphState.model_validate(raw_state)
         except (
@@ -385,6 +435,13 @@ class KnowledgeGraph:
                 atomic_write_text(
                     target, cast(str, contents), confinement_root=self.vault_root, mode=0o600
                 )
+        written_paths = {cast(str, write["path"]) for write in writes}
+        for relative in removals:
+            if relative in written_paths:
+                raise GraphValidationError(
+                    "pending graph transaction removes a path that it also writes"
+                )
+            self._unlink_graph_file_unlocked(relative)
         atomic_write_json(self.state_path, state_after, confinement_root=self.graph_root)
         nodes = self._load_nodes_unlocked(include_human_notes=True)
         self._write_snapshot_unlocked(state_after, nodes)
@@ -453,8 +510,58 @@ class KnowledgeGraph:
         existing = node.path or state.node_paths.get(node.matek_id)
         if existing:
             return existing
+        return self._canonical_node_path(node)
+
+    @staticmethod
+    def _canonical_node_path(node: GraphNode) -> str:
         directory = NODE_TYPE_DIRECTORIES[node.node_type]
-        return f"{directory}/{node.matek_id}--{_slug(node.title)}.md"
+        return f"{directory}/{node.matek_id}/{_note_filename(node.title)}.md"
+
+    @staticmethod
+    def _uses_title_path(node: GraphNode, relative: str) -> bool:
+        expected_parent = Path(NODE_TYPE_DIRECTORIES[node.node_type]) / node.matek_id
+        return Path(relative).parent == expected_parent
+
+    def _migrate_legacy_paths_unlocked(
+        self,
+        state: GraphState,
+        nodes: Sequence[GraphNode],
+    ) -> tuple[GraphState, list[GraphNode]]:
+        """Move old ID-prefixed notes to title-named files without losing identity."""
+
+        overrides: dict[str, str] = {}
+        managed = {node.matek_id: node for node in nodes if node.matek_id in state.node_paths}
+        for node_id, node in managed.items():
+            current = node.path
+            recorded = state.node_paths.get(node_id)
+            if current is None or current != recorded:
+                # A path that differs from state is a deliberate human rename.
+                continue
+            path = Path(current)
+            expected_parent = Path(NODE_TYPE_DIRECTORIES[node.node_type])
+            if path.parent != expected_parent or not path.name.startswith(f"{node_id}--"):
+                continue
+            desired = self._canonical_node_path(node)
+            if desired != current:
+                overrides[node_id] = desired
+        if not overrides:
+            return state, list(nodes)
+        migration_key = hashlib.sha256(
+            _canonical_json(dict(sorted(overrides.items()))).encode("utf-8")
+        ).hexdigest()[:16]
+        self._commit_nodes_unlocked(
+            state=state,
+            all_nodes=list(nodes),
+            changed_node_ids=list(managed),
+            run_id="SYSTEM",
+            author="matek-graph-migrator",
+            reason="Use note titles as Obsidian graph labels while preserving stable IDs.",
+            operation_id=f"obsidian-title-paths:{migration_key}",
+            path_overrides=overrides,
+        )
+        migrated_state = self._load_state_unlocked()
+        migrated_nodes = self._load_nodes_unlocked(include_human_notes=True)
+        return migrated_state, migrated_nodes
 
     def _commit_nodes_unlocked(
         self,
@@ -469,6 +576,8 @@ class KnowledgeGraph:
         source_artifacts: Sequence[str] = (),
         result_status: Literal["merged", "partially_merged"] = "merged",
         stale_node_ids: Sequence[str] = (),
+        path_overrides: Mapping[str, str] | None = None,
+        removed_paths: Sequence[str] = (),
     ) -> GraphMergeResult:
         if operation_id in state.processed_operations:
             previous = state.processed_operations[operation_id]
@@ -478,6 +587,55 @@ class KnowledgeGraph:
         missing = sorted(set(changed) - nodes.keys())
         if missing:
             raise GraphValidationError("cannot commit missing graph nodes: " + ", ".join(missing))
+        overrides = dict(path_overrides or {})
+        unknown_overrides = sorted(set(overrides) - nodes.keys())
+        if unknown_overrides:
+            raise GraphValidationError(
+                "cannot override paths for missing graph nodes: " + ", ".join(unknown_overrides)
+            )
+        planned_paths: dict[str, str] = {}
+        automatic_removals = list(removed_paths)
+        for node_id in changed:
+            node = nodes[node_id]
+            current = node.path or state.node_paths.get(node_id)
+            if node_id in overrides:
+                relative = overrides[node_id]
+            elif (
+                current is not None
+                and current == state.node_paths.get(node_id)
+                and self._uses_title_path(node, current)
+            ):
+                relative = self._canonical_node_path(node)
+            else:
+                relative = self._node_path(node, state)
+            planned_paths[node_id] = relative
+            if current is not None and current != relative:
+                automatic_removals.append(current)
+        changed_path_ids = {
+            node_id
+            for node_id, relative in planned_paths.items()
+            if relative != (nodes[node_id].path or state.node_paths.get(node_id))
+        }
+        if changed_path_ids:
+            for source in nodes.values():
+                if source.matek_id in changed:
+                    continue
+                if any(edge.target_id in changed_path_ids for edge in source.relations):
+                    changed.append(source.matek_id)
+                    planned_paths[source.matek_id] = self._node_path(source, state)
+        removals = list(dict.fromkeys(automatic_removals))
+        written_paths = set(planned_paths.values())
+        overlapping = sorted(written_paths.intersection(removals))
+        if overlapping:
+            raise GraphValidationError(
+                "graph transaction cannot write and remove the same path: " + ", ".join(overlapping)
+            )
+        for node_id, relative in planned_paths.items():
+            current = nodes[node_id].path or state.node_paths.get(node_id)
+            target = ensure_path_confined(self.vault_root, self.vault_root / relative)
+            if target.exists() and relative != current:
+                raise GraphConflictError(f"graph note path already exists: {relative}")
+            nodes[node_id].path = relative
         previous_hashes = {node_id: state.node_hashes.get(node_id) for node_id in changed}
         writes: list[dict[str, str]] = []
         next_hashes = dict(state.node_hashes)
@@ -486,9 +644,8 @@ class KnowledgeGraph:
         next_statements = dict(state.statement_hashes)
         for node_id in changed:
             node = nodes[node_id]
-            relative = self._node_path(node, state)
-            target = ensure_path_confined(self.vault_root, self.vault_root / relative)
-            contents = render_node_note(node)
+            relative = planned_paths[node_id]
+            contents = render_node_note(node, relation_targets=nodes)
             digest = sha256_text(contents)
             node.path = relative
             node.content_hash = digest
@@ -550,6 +707,7 @@ class KnowledgeGraph:
             "previous_revision": state.revision,
             "new_revision": next_revision,
             "writes": writes,
+            "removals": removals,
             "state_after": next_state.model_dump(mode="json"),
         }
         atomic_write_json(self.pending_path, transaction, confinement_root=self.graph_root)
@@ -558,6 +716,8 @@ class KnowledgeGraph:
             atomic_write_text(
                 target, write["contents"], confinement_root=self.vault_root, mode=0o600
             )
+        for relative in removals:
+            self._unlink_graph_file_unlocked(relative)
         atomic_write_json(self.state_path, next_state, confinement_root=self.graph_root)
         committed_nodes = list(nodes.values())
         self._write_snapshot_unlocked(next_state, committed_nodes)
@@ -731,6 +891,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
+            state, nodes = self._migrate_legacy_paths_unlocked(state, nodes)
             self._write_navigation_unlocked(state, nodes)
             return self._rebuild_index_unlocked(state, nodes)
 
@@ -1041,6 +1202,7 @@ class KnowledgeGraph:
             reverse=True,
         )[:12]
         formalizations = [node for node in nodes if node.node_type is NodeType.FORMALIZATION]
+        main_result_needs = [node for node in nodes if MAIN_RESULT_NEEDS_TAG in node.tags]
         home_generated: list[str] = [
             "## Exact main problem",
             "",
@@ -1058,6 +1220,10 @@ class KnowledgeGraph:
             "## Current proof architecture",
             "",
             "See [[Dashboards/Main Proof Architecture.canvas|Main Proof Architecture]].",
+            "",
+            "## Main result needs",
+            "",
+            *(f"- {wikilink_for(node)}" for node in main_result_needs),
             "",
             "## Unresolved main obligations",
             "",
@@ -1096,6 +1262,7 @@ class KnowledgeGraph:
             "- [[Dashboards/Blocked Approaches]]",
             "- [[Dashboards/Unresolved Contradictions]]",
             "- [[Dashboards/Unverified Sources]]",
+            "- [[Dashboards/Main Result Needs]]",
             "- [[Dashboards/Recent Changes]]",
         ]
         home = self.vault_root / "Home.md"
@@ -1172,6 +1339,10 @@ class KnowledgeGraph:
                 "Source nodes without independently verified identifiers.",
                 unverified_sources,
             ),
+            "Main Result Needs": (
+                "The proof, claims, definitions, and sources used by the accepted main result.",
+                main_result_needs,
+            ),
             "Recent Changes": (
                 "Nodes touched by recent graph revisions.",
                 recent_changed_nodes,
@@ -1189,8 +1360,8 @@ class KnowledgeGraph:
     def _write_canvases_unlocked(self, nodes: Sequence[GraphNode]) -> None:
         specifications: dict[str, tuple[set[NodeType], set[RelationType]]] = {
             "Main Proof Architecture": (
-                {NodeType.CLAIM, NodeType.PROOF, NodeType.DEFINITION},
-                {RelationType.DEPENDS_ON, RelationType.PROVES},
+                {NodeType.CLAIM, NodeType.PROOF, NodeType.DEFINITION, NodeType.SOURCE},
+                {RelationType.DEPENDS_ON, RelationType.PROVES, RelationType.CITES},
             ),
             "Active Research Routes": (
                 {NodeType.APPROACH, NodeType.TASK, NodeType.CLAIM},
@@ -1207,10 +1378,15 @@ class KnowledgeGraph:
         }
         by_id = {node.matek_id: node for node in nodes}
         for title, (node_types, relations) in specifications.items():
+            tagged_architecture = title == "Main Proof Architecture" and any(
+                MAIN_RESULT_NEEDS_TAG in node.tags for node in nodes
+            )
             selected = [
                 node
                 for node in nodes
-                if node.node_type in node_types and node.node_type is not NodeType.HUMAN_NOTE
+                if node.node_type in node_types
+                and node.node_type is not NodeType.HUMAN_NOTE
+                and (not tagged_architecture or MAIN_RESULT_NEEDS_TAG in node.tags)
             ][:40]
             selected_ids = {node.matek_id for node in selected}
             canvas_nodes = [
@@ -3145,6 +3321,96 @@ class KnowledgeGraph:
                 }
             )
 
+    @staticmethod
+    def _main_result_support_ids(
+        nodes: Mapping[str, GraphNode],
+        *,
+        target_id: str,
+        accepted_proof_id: str,
+    ) -> set[str]:
+        """Return the explicit proof-support closure for an accepted main result."""
+
+        reverse_proofs: dict[str, list[str]] = defaultdict(list)
+        for node in nodes.values():
+            for edge in node.relations:
+                if edge.relation is RelationType.PROVES:
+                    reverse_proofs[edge.target_id].append(edge.source_id)
+        selected: set[str] = set()
+        queue = deque([target_id, accepted_proof_id])
+        unusable = {
+            EpistemicStatus.REFUTED,
+            EpistemicStatus.INCONSISTENT,
+            EpistemicStatus.STALE,
+        }
+        while queue:
+            node_id = queue.popleft()
+            current = nodes.get(node_id)
+            if current is None or node_id in selected or current.tombstone:
+                continue
+            selected.add(node_id)
+            for edge in current.relations:
+                if edge.relation in {RelationType.DEPENDS_ON, RelationType.CITES}:
+                    queue.append(edge.target_id)
+            if current.node_type is not NodeType.CLAIM:
+                continue
+            for proof_node_id in reverse_proofs.get(node_id, []):
+                if node_id == target_id and proof_node_id != accepted_proof_id:
+                    continue
+                proof = nodes.get(proof_node_id)
+                if (
+                    proof is not None
+                    and not proof.tombstone
+                    and proof.epistemic_status not in unusable
+                    and proof.workflow_status
+                    not in {WorkflowStatus.ABANDONED, WorkflowStatus.SUPERSEDED}
+                ):
+                    queue.append(proof_node_id)
+        return selected
+
+    @classmethod
+    def _mark_main_result_support(
+        cls,
+        *,
+        nodes: dict[str, GraphNode],
+        proposed: Sequence[GraphNode],
+        problem_id: str,
+        run_id: str,
+        target_id: str,
+        accepted_proof_id: str,
+        now: datetime,
+    ) -> list[GraphNode]:
+        combined = dict(nodes)
+        combined.update({node.matek_id: node for node in proposed})
+        support_ids = cls._main_result_support_ids(
+            combined,
+            target_id=target_id,
+            accepted_proof_id=accepted_proof_id,
+        )
+        proposed_by_id = {node.matek_id: node for node in proposed}
+        for node in combined.values():
+            if node.problem_id != problem_id:
+                continue
+            should_mark = node.matek_id in support_ids
+            owned_mark = _MAIN_RESULT_NEEDS_METADATA in node.metadata
+            changed = False
+            if should_mark:
+                if MAIN_RESULT_NEEDS_TAG not in node.tags:
+                    node.tags.append(MAIN_RESULT_NEEDS_TAG)
+                    changed = True
+                if node.metadata.get(_MAIN_RESULT_NEEDS_METADATA) != run_id:
+                    node.metadata[_MAIN_RESULT_NEEDS_METADATA] = run_id
+                    changed = True
+            elif owned_mark:
+                node.tags = [tag for tag in node.tags if tag != MAIN_RESULT_NEEDS_TAG]
+                node.metadata.pop(_MAIN_RESULT_NEEDS_METADATA, None)
+                changed = True
+            if changed:
+                node.last_modified_run = run_id
+                node.author_role = "research-acceptance-gate"
+                node.updated_at = now
+                proposed_by_id[node.matek_id] = node
+        return list(proposed_by_id.values())
+
     def record_research_result(
         self,
         *,
@@ -3167,7 +3433,12 @@ class KnowledgeGraph:
             outcome = str(research_result.get("outcome") or "partial")
             candidate = research_result.get("candidate")
             candidate_map = candidate if isinstance(candidate, Mapping) else None
-            accepted = outcome == "accepted" and bool(research_result.get("acceptance_gate"))
+            raw_acceptance_gate = research_result.get("acceptance_gate")
+            accepted = (
+                outcome == "accepted"
+                and isinstance(raw_acceptance_gate, Mapping)
+                and raw_acceptance_gate.get("accepted") is True
+            )
             proposed: list[GraphNode] = []
             proof_id: str | None = None
             if candidate_map is not None:
@@ -3215,66 +3486,64 @@ class KnowledgeGraph:
                 proof_id = _deterministic_id(
                     NodeType.PROOF, problem_id, run_id, "accepted-candidate"
                 )
-                proposed.append(
-                    GraphNode(
-                        matek_id=proof_id,
-                        node_type=NodeType.PROOF,
-                        problem_id=problem_id,
-                        title="Accepted candidate proof" if accepted else "Audited candidate proof",
-                        epistemic_status=(
-                            EpistemicStatus.AUDIT_PASSED if accepted else EpistemicStatus.CANDIDATE
+                accepted_proof = GraphNode(
+                    matek_id=proof_id,
+                    node_type=NodeType.PROOF,
+                    problem_id=problem_id,
+                    title="Accepted candidate proof" if accepted else "Audited candidate proof",
+                    epistemic_status=(
+                        EpistemicStatus.AUDIT_PASSED if accepted else EpistemicStatus.CANDIDATE
+                    ),
+                    workflow_status=(
+                        WorkflowStatus.COMPLETE if accepted else WorkflowStatus.BLOCKED
+                    ),
+                    created_in_run=run_id,
+                    last_modified_run=run_id,
+                    author_role="candidate-packager",
+                    created_at=now,
+                    updated_at=now,
+                    body=new_generated_body(
+                        "Accepted candidate proof" if accepted else "Audited candidate proof",
+                        "## Theorem\n\n"
+                        + str(candidate_map.get("exact_theorem") or "")
+                        + "\n\n## Full proof\n\n"
+                        + full_proof
+                        + "\n\n## Unresolved items\n\n"
+                        + (
+                            "\n".join(
+                                f"- {item}" for item in candidate_map.get("unresolved_items", [])
+                            )
+                            or "_None._"
                         ),
-                        workflow_status=(
-                            WorkflowStatus.COMPLETE if accepted else WorkflowStatus.BLOCKED
+                    ),
+                    tags=[
+                        "matek/proof",
+                        "matek/audit-passed" if accepted else "matek/candidate",
+                    ],
+                    relations=[
+                        GraphEdge(
+                            source_id=proof_id,
+                            relation=RelationType.PROVES,
+                            target_id=target_id,
                         ),
-                        created_in_run=run_id,
-                        last_modified_run=run_id,
-                        author_role="candidate-packager",
-                        created_at=now,
-                        updated_at=now,
-                        body=new_generated_body(
-                            "Accepted candidate proof" if accepted else "Audited candidate proof",
-                            "## Theorem\n\n"
-                            + str(candidate_map.get("exact_theorem") or "")
-                            + "\n\n## Full proof\n\n"
-                            + full_proof
-                            + "\n\n## Unresolved items\n\n"
-                            + (
-                                "\n".join(
-                                    f"- {item}"
-                                    for item in candidate_map.get("unresolved_items", [])
-                                )
-                                or "_None._"
-                            ),
+                        GraphEdge(
+                            source_id=proof_id,
+                            relation=RelationType.CREATED_DURING,
+                            target_id=_deterministic_id(NodeType.RUN, problem_id, run_id),
                         ),
-                        tags=[
-                            "matek/proof",
-                            "matek/audit-passed" if accepted else "matek/candidate",
-                        ],
-                        relations=[
-                            GraphEdge(
-                                source_id=proof_id,
-                                relation=RelationType.PROVES,
-                                target_id=target_id,
-                            ),
-                            GraphEdge(
-                                source_id=proof_id,
-                                relation=RelationType.CREATED_DURING,
-                                target_id=_deterministic_id(NodeType.RUN, problem_id, run_id),
-                            ),
-                        ],
-                        source_artifacts=[
-                            f".matek/runs/{run_id}/research/candidate/package.json",
-                            f".matek/runs/{run_id}/research/candidate/proof.md",
-                        ],
-                        metadata={
-                            "matek_quantitative_or_algorithmic": bool(
-                                candidate_map.get("quantitative_or_algorithmic", False)
-                            ),
-                            "matek_acceptance_gate_passed": accepted,
-                        },
-                    )
+                    ],
+                    source_artifacts=[
+                        f".matek/runs/{run_id}/research/candidate/package.json",
+                        f".matek/runs/{run_id}/research/candidate/proof.md",
+                    ],
+                    metadata={
+                        "matek_quantitative_or_algorithmic": bool(
+                            candidate_map.get("quantitative_or_algorithmic", False)
+                        ),
+                        "matek_acceptance_gate_passed": accepted,
+                    },
                 )
+                proposed.append(accepted_proof)
             proposed.append(target)
             audits = research_result.get("audits", {})
             if isinstance(audits, Mapping):
@@ -3340,6 +3609,16 @@ class KnowledgeGraph:
                             metadata={"matek_audit_verdict": verdict},
                         )
                     )
+            if accepted and proof_id is not None:
+                proposed = self._mark_main_result_support(
+                    nodes=by_id,
+                    proposed=proposed,
+                    problem_id=problem_id,
+                    run_id=run_id,
+                    target_id=target_id,
+                    accepted_proof_id=proof_id,
+                    now=now,
+                )
             return self._upsert_generated_nodes_unlocked(
                 state=state,
                 nodes=by_id,
@@ -3347,7 +3626,7 @@ class KnowledgeGraph:
                 run_id=run_id,
                 author="research-acceptance-gate",
                 reason=f"Record research outcome {outcome} with separate proof and audit nodes.",
-                operation_id=f"research-result:{run_id}",
+                operation_id=f"research-result-v2:{run_id}",
                 source_artifacts=[f".matek/runs/{run_id}/research/result.json"],
             )
 
@@ -3761,6 +4040,7 @@ __all__ = [
     "GRAPH_COLLECTION_RELATIVE",
     "GRAPH_DIRECTORIES",
     "GRAPH_SCHEMA_VERSION",
+    "MAIN_RESULT_NEEDS_TAG",
     "GraphConflictError",
     "GraphNotInitializedError",
     "GraphValidationError",

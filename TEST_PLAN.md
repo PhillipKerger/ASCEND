@@ -83,8 +83,10 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 2. Research rejected: no manuscript or Lean call.
 3. Repairable audit: full audit evidence and obligations immediately reactivate the coordinator
    and eventually succeed without waiting for unrelated workers.
-4. Bibliography contains nonexistent work: blocks Lean.
-5. LaTeX compilation failure: preserves source and truthful status.
+4. Bibliography contains nonexistent work: blocks publication and a fabricated citation blocks
+   downstream work; incomplete but non-fabricated bibliography metadata still permits Lean.
+5. LaTeX compilation failure: consumes configured repairs, preserves every draft, and records a
+   truthful publication status.
 6. Lean absent with `--no-lean`: successful research/manuscript report.
 7. Codex reaches budget: `LEAN_PARTIAL` with resumable state.
 8. Ctrl-C after a worker completion: raw report and source verification precede the immutable

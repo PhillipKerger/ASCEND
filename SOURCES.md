@@ -1,6 +1,6 @@
 # Current Official Implementation References
 
-These links were current on July 19, 2026. Re-check them during implementation and avoid
+These links were current on July 22, 2026. Re-check them during implementation and avoid
 spreading API assumptions throughout the codebase.
 
 - OpenAI model overview and model IDs:
@@ -14,16 +14,16 @@ spreading API assumptions throughout the codebase.
 - Web search tool:
   https://developers.openai.com/api/docs/guides/tools-web-search
 - Codex CLI:
-  https://developers.openai.com/codex/cli
+  https://learn.chatgpt.com/docs/codex/cli
 - Codex authentication (`codex login`, ChatGPT/API key distinction, and login status):
-  https://developers.openai.com/codex/auth
+  https://learn.chatgpt.com/docs/auth
 - Codex non-interactive mode (`codex exec`):
-  https://developers.openai.com/codex/non-interactive-mode
+  https://learn.chatgpt.com/docs/non-interactive-mode
 - Codex CLI command reference:
-  https://developers.openai.com/codex/cli/reference
+  https://learn.chatgpt.com/docs/developer-commands?surface=cli
 - Codex configuration and security:
-  https://developers.openai.com/codex/config-reference
-  https://developers.openai.com/codex/agent-approvals-security
+  https://learn.chatgpt.com/docs/config-file/config-reference
+  https://learn.chatgpt.com/docs/agent-approvals-security
 - Codex pricing and plan availability:
   https://chatgpt.com/codex/pricing/
 - OpenAI Agents SDK, optional rather than required:

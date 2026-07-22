@@ -7,3 +7,6 @@ possible. Classify every issue by severity and identify the smallest exact repai
 Independently check the package's `quantitative_or_algorithmic` classification. If it is false
 but the theorem or proof depends on a quantitative bound, rate, probability, precision, runtime,
 sample size, or complexity claim, return a blocking issue requiring the complexity audit.
+
+Return a concise foundational rationale and a nonempty `checks_performed` list naming the actual
+definition, quantifier, boundary-case, circularity, and target-alignment checks you carried out.

@@ -1,82 +1,265 @@
 {
+  "$defs": {
+    "ArtifactLink": {
+      "additionalProperties": false,
+      "properties": {
+        "bytes": {
+          "minimum": 0,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "sha256",
+        "bytes"
+      ],
+      "title": "ArtifactLink",
+      "type": "object"
+    },
+    "ReportNarrative": {
+      "additionalProperties": false,
+      "description": "Optional model-assisted prose; authoritative statuses remain deterministic.",
+      "properties": {
+        "executive_summary": {
+          "title": "Executive Summary",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "methodology_summary": {
+          "title": "Methodology Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "executive_summary",
+        "methodology_summary"
+      ],
+      "title": "ReportNarrative",
+      "type": "object"
+    }
+  },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
+  "additionalProperties": true,
+  "description": "Authoritative model for ``resources/schemas/final_report.schema.json``.",
+  "properties": {
+    "artifacts": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ArtifactLink"
+      },
+      "title": "Artifacts",
+      "type": "object"
+    },
+    "backend": {
+      "additionalProperties": true,
+      "title": "Backend",
+      "type": "object"
+    },
+    "backend_history": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Backend History",
+      "type": "array"
+    },
+    "configuration": {
+      "additionalProperties": true,
+      "title": "Configuration",
+      "type": "object"
+    },
+    "execution_issues": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Execution Issues",
+      "type": "array"
+    },
+    "knowledge_graph": {
+      "additionalProperties": true,
+      "title": "Knowledge Graph",
+      "type": "object"
+    },
+    "lean_consent": {
+      "additionalProperties": true,
+      "title": "Lean Consent",
+      "type": "object"
+    },
+    "lean_status": {
+      "title": "Lean Status",
+      "type": "string"
+    },
+    "literature_resolution_summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Literature Resolution Summary"
+    },
+    "literature_status": {
+      "default": "unknown",
+      "title": "Literature Status",
+      "type": "string"
+    },
+    "manuscript_findings": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Manuscript Findings",
+      "type": "array"
+    },
+    "manuscript_status": {
+      "title": "Manuscript Status",
+      "type": "string"
+    },
+    "narrative": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReportNarrative"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "original_problem": {
+      "default": "",
+      "title": "Original Problem",
+      "type": "string"
+    },
+    "problem_clarification": {
+      "additionalProperties": true,
+      "title": "Problem Clarification",
+      "type": "object"
+    },
+    "prompt_validation_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Prompt Validation Warnings",
+      "type": "array"
+    },
+    "publication_status": {
+      "default": "NOT_ASSESSED",
+      "title": "Publication Status",
+      "type": "string"
+    },
+    "reproducibility": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reproducibility",
+      "type": "array"
+    },
+    "research_checkpoint": {
+      "additionalProperties": true,
+      "title": "Research Checkpoint",
+      "type": "object"
+    },
+    "resume_action": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Resume Action"
+    },
+    "retriable_actions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retriable Actions",
+      "type": "array"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "scientific_status": {
+      "title": "Scientific Status",
+      "type": "string"
+    },
+    "skipped_stages": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Skipped Stages",
+      "type": "array"
+    },
+    "source_provenance_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Provenance Warnings",
+      "type": "array"
+    },
+    "stage_statuses": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Stage Statuses",
+      "type": "object"
+    },
+    "strongest_result": {
+      "title": "Strongest Result",
+      "type": "string"
+    },
+    "unresolved_obligations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Obligations",
+      "type": "array"
+    },
+    "usage": {
+      "additionalProperties": true,
+      "title": "Usage",
+      "type": "object"
+    },
+    "workflow_status": {
+      "default": "COMPLETE",
+      "title": "Workflow Status",
+      "type": "string"
+    }
+  },
   "required": [
     "run_id",
     "scientific_status",
-    "workflow_status",
     "manuscript_status",
     "lean_status",
     "strongest_result",
     "unresolved_obligations",
     "artifacts"
   ],
-  "properties": {
-    "run_id": {
-      "type": "string"
-    },
-    "scientific_status": {
-      "type": "string"
-    },
-    "workflow_status": {
-      "type": "string"
-    },
-    "manuscript_status": {
-      "type": "string"
-    },
-    "lean_status": {
-      "type": "string"
-    },
-    "strongest_result": {
-      "type": "string"
-    },
-    "unresolved_obligations": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "artifacts": {
-      "type": "object"
-    },
-    "problem_clarification": {
-      "type": "object"
-    },
-    "literature_status": {
-      "type": "string"
-    },
-    "literature_resolution_summary": {
-      "type": ["string", "null"]
-    },
-    "source_provenance_warnings": {
-      "type": "array",
-      "items": {"type": "string"}
-    },
-    "execution_issues": {
-      "type": "array",
-      "items": {"type": "object"}
-    },
-    "research_checkpoint": {
-      "type": "object"
-    },
-    "resume_action": {
-      "type": ["string", "null"]
-    },
-    "knowledge_graph": {
-      "type": "object",
-      "properties": {
-        "problem_id": {"type": "string"},
-        "revision": {"type": "string"},
-        "vault": {"type": "string"},
-        "index": {"type": "string"},
-        "validation_warnings": {
-          "type": "array",
-          "items": {"type": "string"}
-        },
-        "status": {"type": "object"}
-      },
-      "additionalProperties": true
-    }
-  },
-  "additionalProperties": true
+  "title": "FinalReport",
+  "type": "object"
 }

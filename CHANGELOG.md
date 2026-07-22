@@ -2,6 +2,23 @@
 
 ## 0.3.0 — 2026-07-22
 
+- Aligned the public specifications, example reports, and Lean confirmation wording with the
+  independent scientific, manuscript, publication, workflow, and Lean statuses. Added a
+  contributor guide and included the complete public specification set in source distributions.
+- Locked mandatory bibliography, related-work, placeholder, and axiom checks against misleading
+  configuration disablement. Project integrity verification now detects distribution/package
+  version drift and validates the exact generated schema set, including the final-report schema.
+- Manuscript validation now classifies terminating trust failures separately from repairable
+  presentation, citation-field, metadata, and LaTeX findings. Configured revisions checkpoint
+  every draft and validation; bibliography auditing and safe LaTeX builds continue independently.
+- Missing canonical MATEK whitepaper metadata now produces
+  `matek_whitepaper_citation_pending` and uses the repository/local technical-report fallback
+  without fabricated identifiers or deliberate TeX failures.
+- Reports now separate accepted research, manuscript quality, publication readiness, Lean status,
+  skipped stages, and retriable actions. Publication-only defects no longer overwrite scientific
+  status or prevent statement-aligned Lean formalization.
+- Research audit artifacts now carry role-specific rationales and nonempty
+  `checks_performed` evidence, and graph-patch warnings report only the actual patch defect.
 - Added a persisted resilience taxonomy (`integrity`, `execution`, `evidence`, `scientific`, and
   `resource`). Only security/state/artifact integrity failures hard-stop; recoverable provider,
   source, worker, graph-mutation, and audit failures now produce warnings or coordinator events.
@@ -15,6 +32,10 @@
   obligations.
 - Usage accounting now records every terminal provider attempt, including schema-invalid output
   and successful bounded repair generations.
+- Obsidian graph nodes now display note titles: managed notes use title filenames beneath stable-ID
+  directories, existing generated paths migrate transactionally, and full relative wikilinks keep
+  identities unambiguous. Accepted main results tag their explicit proof-support closure as
+  `MAIN_RESULT_NEEDS` and expose it through a dashboard and focused proof-architecture canvas.
 - Renamed the pre-release project to MATEK (Multi-Agent Theorem Exploration through Knowledge-Graph
   Memory). The distribution is now `matek-theorem-agent`, the Python package is
   `matek_theorem_agent`, the CLI is `matek`, configuration is `matek.toml`, environment variables
@@ -68,8 +89,8 @@
   web search remains enabled by default.
 - Aligned generated prompts more visibly with the public Cycle Double Cover prompting pattern by
   requiring a compact, problem-specific research mandate before the expanded MATEK protocol.
-- Added a standalone, compiled LaTeX methodology report covering orchestration, provenance,
-  stage resilience, bibliography gates, the `challenge.lean` trust boundary, and limitations.
+- Documented the methodology, orchestration, provenance, stage resilience, bibliography gates,
+  the `challenge.lean` trust boundary, and current limitations in the public specification set.
 - Added hash-validated stage-boundary guards so downstream work cannot start from incomplete or
   modified upstream checkpoints.
 - Added a durable post-manuscript Lean confirmation. Interactive users may decline; five minutes

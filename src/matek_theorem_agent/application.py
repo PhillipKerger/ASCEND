@@ -69,7 +69,6 @@ from .stages.lean import (
     run_lean_pipeline,
 )
 from .stages.manuscript import (
-    ManuscriptOutcome,
     ManuscriptResult,
     generate_manuscript,
     resume_manuscript_bibliography,
@@ -677,7 +676,7 @@ class WorkflowRunner:
                     previous = ManuscriptResult.model_validate_json(
                         previous_path.read_text(encoding="utf-8")
                     )
-                    if previous.outcome is ManuscriptOutcome.BIBLIOGRAPHY_REJECTED:
+                    if not previous.bibliography_verified and not previous.has_terminating_failure:
                         state.metadata["resume_bibliography_correction"] = True
             composite_boundary = {
                 StageName.RESEARCH_AUDIT: StageName.RESEARCH,
@@ -1087,13 +1086,13 @@ class WorkflowRunner:
             manuscript = await self._manuscript_stage(
                 state, store, logger, budget, compiled, research
             )
-            if not manuscript.passed_lean_gate:
-                self._skip_lean(state, "manuscript or bibliography gate did not pass")
+            if not manuscript.permits_formalization:
+                self._skip_lean(state, "manuscript trust boundary has a terminating failure")
+                state.metadata["lean_status"] = "BLOCKED_MANUSCRIPT_INTEGRITY"
                 store.save(state)
                 return WorkflowResult(state=state, report=self._report_stage(state, store, logger))
             if options.no_lean or not self.config.lean.enabled:
                 self._skip_lean(state, "Lean was not requested")
-                state.scientific_status = ScientificStatus.LEAN_NOT_REQUESTED
                 state.metadata["lean_status"] = ScientificStatus.LEAN_NOT_REQUESTED.value
                 store.save(state)
                 return WorkflowResult(state=state, report=self._report_stage(state, store, logger))
@@ -1106,7 +1105,6 @@ class WorkflowRunner:
             )
             if not await self._confirm_lean_after_manuscript(state, store, logger):
                 self._skip_lean(state, "user declined Lean verification after manuscript")
-                state.scientific_status = ScientificStatus.LEAN_NOT_REQUESTED
                 state.metadata["lean_status"] = ScientificStatus.LEAN_NOT_REQUESTED.value
                 store.save(state)
                 return WorkflowResult(state=state, report=self._report_stage(state, store, logger))
@@ -1332,7 +1330,6 @@ class WorkflowRunner:
         ):
             record_artifact_file(state, StageName.REPORT, path)
         succeed_stage(state, StageName.REPORT)
-        state.metadata["workflow_status"] = WorkflowExecutionStatus.COMPLETE.value
         store.save(state)
         budget.ensure_available()
         return WorkflowResult(state=state, report=report)
@@ -1610,7 +1607,7 @@ class WorkflowRunner:
         store: StateStore,
         logger: RunLogger,
     ) -> bool:
-        """Ask once after the manuscript gate and durably preserve the answer."""
+        """Ask once after a safe manuscript draft and durably preserve the answer."""
 
         existing = self._existing_lean_consent(state)
         if existing is not None:
@@ -1622,7 +1619,7 @@ class WorkflowRunner:
 
         request = LeanConsentRequest(
             run_id=state.run_id,
-            manuscript_path=state.run_root / "manuscript" / "paper.pdf",
+            manuscript_path=state.run_root / "manuscript" / "paper.tex",
         )
         error_kind: str | None = None
         try:
@@ -1634,7 +1631,7 @@ class WorkflowRunner:
         except TimeoutError:
             outcome = LeanConsentOutcome.TIMED_OUT
         except Exception as exc:
-            # A broken terminal prompt must not discard a verified manuscript or strand the
+            # A broken terminal prompt must not discard the accepted result or strand the
             # workflow. Treat it as no response, record the error class, and proceed.
             outcome = LeanConsentOutcome.PROMPT_ERROR
             error_kind = type(exc).__name__
@@ -2071,26 +2068,24 @@ class WorkflowRunner:
             record_artifact_file(state, StageName.MANUSCRIPT, path)
         if result_path.is_file():
             record_artifact_file(state, StageName.MANUSCRIPT, result_path)
-        if result.outcome is ManuscriptOutcome.COMPILED:
-            succeed_stage(state, StageName.MANUSCRIPT)
-            if self._begin(state, store, logger, StageName.BIBLIOGRAPHY):
-                for path in result.artifacts.paths.values():
-                    if "bibliography" in path.name or path.name == "references.bib":
-                        record_artifact_file(state, StageName.BIBLIOGRAPHY, path)
-                succeed_stage(state, StageName.BIBLIOGRAPHY)
-            state.scientific_status = ScientificStatus.BIBLIOGRAPHY_VERIFIED
-            state.metadata["manuscript_status"] = ScientificStatus.BIBLIOGRAPHY_VERIFIED.value
-        elif result.outcome is ManuscriptOutcome.BIBLIOGRAPHY_REJECTED:
-            succeed_stage(state, StageName.MANUSCRIPT)
-            if self._begin(state, store, logger, StageName.BIBLIOGRAPHY):
-                fail_stage(state, StageName.BIBLIOGRAPHY, "bibliography verification rejected")
-            state.scientific_status = ScientificStatus.BIBLIOGRAPHY_REJECTED
-            state.metadata["manuscript_status"] = ScientificStatus.BIBLIOGRAPHY_REJECTED.value
-        else:
-            fail_stage(state, StageName.MANUSCRIPT, result.outcome.value)
-            self._skip_pending(state, StageName.BIBLIOGRAPHY, "manuscript gate failed")
-            state.scientific_status = ScientificStatus.MANUSCRIPT_FAILED
-            state.metadata["manuscript_status"] = ScientificStatus.MANUSCRIPT_FAILED.value
+        succeed_stage(state, StageName.MANUSCRIPT)
+        if self._begin(state, store, logger, StageName.BIBLIOGRAPHY):
+            for path in result.artifacts.paths.values():
+                if "bibliography" in path.name or path.name == "references.bib":
+                    record_artifact_file(state, StageName.BIBLIOGRAPHY, path)
+            succeed_stage(state, StageName.BIBLIOGRAPHY)
+        state.metadata.update(
+            {
+                "manuscript_status": result.manuscript_status.value,
+                "publication_status": result.publication_status.value,
+                "manuscript_findings": [
+                    finding.model_dump(mode="json") for finding in result.findings
+                ],
+                "manuscript_revision_rounds": result.correction_cycles,
+                "manuscript_selected_draft": result.selected_draft_cycle,
+                "bibliography_verified": result.bibliography_verified,
+            }
+        )
         state.metadata["usage"] = budget.snapshot().model_dump(mode="json")
         state.metadata.pop("resume_bibliography_correction", None)
         store.save(state)
@@ -2123,11 +2118,7 @@ class WorkflowRunner:
             "prompts/lean_statement_auditor.md",
             "prompts/codex_formalizer.md",
         )
-        prohibited = ["by?", "TODO"]
-        if self.config.lean.prohibit_sorry:
-            prohibited.append("sorry")
-        if self.config.lean.prohibit_admit:
-            prohibited.append("admit")
+        prohibited = ["by?", "TODO", "sorry", "admit"]
         try:
             with resource_paths(*names) as paths:
                 codex_limits = self.config.codex.limits
@@ -2261,7 +2252,6 @@ class WorkflowRunner:
                 "usage": budget.snapshot().model_dump(mode="json"),
             }
         )
-        state.scientific_status = ScientificStatus(result.outcome.value)
         logger.event("lean.pipeline.completed", data={"outcome": result.outcome.value})
         store.save(state)
 
@@ -2318,6 +2308,17 @@ class WorkflowRunner:
             if stage is not StageName.REPORT
         )
         existing_workflow_status = state.metadata.get("workflow_status")
+        has_skipped_or_failed_stage = any(
+            record.status in {StageStatus.SKIPPED, StageStatus.FAILED, StageStatus.INTERRUPTED}
+            for stage, record in state.stages.items()
+            if stage is not StageName.REPORT
+        )
+        publication_not_ready = state.metadata.get("publication_status") not in {None, "READY"}
+        has_recorded_warnings = bool(
+            state.metadata.get("manuscript_findings")
+            or state.metadata.get("prompt_validation_warnings")
+            or state.metadata.get("source_provenance_warnings")
+        )
         if existing_workflow_status == WorkflowExecutionStatus.HARD_STOPPED.value:
             state.metadata["workflow_status"] = WorkflowExecutionStatus.HARD_STOPPED.value
         elif (
@@ -2325,6 +2326,8 @@ class WorkflowRunner:
             or existing_workflow_status == WorkflowExecutionStatus.PAUSED_RETRIABLE.value
         ):
             state.metadata["workflow_status"] = WorkflowExecutionStatus.PAUSED_RETRIABLE.value
+        elif has_skipped_or_failed_stage or publication_not_ready or has_recorded_warnings:
+            state.metadata["workflow_status"] = WorkflowExecutionStatus.COMPLETE_WITH_WARNINGS.value
         else:
             state.metadata["workflow_status"] = WorkflowExecutionStatus.COMPLETE.value
         report = write_final_report(state)

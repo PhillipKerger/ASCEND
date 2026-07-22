@@ -342,8 +342,10 @@ class ManuscriptSettings(_StrictSettings):
         min_length=1,
     )
     maximum_revision_rounds: int = Field(default=3, ge=0)
-    require_verified_bibliography: bool = True
-    require_related_work: bool = True
+    # These are explicit for configuration discoverability and compatibility, but are
+    # trust boundaries rather than feature flags.  A project may not disable them.
+    require_verified_bibliography: Literal[True] = True
+    require_related_work: Literal[True] = True
 
     @field_validator("latex_command")
     @classmethod
@@ -360,9 +362,11 @@ class LeanSettings(_StrictSettings):
     allow_project_edits: bool = False
     codex_command: str = "codex"
     maximum_codex_iterations: int = Field(default=50, ge=0)
-    prohibit_sorry: bool = True
-    prohibit_admit: bool = True
-    check_axioms: bool = True
+    # Successful Lean verification always enforces these checks.  Keeping the fields
+    # fixed at true prevents a configuration from promising a weaker trust boundary.
+    prohibit_sorry: Literal[True] = True
+    prohibit_admit: Literal[True] = True
+    check_axioms: Literal[True] = True
     approved_axioms: list[str] = Field(
         default_factory=lambda: ["propext", "Classical.choice", "Quot.sound"]
     )

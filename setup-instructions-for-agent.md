@@ -80,7 +80,7 @@ brew install --cask codex
 ```
 
 Consult the current official documentation before adapting these commands:
-<https://developers.openai.com/codex/cli>.
+<https://learn.chatgpt.com/docs/codex/cli>.
 
 Check authentication only through the supported command:
 

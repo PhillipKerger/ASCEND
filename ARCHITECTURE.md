@@ -22,9 +22,9 @@ problem.md + CLI/environment/project configuration
        -> candidate proof package
             -> independent audit suite + final research judge
             `-> failed-audit events return immediately to coordinator
-  -> LaTeX manuscript writer
-  -> bibliography verifier
-  -> LaTeX compiler
+  -> checkpointed LaTeX manuscript writer and bounded repairs
+       -> independent bibliography verifier
+       `-> LaTeX compiler for every safe draft
   -> durable user confirmation (five-minute default-to-proceed timeout)
   -> Lean feasibility agent
   -> challenge.lean generator
@@ -34,9 +34,12 @@ problem.md + CLI/environment/project configuration
   -> final report
 ```
 
-The backend changes how model work is executed, not the stage order or acceptance criteria.
-The manuscript and bibliography gate always precedes Lean work. MATEK itself owns agent-role
-separation, concurrency, budgets, checkpoints, and independent audits under both providers.
+The backend changes how model work is executed, not the stage order or acceptance criteria. A
+durable manuscript attempt precedes Lean work, but publication readiness is an independent trust
+boundary: bibliography, metadata, and section-layout findings do not block statement-aligned
+formalization. Claim drift, fabricated citations, unsafe output, or irreparable LaTeX after repair
+exhaustion still block downstream promotion as specified. MATEK itself owns agent-role separation,
+concurrency, budgets, checkpoints, and independent audits under both providers.
 
 ## Model-execution backends
 
@@ -240,8 +243,9 @@ does not contain the host Codex CLI by default and never enables provider fallba
 
 ### Deterministic verifiers
 
-LaTeX and Lean gates consume compiler results, source scans, hashes, and bibliography evidence.
-They do not ask a model whether a build or proof succeeded.
+The LaTeX publication gate and Lean verification gate consume their applicable compiler results,
+source scans, hashes, and bibliography evidence. They do not ask a model whether a build or proof
+succeeded, and bibliography readiness is not an input to the Lean kernel verdict.
 
 ## Dependency direction
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -106,6 +107,31 @@ def test_persistent_markdown_vault_survives_two_runs_and_rebuilds_index(
     assert graph.validate().valid
 
 
+def test_obsidian_note_paths_use_titles_and_migrate_legacy_generated_names(
+    tmp_path: Path,
+) -> None:
+    graph, _, problem_id, _ = initialized_graph(tmp_path)
+    target_id = graph.main_claim_id(problem_id)
+    target = graph.show(target_id)
+    assert target.path is not None
+    title_path = Path(target.path)
+    assert title_path.name == f"{target.title}.md"
+    assert title_path.parent.name == target_id
+
+    legacy_path = Path("Claims") / f"{target_id}--legacy-generated-title.md"
+    (graph.vault_root / title_path).rename(graph.vault_root / legacy_path)
+    state = graph.load_state()
+    state.node_paths[target_id] = legacy_path.as_posix()
+    graph.state_path.write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
+
+    graph.initialize()
+    migrated = graph.show(target_id)
+    assert migrated.path == title_path.as_posix()
+    assert (graph.vault_root / title_path).is_file()
+    assert not (graph.vault_root / legacy_path).exists()
+    assert graph.validate().valid
+
+
 def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path: Path) -> None:
     graph, _, problem_id, _ = initialized_graph(tmp_path)
     task_id, revision = graph_task(graph, problem_id)
@@ -168,6 +194,134 @@ def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path:
     tombstone = graph.tombstone(proof_id, reason="Superseded by a corrected proof.")
     assert tombstone.committed
     assert graph.show(proof_id).tombstone
+
+
+def test_accepted_result_marks_exact_main_proof_support_subgraph(tmp_path: Path) -> None:
+    graph, _, problem_id, _ = initialized_graph(tmp_path)
+    task_id, revision = graph_task(graph, problem_id)
+    target_id = graph.main_claim_id(problem_id)
+    dependency_id = "CLM-NEEDED01"
+    dependency_proof_id = "PRF-NEEDED01"
+    source_id = "SRC-NEEDED01"
+    approach_id = "APR-NOTNEED1"
+    merged = graph.merge_patch(
+        GraphPatch(
+            base_graph_revision=revision,
+            run_id="run-one",
+            task_id=task_id,
+            create_nodes=[
+                GraphNodeCreate(
+                    matek_id=dependency_id,
+                    node_type=NodeType.CLAIM,
+                    claim_type=ClaimType.LEMMA,
+                    title="Needed lemma",
+                    body="## Exact statement\n\nThe needed intermediate statement.",
+                    epistemic_status=EpistemicStatus.CANDIDATE,
+                ),
+                GraphNodeCreate(
+                    matek_id=dependency_proof_id,
+                    node_type=NodeType.PROOF,
+                    title="Proof of needed lemma",
+                    body="## Proof content\n\nA proof of the needed lemma.",
+                    epistemic_status=EpistemicStatus.CANDIDATE,
+                ),
+                GraphNodeCreate(
+                    matek_id=source_id,
+                    node_type=NodeType.SOURCE,
+                    title="Needed imported result",
+                    body="## Source record\n\nVerified source metadata.",
+                    epistemic_status=EpistemicStatus.AUDIT_PASSED,
+                ),
+                GraphNodeCreate(
+                    matek_id=approach_id,
+                    node_type=NodeType.APPROACH,
+                    title="Unused alternative",
+                    body="## Route\n\nAn unrelated route.",
+                ),
+            ],
+            add_edges=[
+                GraphEdge(
+                    source_id=target_id,
+                    relation=RelationType.DEPENDS_ON,
+                    target_id=dependency_id,
+                ),
+                GraphEdge(
+                    source_id=dependency_proof_id,
+                    relation=RelationType.PROVES,
+                    target_id=dependency_id,
+                ),
+                GraphEdge(
+                    source_id=dependency_proof_id,
+                    relation=RelationType.CITES,
+                    target_id=source_id,
+                ),
+            ],
+        ),
+        problem_id=problem_id,
+        operation_id="main-support-fixture",
+    )
+    assert merged.committed
+
+    result = graph.record_research_result(
+        problem_id=problem_id,
+        run_id="run-one",
+        research_result={
+            "outcome": "accepted",
+            "acceptance_gate": {"accepted": True},
+            "candidate": {
+                "exact_theorem": "For every test object, the desired property holds.",
+                "full_proof": "Apply the needed lemma.",
+                "unresolved_items": [],
+                "quantitative_or_algorithmic": False,
+            },
+            "audits": {},
+        },
+    )
+    assert result.committed
+    accepted_proof_id = next(
+        node.matek_id for node in graph.load_nodes() if node.title == "Accepted candidate proof"
+    )
+    needed_ids = {target_id, accepted_proof_id, dependency_id, dependency_proof_id, source_id}
+    by_id = {node.matek_id: node for node in graph.load_nodes()}
+    assert all("MAIN_RESULT_NEEDS" in by_id[node_id].tags for node_id in needed_ids)
+    assert "MAIN_RESULT_NEEDS" not in by_id[approach_id].tags
+    assert all(
+        by_id[node_id].metadata["matek_main_result_needs"] == "run-one" for node_id in needed_ids
+    )
+
+    dashboard = graph.vault_root / "Dashboards" / "Main Result Needs.md"
+    assert dashboard.is_file()
+    dashboard_text = dashboard.read_text(encoding="utf-8")
+    assert "Needed lemma" in dashboard_text
+    assert "Unused alternative" not in dashboard_text
+    canvas = json.loads(
+        (graph.vault_root / "Dashboards" / "Main Proof Architecture.canvas").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert {node["id"] for node in canvas["nodes"]} == needed_ids
+
+
+def test_main_result_support_is_not_marked_without_a_passing_acceptance_gate(
+    tmp_path: Path,
+) -> None:
+    graph, _, problem_id, _ = initialized_graph(tmp_path)
+    graph.record_research_result(
+        problem_id=problem_id,
+        run_id="run-one",
+        research_result={
+            "outcome": "accepted",
+            "acceptance_gate": {"accepted": False},
+            "candidate": {
+                "exact_theorem": "For every test object, the desired property holds.",
+                "full_proof": "An unaudited argument.",
+                "unresolved_items": [],
+                "quantitative_or_algorithmic": False,
+            },
+            "audits": {},
+        },
+    )
+    assert all("MAIN_RESULT_NEEDS" not in node.tags for node in graph.load_nodes())
 
 
 def test_optimistic_conflict_detection_and_dependency_invalidation(tmp_path: Path) -> None:

@@ -600,6 +600,29 @@ class AuditVerdict(BaseModel):
     issues: list[AuditIssue]
     unresolved_obligations: list[str]
     target_matches: bool
+    # Defaults preserve readability of pre-v0.3 audit artifacts. New provider outputs are
+    # rejected by ``run_audit`` unless they supply substantive evidence for both fields.
+    audit_role: str = "legacy"
+    rationale: str = "Legacy audit artifact did not record a rationale."
+    checks_performed: list[str] = Field(
+        default_factory=lambda: ["Legacy audit artifact predates explicit check recording."]
+    )
+
+    @field_validator("audit_role", "rationale")
+    @classmethod
+    def audit_evidence_text_is_nonempty(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("audit role and rationale must not be blank")
+        return normalized
+
+    @field_validator("checks_performed")
+    @classmethod
+    def checks_are_nonempty(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value if item.strip()]
+        if not normalized:
+            raise ValueError("an audit must record at least one check performed")
+        return normalized
 
     @model_validator(mode="after")
     def verdict_has_consistent_blocking_state(self) -> AuditVerdict:
@@ -1949,6 +1972,7 @@ async def run_adaptive_research(
         audit_name: str | None = None,
         repair_generation: int = 0,
         extra_obligations: list[str] | None = None,
+        include_default_obligations: bool = True,
     ) -> ExecutionIssue:
         resolved_category = category or classify_failure(exc)
         issue_number = len(scheduler.execution_issues) + 1
@@ -1967,7 +1991,11 @@ async def run_adaptive_research(
             recovery_obligations=list(
                 dict.fromkeys(
                     [
-                        *recovery_obligations(exc, resolved_category),
+                        *(
+                            recovery_obligations(exc, resolved_category)
+                            if include_default_obligations
+                            else []
+                        ),
                         *(extra_obligations or []),
                     ]
                 )
@@ -3230,6 +3258,7 @@ async def run_adaptive_research(
                 category=FailureCategory.EVIDENCE,
                 assignment_id=record.assignment.id,
                 extra_obligations=graph_issue_obligations,
+                include_default_obligations=False,
             )
         persist_research_index()
         return event_sequence
@@ -3489,7 +3518,22 @@ async def run_adaptive_research(
                 output_type=AuditVerdict,
                 selected_client=auditor_client,
             )
-            return name, result.parsed, result.response_id
+            verdict = result.parsed
+            if verdict.rationale.startswith(
+                "Legacy audit artifact"
+            ) or verdict.checks_performed == [
+                "Legacy audit artifact predates explicit check recording."
+            ]:
+                raise StageValidationError(
+                    f"The {name} audit omitted its rationale or checks_performed evidence."
+                )
+            verdict = verdict.model_copy(
+                update={
+                    "audit_role": name,
+                    "rationale": f"{name.replace('_', ' ').title()} audit: {verdict.rationale}",
+                }
+            )
+            return name, verdict, result.response_id
 
         missing_audits = [name for name in required_audits if name not in current_audits]
         new_logical_audit_calls = sum(

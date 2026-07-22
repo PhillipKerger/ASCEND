@@ -17,8 +17,8 @@ resolves canonical DOI/arXiv/ISBN/MR/HTTPS fields independently, so identifiers 
 duplicated inside prose merely to establish linkage.
 
 Also verify that `paper.tex` contains an explicit `Statement of AI Usage` stating that the
-MATEK system with GPT 5.6 was used. The statement must cite two distinct items: the canonical
-MATEK GitHub repository and the MATEK whitepaper arXiv preprint. Independently verify the
-repository owner and URL, whitepaper title/authors/date and arXiv identifier, and the accuracy of
-both BibTeX records. Placeholder or guessed project metadata is blocking. MATEK must be cited
-in every work in which it is used, so these citations may not be removed as a correction.
+MATEK system with GPT 5.6 was used and citing the canonical MATEK GitHub repository. Verify an
+available local MATEK technical-report citation. Verify the MATEK whitepaper only when a canonical arXiv
+identifier is available. If it is unavailable, report `matek_whitepaper_citation_pending` as a
+publication metadata warning; do not invent a record or fail drafting, LaTeX, or Lean solely for
+that absence. Placeholder or guessed project metadata remains blocking.

@@ -3,20 +3,18 @@
 MATEK (Multi-Agent Theorem Exploration through Knowledge-Graph Memory) is a local,
 auditable workflow for mathematical research and formal verification. Starting from a concise
 problem description, it coordinates independent research and adversarial review, writes and
-validates a LaTeX manuscript, and attempts Lean verification of the accepted main result. 
+validates a LaTeX manuscript, and attempts Lean verification of the accepted main result.
 
-Importanty, MATEK records progress in a **knowledge graph**. This means that partial results, insights, ideas, approaches, 
-or dead-ends found along the way are recorded, and each of these are linked to one another if relevant. For example, 
-a new lemma that is proven that the system thinks may be useful in the future will get its own page/node in the knowledge graph. 
-If a theorem is proven using that lemma, the page for that theorem will link to the lemma. Users can then explore this knowledge graph 
-sing Obsidian to understand what the system did, what partial progress was made, or backtrack through results that a larger one is built from. 
-Further, even if a result is not proven, MATEK can later pick up exactly where the session left off by working from the existing knowledge graph. 
+MATEK records progress in a **knowledge graph**. Partial results, insights, approaches, and dead
+ends are retained and linked when relevant. A useful proved lemma, for example, receives its own
+note; a theorem that uses it links back to that note. Users can explore the vault in Obsidian to
+understand what the system did, inspect partial progress, or trace a main result back through its
+supporting claims. Even when a result is not proved, MATEK can resume from the durable graph in a
+later session.
 
-
- MATEK should be cited in any scholarly, technical, or public work in which it is used, and 
- a clear statement of AI use should be present in produced work. 
- Those using MATEK are also encourgaed to share the knowedge-graphs obtained that can be used 
- as starting points for future work.
+MATEK should be cited in any scholarly, technical, or public work in which it is used, and
+produced work should contain a clear statement of AI usage. Users are also encouraged to share
+knowledge graphs that can serve as starting points for future work.
 
 | At a glance | Default behavior |
 | --- | --- |
@@ -30,12 +28,10 @@ Further, even if a result is not proven, MATEK can later pick up exactly where t
 | Verification | Independent source checks, LaTeX compilation, and deterministic Lean checks |
 
 MATEK never accepts a model's claim of success as verification. Manuscript generation follows
-the research acceptance gate, every citation must pass independent source checks, and
-`LEAN_VERIFIED` is issued only after deterministic Lean compiler and placeholder/axiom checks.
-
-The standalone [MATEK methodology technical report](technical-report/matek_methodology.pdf)
-describes the orchestration, its relationship to the public Cycle Double Cover prompt, the
-`challenge.lean` trust boundary, and the framework's current evaluation limitations.
+the research acceptance gate, every citation must pass independent source checks before
+publication readiness, and `LEAN_VERIFIED` is issued only after deterministic Lean compiler and
+placeholder/axiom checks. Repairable manuscript or bibliography defects do not erase accepted
+research or prevent statement-aligned formalization.
 
 ## Quickstart
 
@@ -61,7 +57,7 @@ codex login status
 Choose **Sign in with ChatGPT** when prompted. Other official installation methods include
 `npm install -g @openai/codex` and, on macOS, `brew install --cask codex`. Windows users should
 run MATEK through WSL2. Consult the current [Codex CLI installation
-guide](https://developers.openai.com/codex/cli) before installing or updating.
+guide](https://learn.chatgpt.com/docs/codex/cli) before installing or updating.
 
 MATEK calls `codex login status` for diagnostics. It never reads, copies, or modifies Codex
 credential files.
@@ -357,6 +353,12 @@ counterexamples, formalizations, sources, tasks, and artifacts remain separate t
 immutable IDs. The Markdown notes and flat YAML frontmatter are authoritative; SQLite is only a
 rebuildable index, and MATEK works normally when Obsidian is not installed.
 
+Managed notes use their human-readable title as the filename, with the immutable MATEK ID kept in
+the parent directory. Obsidian therefore shows titles rather than IDs in Graph view without making
+titles the identity key. When the main result passes its acceptance gate, its explicit proof-support
+closure is tagged `MAIN_RESULT_NEEDS` and shown in the Main Result Needs dashboard and Main Proof
+Architecture canvas.
+
 Open `.matek/knowledge/<graph-name>/` as an Obsidian vault to use `Home.md`, backlinks, typed properties,
 dashboard notes, and the four curated canvases. Human prose outside `MATEK:GENERATED` markers and
 note filenames may be edited. Changing an exact claim statement increments its version and marks
@@ -393,8 +395,9 @@ ordinary `matek init` leaves graph creation to the first problem run.
    audit events without waiting for fixed rounds.
 3. **Adversarial review:** checks proof steps, novelty claims, assumptions, and source metadata
    before accepting a candidate.
-4. **Manuscript:** writes the paper only after research acceptance, verifies the bibliography,
-   adds the required AI-usage disclosure, and compiles the LaTeX.
+4. **Manuscript:** writes the paper only after research acceptance, checkpoints and repairs each
+   draft, audits the bibliography independently, adds the required AI-usage disclosure, and
+   compiles every safe draft. Publication readiness is reported separately.
 5. **Lean confirmation:** asks whether to proceed with formal verification. Answering `n` skips
    Lean and prepares the report; no answer within five minutes proceeds automatically. A
    noninteractive run also proceeds immediately rather than hanging.
@@ -418,7 +421,7 @@ mathematical theorem.
 ### Truthful outcomes
 
 Scientific rejection is a valid workflow result, not necessarily a process failure. Reports
-distinguish research rejection, accepted proof, manuscript or bibliography failure,
+distinguish research rejection, accepted proof, manuscript draft quality, publication readiness,
 statement-only or partial Lean work, approved-axiom verification, and axiom-free
 `LEAN_VERIFIED`. Example reports are available in [`examples/reports`](examples/reports).
 Recoverable provider, schema, evidence, or resource issues are reported separately from the
@@ -427,13 +430,20 @@ and immutable-artifact integrity failures hard-stop a run.
 
 ## Citation and AI-usage disclosure
 
-Any scholarly, technical, or public work in which MATEK is used must cite both:
+Once canonical whitepaper metadata is available, any scholarly, technical, or public work in
+which MATEK is used must cite both:
 
 1. the [MATEK GitHub software repository](https://github.com/PhillipKerger/matek-theorem-agent); and
 2. the MATEK whitepaper preprint on arXiv.
 
-The arXiv identifier has not yet been assigned. Do not invent it; replace `ARXIV_ID` with the
-canonical identifier after the preprint is published:
+The arXiv identifier has not yet been assigned. Until it is available, cite the repository and
+any available local MATEK technical report. Generated drafts record
+`matek_whitepaper_citation_pending` and remain publication-blocked for metadata while
+bibliography auditing, LaTeX compilation, and Lean verification may continue. Never invent the
+missing identifier.
+
+The following is a planning template only. The placeholder must not appear in a manuscript or
+bibliography; replace it only after the canonical preprint is published:
 
 ```text
 MATEK contributors. MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph Memory.
@@ -444,12 +454,15 @@ MATEK contributors. MATEK: Multi-Agent Theorem Exploration through Knowledge-Gra
 arXiv preprint arXiv:ARXIV_ID.
 ```
 
-Generated manuscripts must include a **Statement of AI Usage** that names the MATEK system
-with GPT 5.6 and cites both items. For example:
+Generated manuscripts must include a **Statement of AI Usage** that names the MATEK system with
+GPT 5.6 and cites the repository, the available technical report, and the canonical whitepaper
+when it exists. While the whitepaper citation is pending, the disclosure must say so explicitly.
+For example:
 
 > **Statement of AI Usage.** The MATEK system with GPT 5.6 was used in the research,
 > manuscript-development, and formal-verification workflow for this work. MATEK's GitHub
-> repository and whitepaper preprint on arXiv are cited above.
+> repository and available methodology report are cited above; the canonical whitepaper citation
+> is pending.
 
 ## Technical reference
 
@@ -531,9 +544,10 @@ Web search remains enabled by default. `matek run --no-web-search` disables sear
 model stage and disables MATEK's separate DOI/arXiv/ISBN/URL resolver; the choice is frozen in
 the run configuration. `matek resume RUN_ID --no-web-search` applies the same restriction to
 all remaining stages. `MATEK_NO_WEB_SEARCH=true` is the environment equivalent. Because the
-bibliography gate must independently verify every citation, a full run intentionally stops at
-that gate when search is disabled; use `--research-only` when an entirely search-free workflow
-is desired. MATEK never treats missing online evidence as verified.
+bibliography gate must independently verify every citation, publication readiness normally
+remains blocked when search is disabled. Safe drafts and statement-aligned Lean work may still
+continue; use `--research-only` when an entirely search-free workflow is desired. MATEK never
+treats missing online evidence as verified.
 
 `--time-limit-minutes N` sets one active wall-clock allowance for the complete workflow. The
 same limit applies to Codex and API execution, elapsed active time is checkpointed across
@@ -686,7 +700,13 @@ content and never post credentials. MATEK is maintained through the canonical Gi
 - [`CLI_SPEC.md`](CLI_SPEC.md) is the complete command-line contract.
 - [`WORKFLOW_SPEC.md`](WORKFLOW_SPEC.md) describes the research and verification stages.
 - [`ARTIFACT_CONTRACT.md`](ARTIFACT_CONTRACT.md) defines the run-directory artifacts.
+- [`PRODUCT_REQUIREMENTS.md`](PRODUCT_REQUIREMENTS.md) defines product behavior and trust
+  boundaries.
+- [`DECISIONS.md`](DECISIONS.md) records locked design decisions.
 - [`SECURITY.md`](SECURITY.md) documents the threat model and security invariants.
+- [`TEST_PLAN.md`](TEST_PLAN.md) and [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md) define
+  verification and release evidence.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) explains development and pull-request expectations.
 - [`CHANGELOG.md`](CHANGELOG.md) records user-visible changes.
 
 ## Development
@@ -709,9 +729,9 @@ MATEK_CODEX_LIVE_TESTS=1 pytest -q -m codex_live
 MATEK_CODEX_LIVE_TESTS=1 MATEK_CODEX_LIVE_SEARCH=1 pytest -q -m codex_live
 ```
 
-The implementation follows the official [Codex CLI](https://developers.openai.com/codex/cli),
-[authentication](https://developers.openai.com/codex/auth), and [non-interactive
-mode](https://developers.openai.com/codex/non-interactive-mode) documentation. The advanced API
+The implementation follows the official [Codex CLI](https://learn.chatgpt.com/docs/codex/cli),
+[authentication](https://learn.chatgpt.com/docs/auth), and [non-interactive
+mode](https://learn.chatgpt.com/docs/non-interactive-mode) documentation. The advanced API
 adapter follows the official [Responses structured-output
 guide](https://developers.openai.com/api/docs/guides/structured-outputs) and [web-search
 guide](https://developers.openai.com/api/docs/guides/tools-web-search).

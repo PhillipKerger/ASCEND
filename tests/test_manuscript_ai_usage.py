@@ -47,7 +47,7 @@ def _bibliography(*, repository_url: str = FIXTURE_REPOSITORY) -> str:
     )
 
 
-def test_ai_usage_statement_requires_disclosure_and_both_distinct_matek_citations() -> None:
+def test_ai_usage_statement_accepts_disclosure_and_distinct_matek_citations() -> None:
     report = validate_matek_ai_usage(
         _paper(
             "The MATEK system with GPT 5.6 was used in this work "
@@ -77,12 +77,6 @@ def test_ai_usage_statement_requires_disclosure_and_both_distinct_matek_citation
             ),
             "incomplete_ai_usage_statement",
         ),
-        (
-            _paper(
-                "The MATEK system with GPT 5.6 was used in this work \\cite{matekSoftwareFixture}."
-            ),
-            "missing_matek_whitepaper_citation",
-        ),
     ],
 )
 def test_ai_usage_statement_rejects_missing_required_content(
@@ -93,6 +87,17 @@ def test_ai_usage_statement_rejects_missing_required_content(
 
     assert not report.passed
     assert expected_code in {issue.code for issue in report.issues}
+
+
+def test_missing_whitepaper_metadata_is_a_pending_publication_warning() -> None:
+    report = validate_matek_ai_usage(
+        _paper("The MATEK system with GPT 5.6 was used in this work \\cite{matekSoftwareFixture}."),
+        _bibliography(),
+    )
+
+    assert report.passed
+    assert report.matek_whitepaper_citation_pending
+    assert "matek_whitepaper_citation_pending" in {warning.code for warning in report.warnings}
 
 
 def test_ai_usage_statement_rejects_placeholder_repository_metadata() -> None:

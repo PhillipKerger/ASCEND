@@ -1,9 +1,12 @@
-"""Registry for checked-in schemas that mirror model-backed output types."""
+"""Registry for checked-in schemas that mirror authoritative Pydantic types."""
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from pydantic import BaseModel
 
+from .reporting import FinalReport
 from .stages.compile_prompt import CompiledProblem
 from .stages.lean import ClaimAlignment
 from .stages.manuscript import BibliographyAudit
@@ -33,3 +36,18 @@ def generated_model_schemas() -> dict[str, dict[str, object]]:
         filename: strict_json_schema(output_type)
         for filename, output_type in MODEL_SCHEMA_ARTIFACTS.items()
     }
+
+
+def generated_resource_schemas() -> dict[str, dict[str, object]]:
+    """Return every schema packaged as a public resource.
+
+    Model-output schemas use the provider-compatible closed representation. The final
+    report is a deterministic artifact rather than model output, so its schema preserves
+    the report model's intentionally extensible metadata mappings.
+    """
+
+    schemas = generated_model_schemas()
+    report_schema: dict[str, Any] = FinalReport.model_json_schema(mode="serialization")
+    report_schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    schemas["final_report.schema.json"] = cast(dict[str, object], report_schema)
+    return schemas

@@ -181,7 +181,10 @@ class AIUsageValidationReport:
     citation_keys: tuple[str, ...]
     repository_citation_key: str | None
     whitepaper_citation_key: str | None
+    technical_report_citation_key: str | None
+    matek_whitepaper_citation_pending: bool
     issues: tuple[VerificationIssue, ...]
+    warnings: tuple[VerificationIssue, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -191,7 +194,10 @@ class AIUsageValidationReport:
             "citation_keys": list(self.citation_keys),
             "repository_citation_key": self.repository_citation_key,
             "whitepaper_citation_key": self.whitepaper_citation_key,
+            "technical_report_citation_key": self.technical_report_citation_key,
+            "matek_whitepaper_citation_pending": self.matek_whitepaper_citation_pending,
             "issues": [issue.to_dict() for issue in self.issues],
+            "warnings": [warning.to_dict() for warning in self.warnings],
         }
 
 
@@ -294,6 +300,8 @@ def validate_matek_ai_usage(
 
     repository_candidates: list[str] = []
     whitepaper_candidates: list[str] = []
+    technical_report_candidates: list[str] = []
+    placeholder_matek_entries: list[str] = []
     for key in citation_keys:
         entry = entry_map.get(key)
         if entry is None:
@@ -303,18 +311,27 @@ def validate_matek_ai_usage(
             continue
         field_text = " ".join(entry.fields.values())
         if _CITATION_PLACEHOLDER.search(field_text):
+            placeholder_matek_entries.append(key)
             continue
         repository_match = _GITHUB_REPOSITORY_URL.search(field_text)
         if repository_match is not None and not _placeholder_github_path(repository_match):
             repository_candidates.append(key)
         if _entry_has_arxiv_identifier(entry):
             whitepaper_candidates.append(key)
+        normalized_fields = _normalize_latex_prose(field_text).casefold()
+        if "technical report" in normalized_fields or "/technical-report" in field_text.casefold():
+            technical_report_candidates.append(key)
 
     repository_key = repository_candidates[0] if repository_candidates else None
     whitepaper_key = next(
         (key for key in whitepaper_candidates if key != repository_key),
         whitepaper_candidates[0] if whitepaper_candidates else None,
     )
+    technical_report_key = next(
+        (key for key in technical_report_candidates if key not in {repository_key, whitepaper_key}),
+        technical_report_candidates[0] if technical_report_candidates else None,
+    )
+    warnings: list[VerificationIssue] = []
 
     if repository_key is None:
         issues.append(
@@ -323,11 +340,20 @@ def validate_matek_ai_usage(
                 "The Statement of AI Usage must cite the canonical MATEK GitHub repository.",
             )
         )
-    if whitepaper_key is None:
+    if placeholder_matek_entries:
         issues.append(
             VerificationIssue(
-                "missing_matek_whitepaper_citation",
-                "The Statement of AI Usage must cite the MATEK whitepaper arXiv preprint.",
+                "fabricated_or_placeholder_matek_citation",
+                "MATEK citation metadata contains a placeholder or guessed identifier: "
+                + ", ".join(sorted(placeholder_matek_entries)),
+            )
+        )
+    if whitepaper_key is None:
+        warnings.append(
+            VerificationIssue(
+                "matek_whitepaper_citation_pending",
+                "The canonical MATEK whitepaper arXiv identifier is unavailable; cite the "
+                "repository and available local technical report without inventing metadata.",
             )
         )
     if repository_key is not None and repository_key == whitepaper_key:
@@ -346,7 +372,10 @@ def validate_matek_ai_usage(
         citation_keys=citation_keys,
         repository_citation_key=repository_key,
         whitepaper_citation_key=whitepaper_key,
+        technical_report_citation_key=technical_report_key,
+        matek_whitepaper_citation_pending=whitepaper_key is None,
         issues=deduplicated,
+        warnings=tuple(_deduplicate_issues(warnings)),
     )
 
 

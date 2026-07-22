@@ -34,5 +34,6 @@ build/
 /README_HANDOFF.md
 /matek-coding-handoff/
 placeholder-resilience-fix.txt
-#sol: keep technical report in the gitignore!
-/technical-report/ 
+
+# Local technical-report build tree; not part of the published source distribution.
+/technical-report/

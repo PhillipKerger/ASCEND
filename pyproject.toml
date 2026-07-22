@@ -44,6 +44,7 @@ matek = "matek_theorem_agent.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/PhillipKerger/matek-theorem-agent"
+Documentation = "https://github.com/PhillipKerger/matek-theorem-agent#readme"
 Repository = "https://github.com/PhillipKerger/matek-theorem-agent.git"
 Issues = "https://github.com/PhillipKerger/matek-theorem-agent/issues"
 
@@ -61,10 +62,21 @@ include = [
   "/scripts",
   "/examples",
   "/README.md",
+  "/CONTRIBUTING.md",
   "/setup-instructions-for-agent.md",
+  "/ARCHITECTURE.md",
+  "/ARTIFACT_CONTRACT.md",
   "/CHANGELOG.md",
+  "/CLI_SPEC.md",
+  "/DECISIONS.md",
   "/LICENSE",
+  "/MATEK_OBSIDIAN_KNOWLEDGE_GRAPH_INSTRUCTIONS.md",
+  "/PRODUCT_REQUIREMENTS.md",
+  "/RELEASE_CHECKLIST.md",
   "/SECURITY.md",
+  "/SOURCES.md",
+  "/TEST_PLAN.md",
+  "/WORKFLOW_SPEC.md",
   "/matek.example.toml",
 ]
 

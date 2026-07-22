@@ -135,7 +135,7 @@ async def _terminal_lean_consent(request: LeanConsentRequest) -> LeanConsentOutc
     """Ask on an interactive terminal without blocking the workflow event loop."""
 
     console.print(
-        "[bold]The verified manuscript is ready.[/bold] Proceed with formal Lean "
+        "[bold]The accepted result is ready.[/bold] Proceed with formal Lean "
         "verification? [Y/n] "
         f"(automatically proceeds after {request.timeout_seconds // 60} minutes): ",
         end="",
@@ -352,7 +352,9 @@ def _print_result(result: WorkflowResult) -> None:
     if isinstance(backend, dict):
         console.print(f"Backend: {backend.get('display_name', backend.get('provider', 'unknown'))}")
     console.print(f"Research: {result.report.report.scientific_status}")
+    console.print(f"Workflow: {result.report.report.workflow_status}")
     console.print(f"Manuscript: {result.report.report.manuscript_status}")
+    console.print(f"Publication: {result.report.report.publication_status}")
     console.print(f"Lean: {result.report.report.lean_status}")
     clarification = result.report.report.problem_clarification
     if clarification.get("required") is True:
@@ -945,6 +947,9 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
         console.print(f"Run [bold]{state.run_id}[/bold]")
         console.print(f"Scientific: {scientific_status}")
         console.print(f"Workflow: {workflow_status}")
+        console.print(f"Manuscript: {state.metadata.get('manuscript_status', 'NOT_STARTED')}")
+        console.print(f"Publication: {state.metadata.get('publication_status', 'NOT_ASSESSED')}")
+        console.print(f"Lean: {state.metadata.get('lean_status', 'NOT_STARTED')}")
         clarification = state.metadata.get("problem_clarification", {})
         if isinstance(clarification, dict) and clarification.get("required") is True:
             console.print(

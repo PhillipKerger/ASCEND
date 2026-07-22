@@ -111,11 +111,16 @@ AUD-...
 FRM-...
 ```
 
-Recommended filename format:
+Recommended managed path format:
 
 ```text
-CLM-<id>--short-readable-slug.md
+Claims/CLM-<id>/Bounded Completion Lemma.md
 ```
+
+Keep the stable ID in the parent directory and use the note title as the Markdown filename. This
+makes Obsidian's graph label human-readable while preserving collision-free, immutable identity.
+Links should use the full vault-relative path; legacy generated ID-prefixed filenames may be
+migrated transactionally, while deliberate human renames remain authoritative.
 
 ---
 
@@ -181,11 +186,11 @@ statement_version: 3
 created_in_run: RUN-...
 last_modified_run: RUN-...
 depends_on:
-  - "[[CLM-...--kernel-learning-lemma]]"
+  - "[[Claims/CLM-.../Kernel Learning Lemma|Kernel Learning Lemma]]"
 proved_by:
-  - "[[PRF-...--completion-proof]]"
+  - "[[Proofs/PRF-.../Completion Proof|Completion Proof]]"
 audited_by:
-  - "[[AUD-...--foundational-audit]]"
+  - "[[Audits/AUD-.../Foundational Audit|Foundational Audit]]"
 formalized_by: []
 tags:
   - matek/claim
@@ -387,6 +392,7 @@ Generate a useful `Home.md` containing:
 - overall status;
 - strongest established results;
 - current proof architecture;
+- nodes tagged `MAIN_RESULT_NEEDS` after the main result passes its acceptance gate;
 - unresolved main obligations;
 - active tasks;
 - blocked or refuted routes;
@@ -406,6 +412,7 @@ Active Tasks
 Blocked Approaches
 Unresolved Contradictions
 Unverified Sources
+Main Result Needs
 Recent Changes
 ```
 
@@ -421,6 +428,12 @@ Formalization Map.canvas
 ```
 
 Do not attempt to place the entire graph into one Canvas.
+
+After a main result is accepted, compute the explicit support closure from the accepted proof and
+main claim through `depends_on`, `proves`, and `cites` relations. Mark that closure with the
+`MAIN_RESULT_NEEDS` tag and use it to populate the Main Result Needs dashboard and Main Proof
+Architecture canvas. The tag identifies proof architecture; it does not weaken any epistemic,
+source-verification, audit, bibliography, manuscript, or Lean gate.
 
 The graph must remain valid and queryable when Obsidian is not installed.
 
@@ -476,7 +489,9 @@ claim
 -> axiom report
 ```
 
-Do not weaken any existing bibliography, proof-audit, manuscript-compilation, or Lean-verification gate.
+Do not weaken any proof-acceptance, publication-readiness, or Lean-verification gate. Keep those
+promotion decisions independent so a publication-only warning does not erase accepted science or
+block otherwise eligible statement-aligned formalization.
 
 ---
 

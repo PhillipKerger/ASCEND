@@ -86,6 +86,7 @@ maximum_context_characters = 60000
 enabled = true
 latex_command = ["latexmk", "-pdf", "-interaction=nonstopmode", "paper.tex"]
 maximum_revision_rounds = 3
+# Publication trust boundaries are documented here but cannot be disabled.
 require_verified_bibliography = true
 require_related_work = true
 
@@ -96,6 +97,7 @@ docker_image = "matek-theorem-agent:latest"
 allow_project_edits = false
 codex_command = "codex"
 maximum_codex_iterations = 50
+# Lean verification certificates always enforce these three checks.
 prohibit_sorry = true
 prohibit_admit = true
 check_axioms = true

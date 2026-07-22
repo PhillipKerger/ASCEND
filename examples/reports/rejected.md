@@ -14,7 +14,9 @@ This sanitized example shows a truthful scientific rejection.
 | Gate | Status |
 | --- | --- |
 | Research | `RESEARCH_REJECTED` |
+| Workflow | `COMPLETE_WITH_WARNINGS` |
 | Manuscript | `NOT_STARTED` |
+| Publication | `NOT_ASSESSED` |
 | Lean | `NOT_STARTED` |
 
 ## Strongest established result
@@ -35,5 +37,5 @@ original universal claim was not established.
 - [`research/verdict.json`](../../.matek/runs/EXAMPLE/research/verdict.json)
 - [`report/verification_certificate.json`](../../.matek/runs/EXAMPLE/report/verification_certificate.json)
 
-No manuscript, bibliography, Codex, or Lean stage ran after rejection. The absence of those
-artifacts is part of the auditable outcome.
+No manuscript, bibliography, or Lean stage ran after rejection. The absence of those artifacts is
+part of the auditable outcome.

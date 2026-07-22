@@ -842,9 +842,10 @@ async def run_lean_pipeline(
     the deterministic verifier's working directory.
     """
 
-    if not manuscript_result.passed_lean_gate:
+    if not manuscript_result.permits_formalization:
         raise StageGateError(
-            "Lean requires both a fully verified bibliography and a successful LaTeX build."
+            "Lean requires an accepted research package and no terminating manuscript "
+            "claim-integrity or unsafe-output finding."
         )
     if (
         research_result.outcome != ResearchOutcome.ACCEPTED

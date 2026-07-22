@@ -21,6 +21,7 @@ from .models import (
 )
 from .service import (
     GRAPH_COLLECTION_RELATIVE,
+    MAIN_RESULT_NEEDS_TAG,
     GraphConflictError,
     GraphNotInitializedError,
     GraphValidationError,
@@ -33,6 +34,7 @@ from .service import (
 
 __all__ = [
     "GRAPH_COLLECTION_RELATIVE",
+    "MAIN_RESULT_NEEDS_TAG",
     "ClaimType",
     "EpistemicStatus",
     "GraphConflictError",

@@ -339,6 +339,21 @@ def test_project_edits_cannot_be_enabled_by_config_or_environment(tmp_path: Path
         )
 
 
+@pytest.mark.parametrize(
+    ("section", "setting"),
+    [
+        ("manuscript", "require_verified_bibliography"),
+        ("manuscript", "require_related_work"),
+        ("lean", "prohibit_sorry"),
+        ("lean", "prohibit_admit"),
+        ("lean", "check_axioms"),
+    ],
+)
+def test_trust_boundary_checks_cannot_be_disabled(section: str, setting: str) -> None:
+    with pytest.raises(ValidationError):
+        AppConfig.model_validate({section: {setting: False}})
+
+
 def test_config_validates_numeric_ranges(tmp_path: Path) -> None:
     path = tmp_path / "matek.toml"
     path.write_text(

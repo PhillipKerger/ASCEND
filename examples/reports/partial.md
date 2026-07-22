@@ -14,7 +14,9 @@ This sanitized example shows a valid paper proof whose formalization is incomple
 | Gate | Status |
 | --- | --- |
 | Research | `RESEARCH_ACCEPTED_FOR_MANUSCRIPT` |
-| Manuscript | `BIBLIOGRAPHY_VERIFIED` |
+| Workflow | `COMPLETE` |
+| Manuscript | `PUBLICATION_READY` |
+| Publication | `READY` |
 | Lean | `LEAN_PARTIAL` |
 
 ## Strongest established result

@@ -75,11 +75,17 @@ intake, and graph maintenance requires explicit selection whenever more than one
 - Manuscript creation occurs before Lean.
 - A complete related-work section is mandatory.
 - References must be verified independently, not merely copied from the research response.
-- Any unresolved, contradictory, or likely fabricated citation blocks the manuscript gate.
-- Every manuscript includes a Statement of AI Usage naming MATEK with GPT 5.6 and cites both
-  the canonical MATEK GitHub repository and MATEK whitepaper arXiv preprint.
-- Any scholarly, technical, or public work that uses MATEK must cite both the software
-  repository and whitepaper preprint, whether or not MATEK generated the final manuscript.
+- An unresolved citation or incomplete metadata blocks publication readiness, not accepted
+  scientific status or statement-aligned Lean work. A fabricated citation remains a terminating
+  manuscript trust failure.
+- Every manuscript includes a Statement of AI Usage naming MATEK with GPT 5.6. It cites the
+  canonical GitHub repository, any available local technical report, and the canonical MATEK
+  whitepaper after its arXiv metadata exists.
+- Until canonical whitepaper metadata exists, drafts record
+  `matek_whitepaper_citation_pending`; they do not fabricate an identifier or deliberately fail
+  LaTeX. The missing metadata blocks only publication readiness.
+- Any scholarly, technical, or public work that uses MATEK must cite the software repository and,
+  once available, the whitepaper preprint, whether or not MATEK generated the final manuscript.
 - Prefer primary sources: publisher pages, DOI/Crossref metadata, arXiv records, journal or
   conference proceedings, and authors' official pages where appropriate.
 

@@ -165,3 +165,38 @@ def test_report_separates_retriable_workflow_from_candidate_scientific_state(
     assert "Missing mandatory audits: hostile" in markdown
     assert "Trace: research/issues/issue-00000001.json" in markdown
     assert "Recovery: Retry the missing hostile audit." in markdown
+
+
+def test_report_separates_research_manuscript_publication_and_lean_statuses(
+    tmp_path: Path,
+) -> None:
+    run_root = create_run_root(tmp_path, run_id="20260722T130000Z-manuscript-warning-abcdef")
+    (run_root / "input" / "problem.md").write_text("Prove P.\n", encoding="utf-8")
+    state = new_run_state("20260722T130000Z-manuscript-warning-abcdef", tmp_path, run_root)
+    state.metadata.update(
+        {
+            "research_status": "RESEARCH_ACCEPTED_FOR_MANUSCRIPT",
+            "workflow_status": "COMPLETE_WITH_WARNINGS",
+            "manuscript_status": "DRAFT_WITH_WARNINGS",
+            "publication_status": "BLOCKED_METADATA",
+            "lean_status": "LEAN_VERIFIED",
+            "manuscript_findings": [
+                {
+                    "code": "matek_whitepaper_citation_pending",
+                    "severity": "publication_warning",
+                    "message": "Canonical whitepaper metadata is pending.",
+                    "repair": None,
+                }
+            ],
+        }
+    )
+
+    result = write_final_report(state)
+
+    assert result.report.scientific_status == "RESEARCH_ACCEPTED_FOR_MANUSCRIPT"
+    assert result.report.manuscript_status == "DRAFT_WITH_WARNINGS"
+    assert result.report.publication_status == "BLOCKED_METADATA"
+    assert result.report.lean_status == "LEAN_VERIFIED"
+    markdown = result.report_markdown.read_text(encoding="utf-8")
+    assert "Workflow | `COMPLETE_WITH_WARNINGS`" in markdown
+    assert "Publication | `BLOCKED_METADATA`" in markdown

@@ -22,7 +22,6 @@ from matek_theorem_agent.source_provenance import (
     SourceVerificationStatus,
 )
 from matek_theorem_agent.stages.common import (
-    StageGateError,
     StageValidationError,
     atomic_write_text,
     sha256_json,
@@ -63,12 +62,17 @@ from matek_theorem_agent.stages.manuscript import (
     IntroductionCoverage,
     LatexBuildResult,
     ManuscriptDraft,
+    ManuscriptFinding,
+    ManuscriptFindingSeverity,
     ManuscriptOutcome,
     ManuscriptResult,
+    ManuscriptStatus,
+    PublicationStatus,
     RelatedWorkClaimAudit,
     RelatedWorkValidation,
     generate_manuscript,
     resume_manuscript_bibliography,
+    validate_related_work,
 )
 from matek_theorem_agent.stages.research import (
     ApproachRegistry,
@@ -711,7 +715,12 @@ async def test_invalid_optional_graph_proposal_does_not_discard_scientific_repor
 
     assert result.worker_reports
     assert result.accepted_for_manuscript
-    assert any(issue.event_kind == "graph_mutation_rejected" for issue in result.execution_issues)
+    graph_issue = next(
+        issue for issue in result.execution_issues if issue.event_kind == "graph_mutation_rejected"
+    )
+    assert graph_issue.recovery_obligations == [
+        "Discard or repair the optional graph proposal; retain the validated scientific report."
+    ]
     patch_records = list((tmp_path / "research" / "graph-patches").glob("*.json"))
     assert patch_records
     assert any(json.loads(path.read_text(encoding="utf-8"))["warning"] for path in patch_records)
@@ -1565,6 +1574,9 @@ def passing_audit() -> AuditVerdict:
         issues=[],
         unresolved_obligations=[],
         target_matches=True,
+        audit_role="fixture",
+        rationale="The fixture audit checked its assigned trust boundary and found no defect.",
+        checks_performed=["Compared the frozen claim and proof against the assigned audit scope."],
     )
 
 
@@ -2357,6 +2369,9 @@ async def test_first_complete_proof_is_audited_without_draining_the_worker_pool(
     assert result.outcome == ResearchOutcome.ACCEPTED
     assert result.accepted_for_manuscript
     assert set(result.audits) == {"foundational", "domain", "hostile", "sources"}
+    assert {audit.audit_role for audit in result.audits.values()} == set(result.audits)
+    assert len({audit.rationale for audit in result.audits.values()}) == len(result.audits)
+    assert all(audit.checks_performed for audit in result.audits.values())
     # The first two workers finish together under the two-agent semaphore. The
     # remaining routes are stopped once that visible proof passes the full gate.
     assert len(result.registry.approaches) == 2
@@ -3212,14 +3227,132 @@ async def test_manuscript_requires_verified_bibliography_and_real_pdf(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_manuscript_rejects_missing_statement_of_ai_usage_before_source_audit(
+async def test_missing_matek_whitepaper_metadata_warns_and_compiles_draft(
+    tmp_path: Path,
+) -> None:
+    draft = manuscript_draft().model_copy(deep=True)
+    draft.paper_tex = draft.paper_tex.replace(
+        "matekSoftwareFixture,matekWhitepaperFixture", "matekSoftwareFixture"
+    )
+    draft.references_bib = draft.references_bib.split("@misc{matekWhitepaperFixture", maxsplit=1)[0]
+    audit = verified_bibliography().model_copy(deep=True)
+    audit.entries = [
+        entry for entry in audit.entries if entry.citation_key != "matekWhitepaperFixture"
+    ]
+    result = await generate_manuscript(
+        client=StaticClient([draft, audit], tool_metadata=web_source_metadata()),
+        backend=PdfBackend(),
+        research_result=accepted_research(),
+        claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
+        source_ledger=[],
+        manuscript_dir=tmp_path,
+    )
+
+    assert result.outcome is ManuscriptOutcome.DRAFT_WITH_WARNINGS
+    assert result.publication_status is PublicationStatus.BLOCKED_METADATA
+    assert result.bibliography_verified
+    assert result.latex_build is not None and result.latex_build.passed
+    assert result.permits_formalization
+    assert result.related_work.matek_whitepaper_citation_pending
+    assert any(finding.code == "matek_whitepaper_citation_pending" for finding in result.findings)
+    assert "\\PackageError" not in result.draft.paper_tex
+
+
+def test_tex_macro_theorem_matches_structured_frozen_claim() -> None:
+    draft = manuscript_draft().model_copy(deep=True)
+    exact_theorem = candidate_package().exact_theorem
+    draft.paper_tex = draft.paper_tex.replace(exact_theorem, "\\FixtureTheorem", 1)
+    draft.paper_tex = draft.paper_tex.replace(
+        "\\begin{document}",
+        f"\\newcommand{{\\FixtureTheorem}}{{{exact_theorem}}}\n\\begin{{document}}",
+    )
+    draft.frozen_claim_fidelity.manuscript_main_claim = "\\FixtureTheorem"
+
+    validation = validate_related_work(
+        draft.paper_tex,
+        draft.references_bib,
+        introduction_coverage=draft.introduction_coverage,
+        frozen_claim_fidelity=draft.frozen_claim_fidelity,
+        expected_candidate_sha256=sha256_json(candidate_package()),
+        expected_claim_contract_sha256=sha256_text(
+            json.dumps(MANUSCRIPT_CLAIM_CONTRACT, sort_keys=True, ensure_ascii=False)
+        ),
+        expected_exact_theorem=exact_theorem,
+    )
+
+    assert validation.frozen_claim_fidelity_verified
+    assert not any(finding.code == "manuscript_claim_drift" for finding in validation.findings)
+
+
+def test_semantically_equivalent_introduction_coverage_need_not_be_verbatim() -> None:
+    draft = manuscript_draft().model_copy(deep=True)
+    draft.introduction_coverage.related_work_excerpt = (
+        "The historical comparison comes from Smith's study of restricted fixture objects, "
+        "where a nearby lemma is established."
+    )
+    draft.introduction_coverage.difference_from_prior_work_excerpt = (
+        "Our theorem instead handles every natural-number instance and removes the earlier "
+        "restriction while preserving the predicate and domain."
+    )
+    draft.introduction_coverage.advance_over_prior_work_excerpt = (
+        "The advance gives a uniform complete argument from the fixture lemma through all "
+        "parameters and the boundary case."
+    )
+
+    validation = validate_related_work(
+        draft.paper_tex,
+        draft.references_bib,
+        introduction_coverage=draft.introduction_coverage,
+        frozen_claim_fidelity=draft.frozen_claim_fidelity,
+        expected_candidate_sha256=sha256_json(candidate_package()),
+        expected_claim_contract_sha256=sha256_text(
+            json.dumps(MANUSCRIPT_CLAIM_CONTRACT, sort_keys=True, ensure_ascii=False)
+        ),
+        expected_exact_theorem=candidate_package().exact_theorem,
+    )
+
+    assert validation.introduction_coverage_verified
+
+
+@pytest.mark.asyncio
+async def test_repairable_findings_consume_rounds_and_preserve_each_draft(
+    tmp_path: Path,
+) -> None:
+    first_draft = manuscript_draft().model_copy(deep=True)
+    first_draft.paper_tex = first_draft.paper_tex.replace("\\section{Related Work}", "")
+    repaired_draft = manuscript_draft()
+    client = StaticClient(
+        [first_draft, verified_bibliography(), repaired_draft, verified_bibliography()],
+        tool_metadata=web_source_metadata(),
+    )
+
+    result = await generate_manuscript(
+        client=client,
+        backend=PdfBackend(),
+        research_result=accepted_research(),
+        claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
+        source_ledger=[],
+        manuscript_dir=tmp_path,
+        maximum_correction_cycles=1,
+    )
+
+    assert result.outcome is ManuscriptOutcome.COMPILED
+    assert result.correction_cycles == 1
+    assert result.selected_draft_cycle == 1
+    for cycle in (0, 1):
+        assert (tmp_path / "drafts" / str(cycle) / "paper.tex").is_file()
+        assert (tmp_path / "drafts" / str(cycle) / "validation.json").is_file()
+
+
+@pytest.mark.asyncio
+async def test_manuscript_repairs_missing_statement_and_still_audits_and_builds(
     tmp_path: Path,
 ) -> None:
     draft = manuscript_draft().model_copy(deep=True)
     statement_start = draft.paper_tex.index("\\section*{Statement of AI Usage}")
     bibliography_start = draft.paper_tex.index("\\bibliography{references}")
     draft.paper_tex = draft.paper_tex[:statement_start] + draft.paper_tex[bibliography_start:]
-    client = StaticClient([draft])
+    client = StaticClient([draft, verified_bibliography()], tool_metadata=web_source_metadata())
     backend = PdfBackend()
 
     result = await generate_manuscript(
@@ -3229,13 +3362,17 @@ async def test_manuscript_rejects_missing_statement_of_ai_usage_before_source_au
         claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
         source_ledger=[],
         manuscript_dir=tmp_path,
+        maximum_correction_cycles=0,
     )
 
-    assert result.outcome == ManuscriptOutcome.CONTENT_REJECTED
+    assert result.outcome == ManuscriptOutcome.DRAFT_WITH_WARNINGS
+    assert result.manuscript_status is ManuscriptStatus.DRAFT_WITH_WARNINGS
     assert not result.related_work.ai_usage_disclosure_verified
     assert any("Statement of AI Usage" in issue for issue in result.related_work.issues)
-    assert len(client.requests) == 1
-    assert not backend.requests
+    assert len(client.requests) == 2
+    assert result.bibliography_audit is not None
+    assert backend.requests
+    assert result.permits_formalization
 
 
 @pytest.mark.asyncio
@@ -3256,9 +3393,10 @@ async def test_false_citation_blocks_latex_and_lean(tmp_path: Path) -> None:
         manuscript_dir=tmp_path,
         maximum_correction_cycles=0,
     )
-    assert result.outcome == ManuscriptOutcome.BIBLIOGRAPHY_REJECTED
+    assert result.outcome == ManuscriptOutcome.PUBLICATION_BLOCKED
+    assert result.publication_status is PublicationStatus.BLOCKED_INTEGRITY
     assert not result.passed_lean_gate
-    assert not backend.requests
+    assert backend.requests
 
 
 @pytest.mark.asyncio
@@ -3269,7 +3407,9 @@ async def test_manuscript_rejects_missing_introduction_coverage_and_frozen_claim
     bad_coverage.introduction_coverage.advance_over_prior_work_excerpt = (
         "This purported advance does not occur anywhere in the generated introduction text"
     )
-    coverage_client = StaticClient([bad_coverage])
+    coverage_client = StaticClient(
+        [bad_coverage, verified_bibliography()], tool_metadata=web_source_metadata()
+    )
     coverage_result = await generate_manuscript(
         client=coverage_client,
         backend=PdfBackend(),
@@ -3277,10 +3417,12 @@ async def test_manuscript_rejects_missing_introduction_coverage_and_frozen_claim
         claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
         source_ledger=[],
         manuscript_dir=tmp_path / "coverage",
+        maximum_correction_cycles=0,
     )
-    assert coverage_result.outcome == ManuscriptOutcome.CONTENT_REJECTED
+    assert coverage_result.outcome == ManuscriptOutcome.DRAFT_WITH_WARNINGS
     assert not coverage_result.related_work.introduction_coverage_verified
-    assert coverage_result.calls.model_calls == 1
+    assert coverage_result.calls.model_calls == 2
+    assert coverage_result.permits_formalization
 
     drifted = manuscript_draft().model_copy(deep=True)
     drifted.frozen_claim_fidelity.candidate_sha256 = "f" * 64
@@ -3293,7 +3435,7 @@ async def test_manuscript_rejects_missing_introduction_coverage_and_frozen_claim
         source_ledger=[],
         manuscript_dir=tmp_path / "drift",
     )
-    assert drift_result.outcome == ManuscriptOutcome.CONTENT_REJECTED
+    assert drift_result.outcome == ManuscriptOutcome.PUBLICATION_BLOCKED
     assert not drift_result.related_work.frozen_claim_fidelity_verified
     assert any("candidate hash" in issue for issue in drift_result.related_work.issues)
 
@@ -3319,28 +3461,55 @@ async def test_manuscript_rejects_tex_shell_and_file_io_escapes(
         source_ledger=[],
         manuscript_dir=tmp_path,
     )
-    assert result.outcome == ManuscriptOutcome.CONTENT_REJECTED
+    assert result.outcome == ManuscriptOutcome.PUBLICATION_BLOCKED
     assert any("prohibited TeX escape" in issue for issue in result.related_work.issues)
-    assert len(client.requests) == 1
+    assert len(client.requests) == 2
     assert not backend.requests
 
 
 @pytest.mark.asyncio
-async def test_bibliography_verifier_requires_web_search_before_any_write(tmp_path: Path) -> None:
-    client = StaticClient([])
+async def test_manuscript_rejects_deliberate_tex_build_failure_command(tmp_path: Path) -> None:
+    draft = manuscript_draft().model_copy(deep=True)
+    draft.paper_tex = draft.paper_tex.replace(
+        "\\section{Proof}",
+        "\\PackageError{matek}{missing metadata}{do not fabricate}\n\\section{Proof}",
+    )
+    backend = PdfBackend()
+    result = await generate_manuscript(
+        client=StaticClient([draft]),
+        backend=backend,
+        research_result=accepted_research(),
+        claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
+        source_ledger=[],
+        manuscript_dir=tmp_path,
+        maximum_correction_cycles=0,
+    )
+
+    assert result.outcome is ManuscriptOutcome.PUBLICATION_BLOCKED
+    assert result.publication_status is PublicationStatus.BLOCKED_INTEGRITY
+    assert any(finding.code == "deliberate_latex_failure" for finding in result.findings)
+    assert not backend.requests
+
+
+@pytest.mark.asyncio
+async def test_disabled_bibliography_search_preserves_draft_and_build(tmp_path: Path) -> None:
+    client = StaticClient([manuscript_draft()])
     destination = tmp_path / "manuscript"
-    with pytest.raises(StageValidationError, match="requires web_search"):
-        await generate_manuscript(
-            client=client,
-            backend=PdfBackend(),
-            research_result=accepted_research(),
-            claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
-            source_ledger=[],
-            manuscript_dir=destination,
-            verifier_settings=ModelSettings(web_search=False),
-        )
-    assert not client.requests
-    assert not destination.exists()
+    backend = PdfBackend()
+    result = await generate_manuscript(
+        client=client,
+        backend=backend,
+        research_result=accepted_research(),
+        claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
+        source_ledger=[],
+        manuscript_dir=destination,
+        verifier_settings=ModelSettings(web_search=False),
+        maximum_correction_cycles=0,
+    )
+    assert result.outcome is ManuscriptOutcome.DRAFT_WITH_WARNINGS
+    assert result.bibliography_audit is None
+    assert (destination / "drafts" / "0" / "validation.json").is_file()
+    assert backend.requests
 
 
 @pytest.mark.asyncio
@@ -3348,20 +3517,24 @@ async def test_arbitrary_bibliography_evidence_cannot_pass_gate(tmp_path: Path) 
     audit = verified_bibliography().model_copy(deep=True)
     audit.entries[0].authoritative_evidence = ["the publisher says this is real"]
     audit.claim_checks[0].evidence = ["another model confirmed the theorem"]
-    result = await generate_manuscript(
-        client=StaticClient(
-            [manuscript_draft(), audit],
-            tool_metadata=web_source_metadata(),
-        ),
-        backend=PdfBackend(),
-        research_result=accepted_research(),
-        claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
-        source_ledger=[],
-        manuscript_dir=tmp_path,
-        maximum_correction_cycles=0,
-    )
-    assert result.outcome == ManuscriptOutcome.BIBLIOGRAPHY_REJECTED
+    # The deliberately type-invalid fixture should trigger Pydantic's serializer warning;
+    # capture it so the release suite remains warning-clean while still exercising rejection.
+    with pytest.warns(UserWarning, match="Pydantic serializer warnings"):
+        result = await generate_manuscript(
+            client=StaticClient(
+                [manuscript_draft(), audit],
+                tool_metadata=web_source_metadata(),
+            ),
+            backend=PdfBackend(),
+            research_result=accepted_research(),
+            claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
+            source_ledger=[],
+            manuscript_dir=tmp_path,
+            maximum_correction_cycles=0,
+        )
+    assert result.outcome == ManuscriptOutcome.DRAFT_WITH_WARNINGS
     assert not result.bibliography_verified
+    assert result.permits_formalization
 
 
 @pytest.mark.asyncio
@@ -3375,7 +3548,7 @@ async def test_bibliography_evidence_must_match_provider_tool_sources(tmp_path: 
         manuscript_dir=tmp_path,
         maximum_correction_cycles=0,
     )
-    assert result.outcome == ManuscriptOutcome.BIBLIOGRAPHY_REJECTED
+    assert result.outcome == ManuscriptOutcome.DRAFT_WITH_WARNINGS
     audit_text = (tmp_path / "bibliography_audit.md").read_text(encoding="utf-8")
     assert "independently resolved" in audit_text
 
@@ -3400,7 +3573,7 @@ async def test_bibliography_resume_reuses_draft_without_repeating_initial_writer
         manuscript_dir=tmp_path,
         maximum_correction_cycles=0,
     )
-    assert first.outcome == ManuscriptOutcome.BIBLIOGRAPHY_REJECTED
+    assert first.outcome == ManuscriptOutcome.DRAFT_WITH_WARNINGS
 
     resume_client = StaticClient(
         [manuscript_draft(), verified_bibliography()],
@@ -3420,7 +3593,7 @@ async def test_bibliography_resume_reuses_draft_without_repeating_initial_writer
     assert resumed.calls.model_calls == 2
     first_new_payload = json.loads(resume_client.requests[0].input_text)
     assert first_new_payload["previous_manuscript"] == first.draft.model_dump(mode="json")
-    assert "mandatory_bibliography_corrections" in first_new_payload
+    assert "mandatory_validation_corrections" in first_new_payload
     assert (tmp_path / "result.json").is_file()
 
 
@@ -3436,8 +3609,9 @@ async def test_latex_exit_zero_without_pdf_fails_gate(tmp_path: Path) -> None:
         claim_contract=MANUSCRIPT_CLAIM_CONTRACT,
         source_ledger=[],
         manuscript_dir=tmp_path,
+        maximum_correction_cycles=0,
     )
-    assert result.outcome == ManuscriptOutcome.LATEX_FAILED
+    assert result.outcome == ManuscriptOutcome.PUBLICATION_BLOCKED
     assert not result.passed_lean_gate
     assert result.latex_build is not None
     assert "nonempty paper.pdf" in result.latex_build.diagnostics[0]
@@ -3767,21 +3941,34 @@ async def test_lean_pipeline_reuses_completed_iteration_without_repeating_codex(
 
 
 @pytest.mark.asyncio
-async def test_lean_gate_rejects_uncompiled_manuscript(tmp_path: Path) -> None:
+async def test_lean_allows_repairable_publication_findings_after_research_acceptance(
+    tmp_path: Path,
+) -> None:
     research = accepted_research()
     manuscript = compiled_manuscript(research, tmp_path)
-    manuscript.outcome = ManuscriptOutcome.LATEX_FAILED
-    with pytest.raises(StageGateError, match="verified bibliography"):
-        await run_lean_pipeline(
-            client=LeanModelClient(),
-            codex_client=EditingCodex(),
-            backend=LeanBackend(),
-            research_result=research,
-            manuscript_result=manuscript,
-            claim_contract={"conclusion": "True"},
-            lean_dir=tmp_path / "lean",
-            lean_project_root=tmp_path,
+    manuscript.outcome = ManuscriptOutcome.DRAFT_WITH_WARNINGS
+    manuscript.manuscript_status = ManuscriptStatus.DRAFT_WITH_WARNINGS
+    manuscript.publication_status = PublicationStatus.BLOCKED_BIBLIOGRAPHY
+    manuscript.bibliography_verified = False
+    manuscript.findings = [
+        ManuscriptFinding(
+            code="incomplete_bibliography_metadata",
+            severity=ManuscriptFindingSeverity.REPAIRABLE,
+            message="A venue field remains incomplete.",
         )
+    ]
+    result = await run_lean_pipeline(
+        client=LeanModelClient(),
+        codex_client=EditingCodex(),
+        backend=LeanBackend(),
+        research_result=research,
+        manuscript_result=manuscript,
+        claim_contract={"conclusion": "True"},
+        lean_dir=tmp_path / "lean",
+        lean_project_root=tmp_path,
+    )
+
+    assert result.alignment is not None and result.alignment.fully_aligned
 
 
 def test_lean_scanner_rejects_opaque_target_shortcuts(tmp_path: Path) -> None:

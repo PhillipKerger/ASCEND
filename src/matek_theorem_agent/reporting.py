@@ -40,7 +40,7 @@ class ReportNarrative(BaseModel):
 
 
 class FinalReport(BaseModel):
-    """Superset of ``resources/schemas/final_report.schema.json``."""
+    """Authoritative model for ``resources/schemas/final_report.schema.json``."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -48,6 +48,7 @@ class FinalReport(BaseModel):
     scientific_status: str
     workflow_status: str = "COMPLETE"
     manuscript_status: str
+    publication_status: str = "NOT_ASSESSED"
     lean_status: str
     strongest_result: str
     unresolved_obligations: list[str]
@@ -63,6 +64,10 @@ class FinalReport(BaseModel):
     prompt_validation_warnings: list[str] = Field(default_factory=list)
     source_provenance_warnings: list[str] = Field(default_factory=list)
     execution_issues: list[dict[str, Any]] = Field(default_factory=list)
+    manuscript_findings: list[dict[str, Any]] = Field(default_factory=list)
+    stage_statuses: dict[str, str] = Field(default_factory=dict)
+    skipped_stages: list[dict[str, str]] = Field(default_factory=list)
+    retriable_actions: list[str] = Field(default_factory=list)
     research_checkpoint: dict[str, Any] = Field(default_factory=dict)
     resume_action: str | None = None
     lean_consent: dict[str, Any] = Field(default_factory=dict)
@@ -204,6 +209,7 @@ def build_final_report(
     scientific = str(metadata.get("research_status", state.scientific_status.value))
     workflow = str(metadata.get("workflow_status", "COMPLETE"))
     manuscript = str(metadata.get("manuscript_status", "NOT_STARTED"))
+    publication = str(metadata.get("publication_status", "NOT_ASSESSED"))
     lean = str(metadata.get("lean_status", "NOT_STARTED"))
     strongest = str(metadata.get("strongest_result", "No complete result was established."))
     raw_obligations = metadata.get("unresolved_obligations", [])
@@ -223,6 +229,34 @@ def build_final_report(
     raw_knowledge_graph = metadata.get("knowledge_graph", {})
     knowledge_graph = dict(raw_knowledge_graph) if isinstance(raw_knowledge_graph, dict) else {}
     checkpoint = _research_checkpoint_summary(run_root)
+    raw_findings = metadata.get("manuscript_findings", [])
+    manuscript_findings = (
+        [dict(item) for item in raw_findings if isinstance(item, dict)]
+        if isinstance(raw_findings, list)
+        else []
+    )
+    stage_statuses = {
+        stage.value: record.status.value
+        for stage, record in state.stages.items()
+        if stage.value != "report"
+    }
+    skipped_stages = [
+        {
+            "stage": stage.value,
+            "reason": record.error or record.invalidated_reason or "stage was skipped",
+        }
+        for stage, record in state.stages.items()
+        if stage.value != "report" and record.status.value == "skipped"
+    ]
+    retriable_actions = list(
+        dict.fromkeys(
+            str(item.get("repair"))
+            for item in manuscript_findings
+            if item.get("severity") == "repairable" and item.get("repair")
+        )
+    )
+    if metadata.get("resume_action"):
+        retriable_actions.append(str(metadata["resume_action"]))
     if scientific == "CANDIDATE_AWAITING_AUDIT":
         candidate_path = run_root / "research" / "candidate" / "package.json"
         try:
@@ -245,6 +279,7 @@ def build_final_report(
         scientific_status=scientific,
         workflow_status=workflow,
         manuscript_status=manuscript,
+        publication_status=publication,
         lean_status=lean,
         strongest_result=strongest,
         unresolved_obligations=obligations,
@@ -276,6 +311,10 @@ def build_final_report(
             if isinstance(metadata.get("execution_issues", []), list)
             else []
         ),
+        manuscript_findings=manuscript_findings,
+        stage_statuses=stage_statuses,
+        skipped_stages=skipped_stages,
+        retriable_actions=list(dict.fromkeys(retriable_actions)),
         research_checkpoint=checkpoint,
         resume_action=(str(metadata["resume_action"]) if metadata.get("resume_action") else None),
         lean_consent=(
@@ -308,9 +347,26 @@ def render_report_markdown(report: FinalReport) -> str:
         f"| Research | `{report.scientific_status}` |",
         f"| Workflow | `{report.workflow_status}` |",
         f"| Manuscript | `{report.manuscript_status}` |",
+        f"| Publication | `{report.publication_status}` |",
         f"| Lean | `{report.lean_status}` |",
         "",
     ]
+    if report.skipped_stages:
+        lines.extend(["## Skipped stages", ""])
+        lines.extend(f"- `{item['stage']}` — {item['reason']}" for item in report.skipped_stages)
+        lines.append("")
+    if report.manuscript_findings:
+        lines.extend(["## Manuscript and publication findings", ""])
+        lines.extend(
+            f"- `{item.get('severity', 'warning')}` / "
+            f"`{item.get('code', 'unspecified')}`: {item.get('message', '')}"
+            for item in report.manuscript_findings
+        )
+        lines.append("")
+    if report.retriable_actions:
+        lines.extend(["## Retriable actions", ""])
+        lines.extend(f"- {action}" for action in report.retriable_actions)
+        lines.append("")
     if report.workflow_status == "PAUSED_RETRIABLE":
         lines.extend(
             [

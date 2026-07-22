@@ -14,7 +14,9 @@ This is a shortened, sanitized example of the report produced by a successful fi
 | Gate | Status |
 | --- | --- |
 | Research | `RESEARCH_ACCEPTED_FOR_MANUSCRIPT` |
-| Manuscript | `BIBLIOGRAPHY_VERIFIED` |
+| Workflow | `COMPLETE` |
+| Manuscript | `PUBLICATION_READY` |
+| Publication | `READY` |
 | Lean | `LEAN_VERIFIED` |
 
 ## Strongest established result
@@ -29,8 +31,9 @@ None recorded.
 ## Representative artifacts
 
 - [`prompts/compiled_problem.json`](../../.matek/runs/EXAMPLE/prompts/compiled_problem.json)
-- [`research/rounds/1/plan.json`](../../.matek/runs/EXAMPLE/research/rounds/1/plan.json)
-- [`research/rounds/2/plan.json`](../../.matek/runs/EXAMPLE/research/rounds/2/plan.json)
+- [`research/coordinator/state.json`](../../.matek/runs/EXAMPLE/research/coordinator/state.json)
+- [`research/events/00000001.json`](../../.matek/runs/EXAMPLE/research/events/00000001.json)
+- [`research/decisions/00000001.json`](../../.matek/runs/EXAMPLE/research/decisions/00000001.json)
 - [`research/candidate/package.json`](../../.matek/runs/EXAMPLE/research/candidate/package.json)
 - [`research/verdict.json`](../../.matek/runs/EXAMPLE/research/verdict.json)
 - [`manuscript/bibliography_audit.json`](../../.matek/runs/EXAMPLE/manuscript/bibliography_audit.json)

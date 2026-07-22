@@ -55,6 +55,8 @@ class ScientificStatus(StrEnum):
     RESEARCH_PARTIAL = "RESEARCH_PARTIAL"
     RESEARCH_REJECTED = "RESEARCH_REJECTED"
     RESEARCH_ACCEPTED_FOR_MANUSCRIPT = "RESEARCH_ACCEPTED_FOR_MANUSCRIPT"
+    # Retained solely so pre-0.3 run state remains readable. New runs keep
+    # manuscript, publication, and Lean statuses in independent metadata fields.
     MANUSCRIPT_FAILED = "MANUSCRIPT_FAILED"
     MANUSCRIPT_COMPILED = "MANUSCRIPT_COMPILED"
     BIBLIOGRAPHY_REJECTED = "BIBLIOGRAPHY_REJECTED"
@@ -85,6 +87,7 @@ class WorkflowExecutionStatus(StrEnum):
     RUNNING = "RUNNING"
     PAUSED_RETRIABLE = "PAUSED_RETRIABLE"
     COMPLETE = "COMPLETE"
+    COMPLETE_WITH_WARNINGS = "COMPLETE_WITH_WARNINGS"
     HARD_STOPPED = "HARD_STOPPED"
 
 
