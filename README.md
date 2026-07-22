@@ -1,14 +1,22 @@
-# MATEK: An Orchestrator for Agentic Mathematical Research with Lean Verification
+# MATEK: An Orchestrator for Agentic Mathematical Research using Human-Explorable Knowledge Graph Memory with Lean Verification
 
 MATEK (Multi-Agent Theorem Exploration through Knowledge-Graph Memory) is a local,
 auditable workflow for mathematical research and formal verification. Starting from a concise
 problem description, it coordinates independent research and adversarial review, writes and
-validates a LaTeX manuscript, and attempts Lean verification of the accepted main result.
+validates a LaTeX manuscript, and attempts Lean verification of the accepted main result. 
 
-> [!IMPORTANT]
-> MATEK **must be cited in any scholarly, technical, or public work in which it is used**.
-> Generated manuscripts must also contain a Statement of AI Usage naming the MATEK system
-> with GPT 5.6. See [Citation and AI-usage disclosure](#citation-and-ai-usage-disclosure).
+Importanty, MATEK records progress in a **knowledge graph**. This means that partial results, insights, ideas, approaches, 
+or dead-ends found along the way are recorded, and each of these are linked to one another if relevant. For example, 
+a new lemma that is proven that the system thinks may be useful in the future will get its own page/node in the knowledge graph. 
+If a theorem is proven using that lemma, the page for that theorem will link to the lemma. Users can then explore this knowledge graph 
+sing Obsidian to understand what the system did, what partial progress was made, or backtrack through results that a larger one is built from. 
+Further, even if a result is not proven, MATEK can later pick up exactly where the session left off by working from the existing knowledge graph. 
+
+
+ MATEK should be cited in any scholarly, technical, or public work in which it is used, and 
+ a clear statement of AI use should be present in produced work. 
+ Those using MATEK are also encourgaed to share the knowedge-graphs obtained that can be used 
+ as starting points for future work.
 
 | At a glance | Default behavior |
 | --- | --- |
