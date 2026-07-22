@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-- Added a persistent Obsidian-compatible typed knowledge graph under `.ascend/knowledge/` with
+- Renamed the pre-release project to MATEK (Multi-Agent Theorem Exploration through Knowledge-Graph
+  Memory). The distribution is now `matek-theorem-agent`, the Python package is
+  `matek_theorem_agent`, the CLI is `matek`, configuration is `matek.toml`, environment variables
+  use `MATEK_`, and project state lives under `.matek/`. No legacy command or state-path alias is
+  retained because the project had no released user base.
+- Added a persistent Obsidian-compatible typed knowledge graph under `.matek/knowledge/` with
   stable IDs, separate claims/proofs/audits/formalizations, typed relation constraints, portable
   Markdown source, rebuildable SQLite indexing, snapshots, dashboards, and curated canvases.
 - Integrated graph frontier memory and graph-scoped tasks into the continuous coordinator.
@@ -11,7 +16,7 @@
   merges only after raw worker evidence is durable.
 - Added dependency and exact-statement invalidation, human-edit ownership rules, preservation of
   distilled failed/partial routes, manuscript mappings, and exact-version Lean verification
-  records. Added `ascend graph` init/validate/status/frontier/rebuild/open/export/diff and focused
+  records. Added `matek graph` init/validate/status/frontier/rebuild/open/export/diff and focused
   traversal commands; Obsidian remains optional.
 - Replaced fixed research rounds and wait-for-all batches with a durable, completion-driven
   logical coordinator. Worker completions and failed audits become atomically written immutable
@@ -37,14 +42,14 @@
   In-flight reports remain durable; a failed gate feeds its complete reports and exact
   obligations back to the coordinator as high-priority events and resumes/refills the pool.
 - Added `--time-limit-minutes` to `run` and `resume` (plus
-  `ASCEND_TIME_LIMIT_MINUTES`) as one checkpointed active wall-clock allowance for the entire
+  `MATEK_TIME_LIMIT_MINUTES`) as one checkpointed active wall-clock allowance for the entire
   workflow; the remaining allowance now cancels overlong in-flight model calls. The option is
   disabled by default.
 - Added `--no-web-search` to `run` and `resume`, disabling live search across all model stages
-  and ASCEND's deterministic identifier HTTP resolver while preserving strict citation gates;
+  and MATEK's deterministic identifier HTTP resolver while preserving strict citation gates;
   web search remains enabled by default.
 - Aligned generated prompts more visibly with the public Cycle Double Cover prompting pattern by
-  requiring a compact, problem-specific research mandate before the expanded ASCEND protocol.
+  requiring a compact, problem-specific research mandate before the expanded MATEK protocol.
 - Added a standalone, compiled LaTeX methodology report covering orchestration, provenance,
   stage resilience, bibliography gates, the `challenge.lean` trust boundary, and limitations.
 - Added hash-validated stage-boundary guards so downstream work cannot start from incomplete or
@@ -62,7 +67,7 @@
 
 ### Command-line progress
 
-- `ascend run` and active resumes now print sparse numbered `ASCENSION` milestones for intake,
+- `matek run` and active resumes now print sparse numbered `ASCENSION` milestones for intake,
   prompt formulation, coordinator start/resume, live-pool management, candidate audits,
   manuscript generation, Lean, and final reporting without streaming model reasoning or per-call
   noise.
@@ -86,7 +91,7 @@
 - Prompt compilation performs at most one small source-ledger correction. Optional unresolved
   literature is removed or marked unknown with warnings, while unverified imported theorems
   remain blocking proof obligations.
-- Opt-in `ascend doctor --deep` now reports whether the installed Codex JSONL stream exposes
+- Opt-in `matek doctor --deep` now reports whether the installed Codex JSONL stream exposes
   search result URLs. Ordinary doctor remains model-call-free.
 
 ### Repository publication cleanup
@@ -104,35 +109,35 @@
   input and start a new run.
 - Compiled problems now classify their relationship to existing literature. Exact known results
   require verified source and hypothesis matching and cannot be presented as novel merely because
-  ASCEND reconstructed or formalized them.
+  MATEK reconstructed or formalized them.
 
 ### Configuration and documentation
 
 - Earlier development raised the Codex `max_parallel_agents` ceiling from 3 to 8; the current
   doubled defaults are recorded at the top of this release section.
-- Documented the per-run `.ascend/runs/<run-id>/` output layout, including manuscript, Lean,
+- Documented the per-run `.matek/runs/<run-id>/` output layout, including manuscript, Lean,
   report, and trace locations.
 
 ## 0.2.0 — 2026-07-19
 
 ### Codex is now the default backend
 
-- ASCEND now runs structured model stages through the official Codex CLI by default and reuses
+- MATEK now runs structured model stages through the official Codex CLI by default and reuses
   the saved authentication established by `codex login`. ChatGPT-authenticated use does not
   require an OpenAI Platform API key.
 - The existing Responses API backend remains supported through explicit `--backend api` or
-  `[backend] provider = "api"` selection. ASCEND never silently falls back to API billing.
+  `[backend] provider = "api"` selection. MATEK never silently falls back to API billing.
 - Configuration schema v2 adds provider-specific Codex/API settings and conservatively migrates
   legacy API-shaped configuration with a one-time notice.
 - Runs now retain provider-scoped call caches, Codex JSONL traces, backend/authentication
   provenance, backend-specific limits, and explicit provider-migration history.
-- `ascend doctor` separates Codex and optional API checks; `--deep` is the opt-in live Codex
+- `matek doctor` separates Codex and optional API checks; `--deep` is the opt-in live Codex
   structured-output probe.
 
 ### Manuscript disclosure
 
-- Generated manuscripts must include a Statement of AI Usage stating that the ASCEND system
-  with GPT 5.6 was used and must cite both the canonical ASCEND GitHub repository and ASCEND
+- Generated manuscripts must include a Statement of AI Usage stating that the MATEK system
+  with GPT 5.6 was used and must cite both the canonical MATEK GitHub repository and MATEK
   whitepaper arXiv preprint.
 - Deterministic manuscript and reproduction checks reject missing disclosures, missing
   citations, and placeholder repository/arXiv identifiers.

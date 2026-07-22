@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ascend_math_agent.schema_artifacts import generated_model_schemas  # noqa: E402
+from matek_theorem_agent.schema_artifacts import generated_model_schemas  # noqa: E402
 
 FRAMEWORK = ROOT / "resources" / "prompts" / "research_prompt_framework.txt"
 EXPECTED_FRAMEWORK_SHA256 = "bd724294a261f4bc2e5da2191813e40c1340bc6ee039c753cb5c60276e7a512c"

@@ -1,7 +1,7 @@
 """Obsidian-compatible Markdown/frontmatter parsing for knowledge nodes.
 
 The vault intentionally uses a conservative flat YAML subset.  Values emitted by
-ASCEND are JSON scalars or YAML lists of JSON strings, which remain valid YAML and
+MATEK are JSON scalars or YAML lists of JSON strings, which remain valid YAML and
 round-trip without a runtime YAML dependency.  Human-authored nested mappings are
 rejected with a focused diagnostic instead of being silently flattened.
 """
@@ -28,8 +28,8 @@ from .models import (
     WorkflowStatus,
 )
 
-GENERATED_START = "<!-- ASCEND:GENERATED:START -->"
-GENERATED_END = "<!-- ASCEND:GENERATED:END -->"
+GENERATED_START = "<!-- MATEK:GENERATED:START -->"
+GENERATED_END = "<!-- MATEK:GENERATED:END -->"
 
 _KEY = re.compile(r"\A[A-Za-z_][A-Za-z0-9_-]*\Z")
 _WIKILINK = re.compile(r"\A\[\[([^]|]+)(?:\|[^]]+)?\]\]\Z")
@@ -144,14 +144,14 @@ def node_id_from_wikilink(value: str) -> str:
     target = match.group(1) if match is not None else value.strip()
     node_match = _NODE_ID_IN_LINK.search(target)
     if node_match is None:
-        raise GraphMarkdownError(f"relation target is not an ASCEND node link: {value!r}")
+        raise GraphMarkdownError(f"relation target is not a MATEK node link: {value!r}")
     return node_match.group(1)
 
 
 def wikilink_for(node: GraphNode | str, *, title: str | None = None) -> str:
     label: str | None
     if isinstance(node, GraphNode):
-        target = Path(node.path).stem if node.path is not None else node.ascend_id
+        target = Path(node.path).stem if node.path is not None else node.matek_id
         label = node.title if title is None else title
     else:
         target = node
@@ -185,19 +185,19 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
         raise GraphMarkdownError(f"graph note is not UTF-8: {path}") from exc
     properties, body = parse_flat_frontmatter(text)
     relations: list[GraphEdge] = []
-    ascend_id = _string_property(properties, "ascend_id")
-    assert ascend_id is not None
+    matek_id = _string_property(properties, "matek_id")
+    assert matek_id is not None
     for relation in RelationType:
         for raw_target in _list_property(properties.get(relation.value), key=relation.value):
             relations.append(
                 GraphEdge(
-                    source_id=ascend_id,
+                    source_id=matek_id,
                     relation=relation,
                     target_id=node_id_from_wikilink(raw_target),
                 )
             )
     known = {
-        "ascend_id",
+        "matek_id",
         "node_type",
         "problem_id",
         "title",
@@ -216,7 +216,7 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
         "evidence",
         "manuscript_mappings",
         "tags",
-        "ascend_tombstone",
+        "matek_tombstone",
         *(relation.value for relation in RelationType),
     }
     metadata: dict[str, str | int | bool | list[str] | None] = {}
@@ -246,7 +246,7 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
     raw_claim_type = _string_property(properties, "claim_type", required=False)
     try:
         node = GraphNode(
-            ascend_id=ascend_id,
+            matek_id=matek_id,
             node_type=NodeType(node_type),
             problem_id=problem_id,
             title=title,
@@ -276,7 +276,7 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
                 properties.get("manuscript_mappings"), key="manuscript_mappings"
             ),
             metadata=metadata,
-            tombstone=bool(properties.get("ascend_tombstone", False)),
+            tombstone=bool(properties.get("matek_tombstone", False)),
             path=relative_path or path.as_posix(),
             content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         )
@@ -287,7 +287,7 @@ def parse_node_note(path: Path, *, relative_path: str | None = None) -> GraphNod
 
 def _ordered_properties(node: GraphNode) -> dict[str, object]:
     properties: dict[str, object] = {
-        "ascend_id": node.ascend_id,
+        "matek_id": node.matek_id,
         "node_type": node.node_type.value,
         "claim_type": node.claim_type.value if node.claim_type is not None else None,
         "problem_id": node.problem_id,
@@ -315,7 +315,7 @@ def _ordered_properties(node: GraphNode) -> dict[str, object]:
             "evidence": node.evidence,
             "manuscript_mappings": node.manuscript_mappings,
             "tags": node.tags,
-            "ascend_tombstone": node.tombstone,
+            "matek_tombstone": node.tombstone,
         }
     )
     for key in sorted(node.metadata):
@@ -399,7 +399,7 @@ def machine_hash(node: GraphNode) -> str:
     """Hash machine-owned fields while allowing a human title/body/tag edit."""
 
     payload = {
-        "ascend_id": node.ascend_id,
+        "matek_id": node.matek_id,
         "node_type": node.node_type.value,
         "problem_id": node.problem_id,
         "epistemic_status": node.epistemic_status.value,
@@ -423,7 +423,7 @@ def machine_hash(node: GraphNode) -> str:
         "evidence": node.evidence,
         "manuscript_mappings": node.manuscript_mappings,
         "metadata": {
-            key: value for key, value in sorted(node.metadata.items()) if key.startswith("ascend_")
+            key: value for key, value in sorted(node.metadata.items()) if key.startswith("matek_")
         },
         "tombstone": node.tombstone,
     }

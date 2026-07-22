@@ -3,14 +3,14 @@ requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ascend-math-agent"
+name = "matek-theorem-agent"
 version = "0.2.0"
-description = "ASCEND: autonomous mathematical research and Lean verification workflow"
+description = "MATEK: multi-agent theorem exploration through knowledge-graph memory"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{name = "ASCEND contributors"}]
+authors = [{name = "MATEK contributors"}]
 keywords = ["mathematics", "research", "lean", "formal-verification", "openai"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -40,18 +40,18 @@ dev = [
 ]
 
 [project.scripts]
-ascend = "ascend_math_agent.cli:app"
+matek = "matek_theorem_agent.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/PhillipKerger/ASCEND"
-Repository = "https://github.com/PhillipKerger/ASCEND.git"
-Issues = "https://github.com/PhillipKerger/ASCEND/issues"
+Homepage = "https://github.com/PhillipKerger/matek-theorem-agent"
+Repository = "https://github.com/PhillipKerger/matek-theorem-agent.git"
+Issues = "https://github.com/PhillipKerger/matek-theorem-agent/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ascend_math_agent"]
+packages = ["src/matek_theorem_agent"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"resources" = "ascend_math_agent/resources"
+"resources" = "matek_theorem_agent/resources"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -65,7 +65,7 @@ include = [
   "/CHANGELOG.md",
   "/LICENSE",
   "/SECURITY.md",
-  "/ascend.example.toml",
+  "/matek.example.toml",
 ]
 
 [tool.pytest.ini_options]
@@ -85,11 +85,11 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/ascend_math_agent/cli.py" = ["B008"]
+"src/matek_theorem_agent/cli.py" = ["B008"]
 
 [tool.mypy]
 python_version = "3.11"
 strict = true
-packages = ["ascend_math_agent"]
+packages = ["matek_theorem_agent"]
 mypy_path = "src"
 warn_unreachable = true

@@ -3,7 +3,7 @@
 ## Installation and publication
 
 - [x] Assign the canonical GitHub owner/URL and replace every `OWNER` placeholder.
-- [ ] Publish the ASCEND whitepaper on arXiv and replace every `ARXIV_ID` placeholder.
+- [ ] Publish the MATEK whitepaper on arXiv and replace every `ARXIV_ID` placeholder.
 - [ ] Test `pipx install git+https://...` from the published repository.
 - [ ] Test `uv tool install git+https://...` from the published repository.
 - [ ] Complete native macOS and WSL2 validation (Linux quality gates pass locally).
@@ -13,10 +13,10 @@
 
 ## Citation and manuscript disclosure
 
-- [x] README says ASCEND must be cited in every scholarly, technical, or public work using it.
-- [x] README requires citations to both the GitHub repository and ASCEND arXiv whitepaper.
+- [x] README says MATEK must be cited in every scholarly, technical, or public work using it.
+- [x] README requires citations to both the GitHub repository and MATEK arXiv whitepaper.
 - [ ] Replace the honest citation placeholders with canonical software and preprint metadata.
-- [x] Generated manuscripts are gated on the required Statement of AI Usage naming ASCEND with
+- [x] Generated manuscripts are gated on the required Statement of AI Usage naming MATEK with
   GPT 5.6 and distinct repository/preprint citations (validated with non-placeholder fixture
   metadata).
 
@@ -27,10 +27,10 @@
 - [x] Documentation explains that Codex mode needs no Platform API key but is not offline, free,
   or unlimited.
 - [x] API setup appears later as an advanced, separately billed, explicit selection.
-- [x] Documentation states that ASCEND never silently falls back to API billing.
+- [x] Documentation states that MATEK never silently falls back to API billing.
 - [x] Ordinary doctor logic consumes no model allowance and separates Codex from optional API
   diagnostics.
-- [x] CLI exposes and renders `ascend doctor --deep` as the explicit live Codex probe.
+- [x] CLI exposes and renders `matek doctor --deep` as the explicit live Codex probe.
 - [ ] Opt-in live Codex smoke tests pass with an authenticated disposable environment.
 
 ## Compatibility and migration

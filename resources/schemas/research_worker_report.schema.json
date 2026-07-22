@@ -56,17 +56,6 @@
     "GraphNodeCreate": {
       "additionalProperties": false,
       "properties": {
-        "ascend_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Ascend Id"
-        },
         "body": {
           "title": "Body",
           "type": "string"
@@ -90,6 +79,17 @@
           },
           "title": "Evidence",
           "type": "array"
+        },
+        "matek_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Matek Id"
         },
         "node_type": {
           "$ref": "#/$defs/NodeType"
@@ -117,7 +117,7 @@
         }
       },
       "required": [
-        "ascend_id",
+        "matek_id",
         "node_type",
         "title",
         "body",
@@ -134,10 +134,6 @@
     "GraphNodeUpdate": {
       "additionalProperties": false,
       "properties": {
-        "ascend_id": {
-          "title": "Ascend Id",
-          "type": "string"
-        },
         "body": {
           "anyOf": [
             {
@@ -158,6 +154,10 @@
         },
         "expected_content_hash": {
           "title": "Expected Content Hash",
+          "type": "string"
+        },
+        "matek_id": {
+          "title": "Matek Id",
           "type": "string"
         },
         "reason": {
@@ -198,7 +198,7 @@
         }
       },
       "required": [
-        "ascend_id",
+        "matek_id",
         "expected_content_hash",
         "title",
         "body",
@@ -298,10 +298,6 @@
     "GraphStatusChange": {
       "additionalProperties": false,
       "properties": {
-        "ascend_id": {
-          "title": "Ascend Id",
-          "type": "string"
-        },
         "epistemic_status": {
           "anyOf": [
             {
@@ -314,6 +310,10 @@
         },
         "expected_content_hash": {
           "title": "Expected Content Hash",
+          "type": "string"
+        },
+        "matek_id": {
+          "title": "Matek Id",
           "type": "string"
         },
         "reason": {
@@ -332,7 +332,7 @@
         }
       },
       "required": [
-        "ascend_id",
+        "matek_id",
         "expected_content_hash",
         "epistemic_status",
         "workflow_status",

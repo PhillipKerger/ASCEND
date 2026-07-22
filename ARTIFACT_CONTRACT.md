@@ -3,7 +3,7 @@
 Every run must follow this layout:
 
 ```text
-.ascend/runs/<run-id>/
+.matek/runs/<run-id>/
 ├── input/
 │   ├── problem.original
 │   ├── problem.md
@@ -94,7 +94,7 @@ Persistent graph state is project-scoped and is intentionally not included in a 
 verification-certificate inventory:
 
 ```text
-.ascend/
+.matek/
 ├── knowledge/{Problems,Definitions,Claims,Proofs,Approaches,Counterexamples,Experiments,
 │   Sources,Tasks,Audits,Formalizations,Runs,Artifacts,Human Notes,Dashboards}/
 ├── knowledge/Home.md
@@ -133,7 +133,7 @@ proof, and source files are materialized. Resume replays these committed transac
 rerunning external source checks and risking a different result.
 
 `research/coordinator/state.json` is the canonical atomic scheduler checkpoint. Event publication
-uses its `pending_event` field as a write-ahead record: ASCEND first checkpoints the state
+uses its `pending_event` field as a write-ahead record: MATEK first checkpoints the state
 transition and complete event payload, creates the immutable event idempotently, then checkpoints
 the state with the pending field cleared. Resume completes such a pending publication and validates
 the checkpoint against event, decision, assignment, report, and hash evidence.

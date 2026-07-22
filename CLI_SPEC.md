@@ -1,6 +1,6 @@
 # CLI Specification
 
-ASCEND uses Typer for typed command parsing and Rich for readable output. All commands present
+MATEK uses Typer for typed command parsing and Rich for readable output. All commands present
 Codex first as the recommended/default model backend and the direct API as advanced/optional.
 
 ## Backend selection
@@ -9,31 +9,31 @@ Model-backend resolution is:
 
 ```text
 explicit --backend codex|api
-  -> ASCEND_BACKEND
-  -> [backend].provider in ascend.toml
+  -> MATEK_BACKEND
+  -> [backend].provider in matek.toml
   -> codex
 ```
 
-The chosen provider is persisted in run state. ASCEND never changes a provider implicitly and
+The chosen provider is persisted in run state. MATEK never changes a provider implicitly and
 never falls back from Codex to API billing. Resume uses the frozen provider unless a user
 explicitly requests a provenance-changing migration.
 
-## `ascend init`
+## `matek init`
 
-Creates a schema-v2 `ascend.toml` with `[backend] provider = "codex"`, `.ascend/.gitignore`, and
+Creates a schema-v2 `matek.toml` with `[backend] provider = "codex"`, `.matek/.gitignore`, and
 an example problem. It must not overwrite existing files without confirmation or `--force`.
 Legacy API configurations are migrated without discarding settings and receive a one-time
 notice.
 
-## `ascend doctor`
+## `matek doctor`
 
 The default command performs no model call and groups output as follows.
 
-### ASCEND environment
+### MATEK environment
 
 - supported Python version;
 - resolved project/configuration and selected default backend;
-- write permissions under `.ascend/`; and
+- write permissions under `.matek/`; and
 - prompt-framework integrity hash.
 
 ### Codex backend — recommended/default
@@ -45,7 +45,7 @@ The default command performs no model call and groups output as follows.
 - `codex exec resume` when session persistence is enabled; and
 - authentication class from `codex login status` only.
 
-ASCEND classifies authentication as ChatGPT, API key, access token, authenticated/unknown,
+MATEK classifies authentication as ChatGPT, API key, access token, authenticated/unknown,
 not authenticated, or error. It never reads credential files or prints raw status output that
 could disclose identity or secret data.
 
@@ -64,14 +64,14 @@ The output explicitly says that a key is not required for ChatGPT-authenticated 
 - configured LaTeX compiler when manuscript generation is enabled; and
 - Docker/image availability only when Docker command execution is configured.
 
-`ascend doctor --deep` explicitly opts into one minimal live Codex structured-output call with
+`matek doctor --deep` explicitly opts into one minimal live Codex structured-output call with
 search enabled. It may consume Codex allowance or credits. Probe artifacts live only in a
 temporary directory and are deleted afterward. Ordinary `doctor` never runs this probe.
 
 Every failure includes an exact remediation command. In particular, an unsigned-in user is
-directed to run `codex login`, choose **Sign in with ChatGPT**, and rerun `ascend doctor`.
+directed to run `codex login`, choose **Sign in with ChatGPT**, and rerun `matek doctor`.
 
-## `ascend run PROBLEM_FILE`
+## `matek run PROBLEM_FILE`
 
 Without a backend flag, a new installation uses Codex. Important options:
 
@@ -94,7 +94,7 @@ Without a backend flag, a new installation uses Codex. Important options:
 --verbose
 ```
 
-`--max-rounds INTEGER` remains accepted as a deprecated compatibility input. ASCEND translates
+`--max-rounds INTEGER` remains accepted as a deprecated compatibility input. MATEK translates
 each historical round into the applicable open-work-capacity number of coordinator decisions (32
 under historical defaults); it never creates rounds or a wait-for-all synchronization barrier.
 Supplying both the legacy and current decision options is an error.
@@ -104,21 +104,21 @@ validates and prints the resolved backend and stage plan without a model call.
 
 The research defaults use `gpt-5.6-sol`, max coordinator effort, and xhigh worker effort. The
 Responses API adapter sends `reasoning.mode = "pro"` for those roles; the Codex adapter uses the
-Codex CLI model and reasoning-effort controls and has no separate ASCEND `pro` switch. No
+Codex CLI model and reasoning-effort controls and has no separate MATEK `pro` switch. No
 `--ultra` option exists: Ultra-like research behavior comes from the durable application-level
 coordinator and live pool, not a provider parameter.
 
-`--no-web-search` disables web search in every model stage and disables ASCEND's deterministic
+`--no-web-search` disables web search in every model stage and disables MATEK's deterministic
 public-identifier HTTP resolver. Search remains enabled by default. The resolved setting is
-saved with the run; the same flag on `ascend resume` disables it for all remaining stages.
+saved with the run; the same flag on `matek resume` disables it for all remaining stages.
 Unverifiable citations remain unverified, so this option never weakens the bibliography gate and
 a fully offline run should normally also use `--research-only`.
 
 `--time-limit-minutes N` sets the total active wall-clock allowance across prompt compilation,
 research, manuscript work, and formal verification. Elapsed active time is stored in run state
-and carried into resume; time while ASCEND is not running is excluded. The remaining allowance
+and carried into resume; time while MATEK is not running is excluded. The remaining allowance
 also bounds each in-flight model call. There is no wall-clock limit by default.
-`ASCEND_TIME_LIMIT_MINUTES=N` is the environment form.
+`MATEK_TIME_LIMIT_MINUTES=N` is the environment form.
 
 `--max-agents N` caps simultaneous research workers. The built-in concurrency default is 32.
 `research.maximum_pending_assignments` defaults to 32 total open assignments—queued plus
@@ -131,7 +131,7 @@ Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
 optional run name are normalized to portable, lowercase filesystem-safe components.
 
-During `run` and active `resume` operations, ASCEND prints sparse progress lines with stable
+During `run` and active `resume` operations, MATEK prints sparse progress lines with stable
 high-level milestone numbers. It does not stream model reasoning, per-call diagnostics, or every
 worker completion. A full run may show:
 
@@ -159,11 +159,11 @@ The verified manuscript is ready. Proceed with formal Lean verification? [Y/n]
 ```
 
 `n` skips Lean and prepares the final report. An empty/affirmative answer proceeds. If the user
-does not answer within five minutes, ASCEND proceeds automatically. Noninteractive invocations
+does not answer within five minutes, MATEK proceeds automatically. Noninteractive invocations
 also proceed immediately rather than hanging. The decision is durable and is not asked again on
 ordinary resume.
 
-## `ascend status [RUN_ID]`
+## `matek status [RUN_ID]`
 
 Shows one backend summary, a `Research roles:` line with configured coordinator/worker models and
 efforts, the stage table, aggregate usage and elapsed time, and recorded artifact paths. When the
@@ -172,7 +172,7 @@ count, the acknowledged-through event cursor, and queued, active, and completed 
 API runs may show calculated dollar cost; Codex runs must not invent a dollar cost for subscription
 allowance. If the run ID is omitted, use the latest run in the current project.
 
-## `ascend resume [RUN_ID]`
+## `matek resume [RUN_ID]`
 
 Resumes the first incomplete stage with the provider stored in run state. Options include
 `--backend codex|api`, `--force-stage STAGE`, and backend-appropriate budget increases.
@@ -193,37 +193,37 @@ archives an incomplete research scheduler because its outstanding request identi
 the old provider. The authorized migration itself is write-ahead and crash-recoverable. A fully
 completed run is a no-op.
 
-## `ascend report [RUN_ID]`
+## `matek report [RUN_ID]`
 
 Regenerates report products from existing artifacts without changing upstream scientific
 artifacts. It is offline by default. `--rewrite` is the only model-assisted report option and
 uses the run's selected provider; model prose cannot override deterministic statuses or hashes.
 
-## `ascend verify [RUN_ID]`
+## `matek verify [RUN_ID]`
 
 Re-runs deterministic LaTeX, bibliography consistency, file-integrity, and Lean checks without
 calling either model backend. These subprocess checks currently use the native command backend,
 even when the frozen run used Docker.
 
-## `ascend graph`
+## `matek graph`
 
 Graph commands are local and model-free:
 
-- `ascend graph init` creates `.ascend/knowledge/`, its schema/state, initial snapshot,
+- `matek graph init` creates `.matek/knowledge/`, its schema/state, initial snapshot,
   navigation, canvases, and SQLite index.
-- `ascend graph validate` checks Markdown parsing, stable IDs, machine ownership, endpoint/type
+- `matek graph validate` checks Markdown parsing, stable IDs, machine ownership, endpoint/type
   constraints, dependency cycles, hashes, and index revision; invalid graphs exit 6.
-- `ascend graph status` and `frontier [--problem-id ID]` render typed machine-readable summaries.
-- `ascend graph rebuild-index` recreates SQLite from authoritative Markdown.
-- `ascend graph open` attempts Obsidian and otherwise succeeds gracefully while printing the
+- `matek graph status` and `frontier [--problem-id ID]` render typed machine-readable summaries.
+- `matek graph rebuild-index` recreates SQLite from authoritative Markdown.
+- `matek graph open` attempts Obsidian and otherwise succeeds gracefully while printing the
   vault path for manual opening.
-- `ascend graph export [--format json|graphviz|mermaid] [--output PATH]` exports without Obsidian.
-- `ascend graph diff REVISION_A REVISION_B` compares immutable snapshots.
+- `matek graph export [--format json|graphviz|mermaid] [--output PATH]` exports without Obsidian.
+- `matek graph diff REVISION_A REVISION_B` compares immutable snapshots.
 - `show`, `dependencies`, `downstream`, `stale`, and `tasks` provide focused graph queries.
 - `tombstone NODE_ID --reason TEXT` preserves an obsolete identity and invalidates dependents;
   managed notes must not be deleted directly.
 
-The vault lives beneath `.ascend/` so these commands do not imply consent to edit project source.
+The vault lives beneath `.matek/` so these commands do not imply consent to edit project source.
 
 ## Exit codes
 

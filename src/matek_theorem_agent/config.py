@@ -1,12 +1,12 @@
-"""Typed configuration loading for ASCEND.
+"""Typed configuration loading for MATEK.
 
 Configuration has one deliberately small and predictable precedence chain::
 
-    built-in defaults < ascend.toml < ASCEND_* environment < CLI overrides
+    built-in defaults < matek.toml < MATEK_* environment < CLI overrides
 
 Environment keys use ``__`` as the nesting separator, for example
-``ASCEND_MODELS__PROMPT_COMPILER__MODEL``.  A handful of CLI-shaped convenience
-names (``ASCEND_MAX_ROUNDS``, ``ASCEND_BUDGET_USD``, and so on) are also accepted.
+``MATEK_MODELS__PROMPT_COMPILER__MODEL``.  A handful of CLI-shaped convenience
+names (``MATEK_MAX_ROUNDS``, ``MATEK_BUDGET_USD``, and so on) are also accepted.
 The model-execution backend follows that same chain and defaults to the locally
 installed Codex CLI.  API settings remain available under ``[api]`` but selecting
 Codex never falls through to API billing.  Secrets are intentionally not part of
@@ -39,10 +39,10 @@ BackendProvider: TypeAlias = Literal["codex", "api"]
 CURRENT_CONFIG_VERSION: Literal[2] = 2
 BACKEND_MIGRATION_ID: Literal["backend-provider-v2"] = "backend-provider-v2"
 BACKEND_MIGRATION_MESSAGE = (
-    "ASCEND migrated this pre-v2 configuration in memory and preserved the OpenAI API "
+    "MATEK migrated this pre-v2 configuration in memory and preserved the OpenAI API "
     "backend because legacy API model, pricing, or limit settings were detected. Add "
-    'config_version = 2 and [backend] provider = "api" to ascend.toml to make the '
-    "selection explicit. ASCEND did not discard any API settings and will never switch "
+    'config_version = 2 and [backend] provider = "api" to matek.toml to make the '
+    "selection explicit. MATEK did not discard any API settings and will never switch "
     "providers automatically."
 )
 
@@ -221,7 +221,7 @@ class CodexSettings(_StrictSettings):
     @field_validator("extra_args")
     @classmethod
     def _extra_args_are_safe(cls, value: list[str]) -> list[str]:
-        """Allow only presentation flags that cannot bypass ASCEND controls.
+        """Allow only presentation flags that cannot bypass MATEK controls.
 
         Output locations, workspace, model, effort, authentication, search, sandbox,
         approval, and feature toggles are all owned by the adapter.  Keeping this a
@@ -253,7 +253,7 @@ class CodexSettings(_StrictSettings):
                 index += 2
                 continue
             raise ValueError(
-                f"codex.extra_args contains unsupported or ASCEND-controlled argument: "
+                f"codex.extra_args contains unsupported or MATEK-controlled argument: "
                 f"{argument}; only --color always|never|auto is allowed"
             )
         return normalized
@@ -356,7 +356,7 @@ class ManuscriptSettings(_StrictSettings):
 class LeanSettings(_StrictSettings):
     enabled: bool = True
     execution_backend: Literal["native", "docker"] = "native"
-    docker_image: str = "ascend-math-agent:latest"
+    docker_image: str = "matek-theorem-agent:latest"
     allow_project_edits: bool = False
     codex_command: str = "codex"
     maximum_codex_iterations: int = Field(default=50, ge=0)
@@ -472,8 +472,8 @@ class ApiSettings(_StrictSettings):
 class GraphSettings(_StrictSettings):
     """Persistent Markdown knowledge-graph limits.
 
-    The vault location is deliberately fixed beneath ``.ascend`` so routine runs
-    preserve ASCEND's no-project-source-write guarantee. It remains a normal
+    The vault location is deliberately fixed beneath ``.matek`` so routine runs
+    preserve MATEK's no-project-source-write guarantee. It remains a normal
     Obsidian vault and is independent of individual run directories.
     """
 
@@ -503,7 +503,7 @@ class AppConfig(_StrictSettings):
     project_root: Path | None = Field(default=None, exclude=True)
     migration_notice: ConfigMigrationNotice | None = Field(default=None, exclude=True)
 
-    ENV_PREFIX: ClassVar[str] = "ASCEND_"
+    ENV_PREFIX: ClassVar[str] = "MATEK_"
 
     @model_validator(mode="before")
     @classmethod
@@ -571,7 +571,7 @@ class AppConfig(_StrictSettings):
         """Whether any model stage is allowed to use live web search.
 
         The CLI-wide ``--no-web-search`` override disables every stage setting.  This
-        aggregate is also the switch for ASCEND's deterministic identifier resolver,
+        aggregate is also the switch for MATEK's deterministic identifier resolver,
         so a globally offline run cannot make an unexpected HTTP lookup outside the
         selected model adapter.
         """
@@ -837,7 +837,7 @@ def environment_overrides(
     defaults: AppConfig | None = None,
     legacy_pending_capacity: int = 32,
 ) -> dict[str, Any]:
-    """Convert supported ``ASCEND_*`` variables to a nested config mapping."""
+    """Convert supported ``MATEK_*`` variables to a nested config mapping."""
 
     source = os.environ if environment is None else environment
     template = (defaults or AppConfig()).model_dump(mode="python", exclude={"project_root"})
@@ -947,7 +947,7 @@ def environment_overrides(
         path = _CONVENIENCE_PATHS.get(suffix) or flat_paths.get(suffix)
         if path is None:
             if "__" not in suffix:
-                # Ignore unrelated ASCEND process flags.  Nested config-like keys,
+                # Ignore unrelated MATEK process flags.  Nested config-like keys,
                 # however, are rejected below so misspellings cannot silently pass.
                 continue
             path = tuple(part.lower() for part in suffix.split("__") if part)
@@ -1070,13 +1070,13 @@ def _read_toml(path: Path) -> dict[str, Any]:
 
 
 def find_config_file(start: Path) -> Path | None:
-    """Find the nearest ``ascend.toml`` at or above ``start``."""
+    """Find the nearest ``matek.toml`` at or above ``start``."""
 
     resolved = start.resolve()
     if resolved.is_file():
         resolved = resolved.parent
     for candidate in (resolved, *resolved.parents):
-        path = candidate / "ascend.toml"
+        path = candidate / "matek.toml"
         if path.is_file():
             return path
     return None
@@ -1091,7 +1091,7 @@ def load_config(
 ) -> AppConfig:
     """Load and validate resolved application configuration.
 
-    An explicit ``path`` is required to exist.  Without one, ``ascend.toml`` is
+    An explicit ``path`` is required to exist.  Without one, ``matek.toml`` is
     searched for from ``project_root`` (or the current directory); absence simply
     selects built-in defaults.
     """
@@ -1161,10 +1161,10 @@ def resolve_backend_provider(
     cli_provider: str | None = None,
     environment: Mapping[str, str] | None = None,
 ) -> BackendProvider:
-    """Resolve CLI > ``ASCEND_BACKEND`` > config > Codex without fallback."""
+    """Resolve CLI > ``MATEK_BACKEND`` > config > Codex without fallback."""
 
     source = os.environ if environment is None else environment
-    candidate = cli_provider if cli_provider is not None else source.get("ASCEND_BACKEND")
+    candidate = cli_provider if cli_provider is not None else source.get("MATEK_BACKEND")
     if candidate is None:
         return config.backend.provider
     normalized = candidate.strip()
@@ -1189,9 +1189,9 @@ def consume_config_migration_notice(config: AppConfig) -> str | None:
         return notice.message
 
     root = config.project_root.expanduser().resolve()
-    ascend_dir = root / ".ascend"
-    marker_dir = ascend_dir / "config-migrations"
-    for directory in (ascend_dir, marker_dir):
+    matek_dir = root / ".matek"
+    marker_dir = matek_dir / "config-migrations"
+    for directory in (matek_dir, marker_dir):
         try:
             if directory.is_symlink() or (directory.exists() and not directory.is_dir()):
                 return notice.message

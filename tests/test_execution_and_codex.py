@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.codex_client import (
+from matek_theorem_agent.codex_client import (
     CodexExecClient,
     CodexJSONLError,
     CodexRequest,
 )
-from ascend_math_agent.execution.base import CommandRequest, CommandResult, CommandTimeoutError
-from ascend_math_agent.execution.docker import DockerBackend
-from ascend_math_agent.execution.native import NativeBackend
+from matek_theorem_agent.execution.base import CommandRequest, CommandResult, CommandTimeoutError
+from matek_theorem_agent.execution.docker import DockerBackend
+from matek_theorem_agent.execution.native import NativeBackend
 
 
 class FakeBackend:
@@ -97,7 +97,7 @@ async def test_native_backend_redacts_command_output_before_returning_it(tmp_pat
 async def test_native_backend_does_not_inherit_ambient_secret_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("ASCEND_TEST_SECRET_TOKEN", "do-not-inherit")
+    monkeypatch.setenv("MATEK_TEST_SECRET_TOKEN", "do-not-inherit")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-platform-must-not-reach-codex")
     monkeypatch.setenv("CODEX_API_KEY", "codex-key-must-not-reach-child")
 
@@ -108,7 +108,7 @@ async def test_native_backend_does_not_inherit_ambient_secret_environment(
                 "-c",
                 (
                     "import os; print(any(k in os.environ for k in "
-                    "['ASCEND_TEST_SECRET_TOKEN','OPENAI_API_KEY','CODEX_API_KEY']))"
+                    "['MATEK_TEST_SECRET_TOKEN','OPENAI_API_KEY','CODEX_API_KEY']))"
                 ),
             ),
             cwd=tmp_path,
@@ -237,7 +237,7 @@ async def test_docker_backend_builds_restricted_argument_array(tmp_path: Path) -
     assert executed.argv[-2:] == ("lake", "build")
     assert result.argv == ("lake", "build")
 
-    stage = tmp_path / ".ascend" / "runs" / "run-123" / "manuscript"
+    stage = tmp_path / ".matek" / "runs" / "run-123" / "manuscript"
     stage.mkdir(parents=True)
     await backend.run(CommandRequest(("latexmk", "paper.tex"), stage))
     stage_command = native.requests[1]

@@ -10,7 +10,7 @@ htmlcov/
 dist/
 build/
 *.egg-info/
-.ascend/
+.matek/
 .agents/
 .codex/
 .env
@@ -24,7 +24,7 @@ build/
 
 # Local coding-agent handoff/build instructions; not part of the published project.
 /AGENTS.md
-/ASCEND_CODEX_DEFAULT_BACKEND_INSTRUCTIONS.md
+/MATEK_CODEX_DEFAULT_BACKEND_INSTRUCTIONS.md
 /CODING_AGENT_TASK.md
 /HANDOFF_MANIFEST.json
 /HANDOFF_PROMPT.txt
@@ -32,7 +32,7 @@ build/
 /LICENSE_SUGGESTION.md
 /PROJECT_TREE.txt
 /README_HANDOFF.md
-/ascend-coding-handoff/
+/matek-coding-handoff/
 placeholder-resilience-fix.txt
 #sol: keep technical report in the gitignore!
 /technical-report/ 

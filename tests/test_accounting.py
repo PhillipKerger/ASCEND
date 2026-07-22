@@ -8,22 +8,22 @@ from typing import Any, TypeVar
 import pytest
 from pydantic import BaseModel
 
-from ascend_math_agent.accounting import AccountingModelClient
-from ascend_math_agent.budget import BudgetExceeded, BudgetTracker, UsageRecord
-from ascend_math_agent.config import Limits, ModelSettings
-from ascend_math_agent.logging import (
+from matek_theorem_agent.accounting import AccountingModelClient
+from matek_theorem_agent.budget import BudgetExceeded, BudgetTracker, UsageRecord
+from matek_theorem_agent.config import Limits, ModelSettings
+from matek_theorem_agent.logging import (
     JournalCorruptionError,
     ModelCallJournalError,
     RunLogger,
     load_usage_journal_strict,
 )
-from ascend_math_agent.openai_client import (
+from matek_theorem_agent.openai_client import (
     ModelRequest,
     ModelResult,
     UsageMetadata,
     normalized_model_request,
 )
-from ascend_math_agent.stages.research import _ResearchBudgetExhausted, _TrackedModelClient
+from matek_theorem_agent.stages.research import _ResearchBudgetExhausted, _TrackedModelClient
 
 T = TypeVar("T", bound=BaseModel)
 

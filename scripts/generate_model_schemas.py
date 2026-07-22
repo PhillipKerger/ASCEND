@@ -7,7 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ascend_math_agent.schema_artifacts import generated_model_schemas  # noqa: E402
+from matek_theorem_agent.schema_artifacts import generated_model_schemas  # noqa: E402
 
 
 def main() -> None:

@@ -1,4 +1,4 @@
-"""Typed models for ASCEND's persistent Markdown knowledge graph."""
+"""Typed models for MATEK's persistent Markdown knowledge graph."""
 
 from __future__ import annotations
 
@@ -148,7 +148,7 @@ class GraphEdge(_GraphModel):
 
 
 class GraphNode(_GraphModel):
-    ascend_id: str
+    matek_id: str
     node_type: NodeType
     problem_id: str
     title: str
@@ -158,7 +158,7 @@ class GraphNode(_GraphModel):
     statement_version: int = Field(default=1, ge=1)
     created_in_run: str
     last_modified_run: str
-    author_role: str = "ascend"
+    author_role: str = "matek"
     created_at: datetime
     updated_at: datetime
     body: str
@@ -174,7 +174,7 @@ class GraphNode(_GraphModel):
     path: str | None = None
     content_hash: str | None = None
 
-    @field_validator("ascend_id", "problem_id")
+    @field_validator("matek_id", "problem_id")
     @classmethod
     def node_ids_are_valid(cls, value: str) -> str:
         return validate_node_id(value)
@@ -203,19 +203,19 @@ class GraphNode(_GraphModel):
     @model_validator(mode="after")
     def type_specific_fields_are_consistent(self) -> GraphNode:
         expected_prefix = NODE_ID_PREFIXES[self.node_type] + "-"
-        if not self.ascend_id.startswith(expected_prefix):
+        if not self.matek_id.startswith(expected_prefix):
             raise ValueError(f"{self.node_type.value} node ID must start with {expected_prefix!r}")
         if self.node_type is NodeType.CLAIM and self.claim_type is None:
             raise ValueError("claim nodes require claim_type")
         if self.node_type is not NodeType.CLAIM and self.claim_type is not None:
             raise ValueError("claim_type is permitted only on claim nodes")
-        if any(edge.source_id != self.ascend_id for edge in self.relations):
+        if any(edge.source_id != self.matek_id for edge in self.relations):
             raise ValueError("every embedded relation must originate at its containing node")
         return self
 
 
 class GraphNodeCreate(_GraphModel):
-    ascend_id: str | None = None
+    matek_id: str | None = None
     node_type: NodeType
     title: str
     body: str
@@ -226,7 +226,7 @@ class GraphNodeCreate(_GraphModel):
     evidence: list[str] = Field(default_factory=list)
     source_artifacts: list[str] = Field(default_factory=list)
 
-    @field_validator("ascend_id")
+    @field_validator("matek_id")
     @classmethod
     def optional_id_is_valid(cls, value: str | None) -> str | None:
         return None if value is None else validate_node_id(value)
@@ -244,7 +244,7 @@ class GraphNodeCreate(_GraphModel):
             raise ValueError("created claim nodes require claim_type")
         if self.node_type is not NodeType.CLAIM and self.claim_type is not None:
             raise ValueError("claim_type is permitted only on claim nodes")
-        if self.ascend_id is not None and not self.ascend_id.startswith(
+        if self.matek_id is not None and not self.matek_id.startswith(
             NODE_ID_PREFIXES[self.node_type] + "-"
         ):
             raise ValueError("proposed node ID prefix does not match node_type")
@@ -252,7 +252,7 @@ class GraphNodeCreate(_GraphModel):
 
 
 class GraphNodeUpdate(_GraphModel):
-    ascend_id: str
+    matek_id: str
     expected_content_hash: str
     title: str | None = None
     body: str | None = None
@@ -261,7 +261,7 @@ class GraphNodeUpdate(_GraphModel):
     source_artifacts: list[str] = Field(default_factory=list)
     reason: str
 
-    @field_validator("ascend_id")
+    @field_validator("matek_id")
     @classmethod
     def node_id_is_valid(cls, value: str) -> str:
         return validate_node_id(value)
@@ -288,13 +288,13 @@ class GraphNodeUpdate(_GraphModel):
 
 
 class GraphStatusChange(_GraphModel):
-    ascend_id: str
+    matek_id: str
     expected_content_hash: str
     epistemic_status: EpistemicStatus | None = None
     workflow_status: WorkflowStatus | None = None
     reason: str
 
-    @field_validator("ascend_id")
+    @field_validator("matek_id")
     @classmethod
     def node_id_is_valid(cls, value: str) -> str:
         return validate_node_id(value)
@@ -378,7 +378,7 @@ class GraphValidationReport(_GraphModel):
 
 
 class GraphNodeSummary(_GraphModel):
-    ascend_id: str
+    matek_id: str
     node_type: NodeType
     title: str
     epistemic_status: EpistemicStatus

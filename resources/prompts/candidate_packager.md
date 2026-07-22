@@ -18,5 +18,5 @@ hypotheses as imported material. Do not relabel a known result, its exposition, 
 formalization as a new theorem.
 
 For every imported theorem, provide a stable source ID, canonical identifiers, exact hypotheses,
-and evidence claims linked through source IDs. Leave verification to ASCEND; an unverified
+and evidence claims linked through source IDs. Leave verification to MATEK; an unverified
 imported theorem remains an unresolved proof obligation.

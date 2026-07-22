@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.execution.base import CommandResult
-from ascend_math_agent.verification import (
+from matek_theorem_agent.execution.base import CommandResult
+from matek_theorem_agent.verification import (
     LatexClassification,
     LeanVerificationStatus,
     canonical_theorem_hash,

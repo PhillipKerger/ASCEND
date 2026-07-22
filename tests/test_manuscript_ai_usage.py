@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.verification import validate_ascend_ai_usage
+from matek_theorem_agent.verification import validate_matek_ai_usage
 
 PROJECT = Path(__file__).resolve().parents[1]
 
 # These impossible-future records are deliberately test-only. Production code contains no
-# invented ASCEND owner or arXiv identifier and relies on the independent source gate.
-FIXTURE_REPOSITORY = "https://github.com/ascend-test-fixtures/ascend-math-agent"
+# invented MATEK owner or arXiv identifier and relies on the independent source gate.
+FIXTURE_REPOSITORY = "https://github.com/matek-test-fixtures/matek-theorem-agent"
 FIXTURE_ARXIV_ID = "2099.99999"
 
 
@@ -27,18 +27,18 @@ def _paper(statement: str) -> str:
 
 def _bibliography(*, repository_url: str = FIXTURE_REPOSITORY) -> str:
     return (
-        "@misc{ascendSoftwareFixture,\n"
-        "  author = {ASCEND test-fixture contributors},\n"
-        "  title = {ASCEND: Autonomous System for Conjecture Exploration and Verified "
-        "Deduction},\n"
+        "@misc{matekSoftwareFixture,\n"
+        "  author = {MATEK test-fixture contributors},\n"
+        "  title = {MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+        "Memory},\n"
         "  year = {2099},\n"
         "  howpublished = {Software repository},\n"
         f"  url = {{{repository_url}}}\n"
         "}\n"
-        "@misc{ascendWhitepaperFixture,\n"
-        "  author = {ASCEND test-fixture contributors},\n"
-        "  title = {ASCEND: Autonomous System for Conjecture Exploration and Verified "
-        "Deduction},\n"
+        "@misc{matekWhitepaperFixture,\n"
+        "  author = {MATEK test-fixture contributors},\n"
+        "  title = {MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+        "Memory},\n"
         "  year = {2099},\n"
         "  howpublished = {arXiv preprint},\n"
         f"  eprint = {{{FIXTURE_ARXIV_ID}}},\n"
@@ -47,20 +47,20 @@ def _bibliography(*, repository_url: str = FIXTURE_REPOSITORY) -> str:
     )
 
 
-def test_ai_usage_statement_requires_disclosure_and_both_distinct_ascend_citations() -> None:
-    report = validate_ascend_ai_usage(
+def test_ai_usage_statement_requires_disclosure_and_both_distinct_matek_citations() -> None:
+    report = validate_matek_ai_usage(
         _paper(
-            "The ASCEND system with GPT 5.6 was used in this work "
-            "\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}."
+            "The MATEK system with GPT 5.6 was used in this work "
+            "\\cite{matekSoftwareFixture,matekWhitepaperFixture}."
         ),
         _bibliography(),
     )
 
     assert report.passed
     assert report.has_statement_section
-    assert report.discloses_ascend_with_gpt_5_6
-    assert report.repository_citation_key == "ascendSoftwareFixture"
-    assert report.whitepaper_citation_key == "ascendWhitepaperFixture"
+    assert report.discloses_matek_with_gpt_5_6
+    assert report.repository_citation_key == "matekSoftwareFixture"
+    assert report.whitepaper_citation_key == "matekWhitepaperFixture"
 
 
 @pytest.mark.parametrize(
@@ -72,17 +72,16 @@ def test_ai_usage_statement_requires_disclosure_and_both_distinct_ascend_citatio
         ),
         (
             _paper(
-                "The ASCEND system with GPT 4.1 was used in this work "
-                "\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}."
+                "The MATEK system with GPT 4.1 was used in this work "
+                "\\cite{matekSoftwareFixture,matekWhitepaperFixture}."
             ),
             "incomplete_ai_usage_statement",
         ),
         (
             _paper(
-                "The ASCEND system with GPT 5.6 was used in this work "
-                "\\cite{ascendSoftwareFixture}."
+                "The MATEK system with GPT 5.6 was used in this work \\cite{matekSoftwareFixture}."
             ),
-            "missing_ascend_whitepaper_citation",
+            "missing_matek_whitepaper_citation",
         ),
     ],
 )
@@ -90,42 +89,40 @@ def test_ai_usage_statement_rejects_missing_required_content(
     paper: str,
     expected_code: str,
 ) -> None:
-    report = validate_ascend_ai_usage(paper, _bibliography())
+    report = validate_matek_ai_usage(paper, _bibliography())
 
     assert not report.passed
     assert expected_code in {issue.code for issue in report.issues}
 
 
 def test_ai_usage_statement_rejects_placeholder_repository_metadata() -> None:
-    report = validate_ascend_ai_usage(
+    report = validate_matek_ai_usage(
         _paper(
-            "The ASCEND system with GPT 5.6 was used in this work "
-            "\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}."
+            "The MATEK system with GPT 5.6 was used in this work "
+            "\\cite{matekSoftwareFixture,matekWhitepaperFixture}."
         ),
-        _bibliography(repository_url="https://github.com/OWNER/ascend-math-agent"),
+        _bibliography(repository_url="https://github.com/OWNER/matek-theorem-agent"),
     )
 
     assert not report.passed
-    assert "missing_ascend_repository_citation" in {issue.code for issue in report.issues}
+    assert "missing_matek_repository_citation" in {issue.code for issue in report.issues}
 
 
 def test_ai_usage_statement_requires_two_distinct_bibliography_entries() -> None:
     combined = (
-        "@misc{ascendCombinedFixture, "
-        "author={ASCEND test-fixture contributors}, "
-        "title={ASCEND: Autonomous System for Conjecture Exploration and Verified Deduction}, "
+        "@misc{matekCombinedFixture, "
+        "author={MATEK test-fixture contributors}, "
+        "title={MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph Memory}, "
         "year={2099}, howpublished={Software repository and arXiv preprint}, "
         f"url={{{FIXTURE_REPOSITORY}}}, eprint={{{FIXTURE_ARXIV_ID}}}}}\n"
     )
-    report = validate_ascend_ai_usage(
-        _paper(
-            "The ASCEND system with GPT 5.6 was used in this work \\cite{ascendCombinedFixture}."
-        ),
+    report = validate_matek_ai_usage(
+        _paper("The MATEK system with GPT 5.6 was used in this work \\cite{matekCombinedFixture}."),
         combined,
     )
 
     assert not report.passed
-    assert "ascend_citations_not_distinct" in {issue.code for issue in report.issues}
+    assert "matek_citations_not_distinct" in {issue.code for issue in report.issues}
 
 
 def test_manuscript_prompts_make_ai_usage_and_citation_requirements_mandatory() -> None:
@@ -139,5 +136,5 @@ def test_manuscript_prompts_make_ai_usage_and_citation_requirements_mandatory() 
     for prompt in (writer, verifier):
         assert "Statement of AI Usage" in prompt
         assert "GPT 5.6" in prompt
-        assert "ASCEND GitHub" in prompt
-        assert "ASCEND whitepaper" in prompt
+        assert "MATEK GitHub" in prompt
+        assert "MATEK whitepaper" in prompt

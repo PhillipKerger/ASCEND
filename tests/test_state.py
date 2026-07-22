@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.models import RunState, StageName, StageStatus, new_run_state
-from ascend_math_agent.state import (
+from matek_theorem_agent.models import RunState, StageName, StageStatus, new_run_state
+from matek_theorem_agent.state import (
     ArtifactIntegrityError,
     IllegalStageTransition,
     fail_stage,
@@ -18,7 +18,7 @@ from ascend_math_agent.state import (
     start_stage,
     succeed_stage,
 )
-from ascend_math_agent.workspace import create_run_root
+from matek_theorem_agent.workspace import create_run_root
 
 
 def _state(tmp_path: Path) -> RunState:

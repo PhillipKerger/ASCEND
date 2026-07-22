@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.workspace import (
+from matek_theorem_agent.workspace import (
     ARTIFACT_DIRECTORIES,
     PathConfinementError,
     RunLock,
@@ -96,12 +96,12 @@ def test_symlink_loop_is_rejected_as_confinement_error(tmp_path: Path) -> None:
         confined_path(run_root, "logs", "loop", "event.json")
 
 
-def test_symlinked_ascend_root_is_rejected(tmp_path: Path) -> None:
+def test_symlinked_matek_root_is_rejected(tmp_path: Path) -> None:
     project = tmp_path / "project"
     project.mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
-    (project / ".ascend").symlink_to(outside, target_is_directory=True)
+    (project / ".matek").symlink_to(outside, target_is_directory=True)
     with pytest.raises(PathConfinementError):
         create_run_root(project, run_id="20260719T123456Z-links-abcdef")
 
@@ -121,7 +121,7 @@ def test_run_lock_is_external_fail_fast_and_reusable_after_release(tmp_path: Pat
     run_root = create_run_root(tmp_path, run_id="20260719T123456Z-lock-abcdef")
     first = RunLock(run_root)
 
-    assert first.lock_path == (tmp_path / ".ascend" / "locks" / "20260719T123456Z-lock-abcdef.lock")
+    assert first.lock_path == (tmp_path / ".matek" / "locks" / "20260719T123456Z-lock-abcdef.lock")
     assert not first.lock_path.is_relative_to(run_root)
 
     with first:

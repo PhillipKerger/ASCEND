@@ -22,7 +22,7 @@ def _validated_parts(relative: str) -> tuple[str, ...]:
 
 def _target(relative: str) -> Traversable:
     parts = _validated_parts(relative)
-    packaged = files("ascend_math_agent").joinpath("resources", *parts)
+    packaged = files("matek_theorem_agent").joinpath("resources", *parts)
     if packaged.is_file():
         return packaged
     source_checkout = Path(__file__).resolve().parents[2] / "resources" / Path(*parts)

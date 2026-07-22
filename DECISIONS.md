@@ -8,7 +8,7 @@ implementation reveals a concrete blocker.
 - Local-first, open GitHub repository, installable Python CLI.
 - No hosted service or web UI.
 - No Postgres, queue, workflow server, or account system.
-- State and artifacts live under `.ascend/` in the current project.
+- State and artifacts live under `.matek/` in the current project.
 - Native execution is default; Docker is optional.
 - Officially support Linux, macOS, and WSL2 initially.
 
@@ -16,7 +16,7 @@ implementation reveals a concrete blocker.
 
 Persistent research memory uses an application-level typed knowledge graph. Obsidian is the
 recommended human view, not a runtime dependency or database. Markdown/frontmatter is
-authoritative, SQLite is derived, and the vault stays beneath `.ascend/` to preserve the existing
+authoritative, SQLite is derived, and the vault stays beneath `.matek/` to preserve the existing
 write boundary. The central coordinator alone creates tasks and accepts validated worker patches;
 subagents never mutate shared graph files concurrently.
 
@@ -58,7 +58,7 @@ subagents never mutate shared graph files concurrently.
 ## Lean and Codex
 
 - Reuse an existing Lean project by default.
-- Generate files only under `.ascend/runs/<run-id>/lean/`.
+- Generate files only under `.matek/runs/<run-id>/lean/`.
 - Use Codex CLI's non-interactive mode through a subprocess adapter.
 - The common Codex backend can execute research, audits, manuscript work, and formalization.
   Research-only mode omits Lean but still needs the selected model backend. Users without Codex
@@ -71,17 +71,17 @@ subagents never mutate shared graph files concurrently.
 - A complete related-work section is mandatory.
 - References must be verified independently, not merely copied from the research response.
 - Any unresolved, contradictory, or likely fabricated citation blocks the manuscript gate.
-- Every manuscript includes a Statement of AI Usage naming ASCEND with GPT 5.6 and cites both
-  the canonical ASCEND GitHub repository and ASCEND whitepaper arXiv preprint.
-- Any scholarly, technical, or public work that uses ASCEND must cite both the software
-  repository and whitepaper preprint, whether or not ASCEND generated the final manuscript.
+- Every manuscript includes a Statement of AI Usage naming MATEK with GPT 5.6 and cites both
+  the canonical MATEK GitHub repository and MATEK whitepaper arXiv preprint.
+- Any scholarly, technical, or public work that uses MATEK must cite both the software
+  repository and whitepaper preprint, whether or not MATEK generated the final manuscript.
 - Prefer primary sources: publisher pages, DOI/Crossref metadata, arXiv records, journal or
   conference proceedings, and authors' official pages where appropriate.
 
 ## Safety and integrity
 
-- No project edits outside `.ascend/` without `--allow-project-edits`.
+- No project edits outside `.matek/` without `--allow-project-edits`.
 - No API key or Codex credential in files or logs.
-- ASCEND never reads Codex credential files; it uses only `codex login status` for diagnostics.
+- MATEK never reads Codex credential files; it uses only `codex login status` for diagnostics.
 - Truthful terminal statuses; partial work is preserved rather than mislabeled as solved.
 - The exact prompt framework remains immutable and its SHA-256 is checked at runtime.

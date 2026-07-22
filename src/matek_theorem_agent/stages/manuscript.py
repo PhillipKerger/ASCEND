@@ -24,8 +24,8 @@ from ..source_provenance import (
 from ..verification import (
     classify_latex_result,
     parse_bibtex,
-    validate_ascend_ai_usage,
     validate_bibliography,
+    validate_matek_ai_usage,
 )
 from .common import (
     ArtifactManifest,
@@ -268,8 +268,8 @@ class RelatedWorkValidation(BaseModel):
     has_introduction_section: bool = False
     has_ai_usage_statement: bool = False
     ai_usage_disclosure_verified: bool = False
-    ascend_repository_citation_key: str | None = None
-    ascend_whitepaper_citation_key: str | None = None
+    matek_repository_citation_key: str | None = None
+    matek_whitepaper_citation_key: str | None = None
     introduction_word_count: int = 0
     related_work_word_count: int = 0
     introduction_coverage_verified: bool = False
@@ -469,7 +469,7 @@ def validate_related_work(
     )
     bibliography = sorted({key.strip() for key in _BIB_ENTRY.findall(references_bib)})
     bibliography_report = validate_bibliography(paper_tex, references_bib)
-    ai_usage_report = validate_ascend_ai_usage(paper_tex, references_bib)
+    ai_usage_report = validate_matek_ai_usage(paper_tex, references_bib)
     missing = sorted(set(cited) - set(bibliography))
     section_match = _RELATED_SECTION.search(paper_tex)
     introduction_match = _INTRODUCTION_SECTION.search(paper_tex)
@@ -591,8 +591,8 @@ def validate_related_work(
         has_introduction_section=has_introduction,
         has_ai_usage_statement=ai_usage_report.has_statement_section,
         ai_usage_disclosure_verified=ai_usage_report.passed,
-        ascend_repository_citation_key=ai_usage_report.repository_citation_key,
-        ascend_whitepaper_citation_key=ai_usage_report.whitepaper_citation_key,
+        matek_repository_citation_key=ai_usage_report.repository_citation_key,
+        matek_whitepaper_citation_key=ai_usage_report.whitepaper_citation_key,
         introduction_word_count=introduction_words,
         related_work_word_count=related_words,
         introduction_coverage_verified=coverage_verified,
@@ -850,9 +850,9 @@ async def generate_manuscript(
                 "manuscript main claim must be identical and exact_match must be true."
             ),
             "statement_of_ai_usage": (
-                "Include an explicit Statement of AI Usage saying verbatim that 'The ASCEND "
+                "Include an explicit Statement of AI Usage saying verbatim that 'The MATEK "
                 "system with GPT 5.6 was used' and cite two distinct, independently verifiable "
-                "BibTeX entries there: the canonical ASCEND GitHub repository and ASCEND "
+                "BibTeX entries there: the canonical MATEK GitHub repository and MATEK "
                 "whitepaper arXiv preprint. Never use placeholder or guessed identifiers."
             ),
         },
@@ -914,8 +914,8 @@ async def generate_manuscript(
                             "characterization against authoritative public sources. Evidence "
                             "must include the matching DOI, arXiv/ISBN/MR identifier, or a "
                             "non-placeholder authoritative HTTPS URL. Also verify that the "
-                            "Statement of AI Usage names the ASCEND system with GPT 5.6 and "
-                            "cites distinct canonical ASCEND GitHub and whitepaper arXiv records."
+                            "Statement of AI Usage names the MATEK system with GPT 5.6 and "
+                            "cites distinct canonical MATEK GitHub and whitepaper arXiv records."
                         ),
                     },
                     ensure_ascii=False,

@@ -6,26 +6,26 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.config import AppConfig
-from ascend_math_agent.execution.base import CommandRequest, CommandResult
-from ascend_math_agent.execution.docker import DockerBackend
-from ascend_math_agent.intake import ingest_problem
-from ascend_math_agent.models import RunState, StageName
-from ascend_math_agent.reporting import write_final_report
-from ascend_math_agent.reproduce import (
+from matek_theorem_agent.config import AppConfig
+from matek_theorem_agent.execution.base import CommandRequest, CommandResult
+from matek_theorem_agent.execution.docker import DockerBackend
+from matek_theorem_agent.intake import ingest_problem
+from matek_theorem_agent.models import RunState, StageName
+from matek_theorem_agent.reporting import write_final_report
+from matek_theorem_agent.reproduce import (
     ReproductionCheck,
     ReproductionCheckStatus,
     ReproductionComponent,
     RunVerificationResult,
     verify_run,
 )
-from ascend_math_agent.state import (
+from matek_theorem_agent.state import (
     record_artifact_file,
     save_state_atomic,
     start_stage,
     succeed_stage,
 )
-from ascend_math_agent.verification import canonical_theorem_hash
+from matek_theorem_agent.verification import canonical_theorem_hash
 
 
 class SuccessfulBackend:
@@ -38,7 +38,7 @@ class SuccessfulBackend:
         if executable == "latexmk":
             (request.cwd / "paper.pdf").write_bytes(b"%PDF-1.7\nreproduced\n")
             stdout = "Latexmk: All targets are up-to-date"
-        elif request.argv[-1].endswith("_AscendAxiomCheck.lean"):
+        elif request.argv[-1].endswith("_MatekAxiomCheck.lean"):
             stdout = "'result' does not depend on any axioms"
         else:
             stdout = ""
@@ -77,7 +77,7 @@ class SuccessfulDockerHost:
         if "latexmk" in request.argv:
             (request.cwd / "paper.pdf").write_bytes(b"%PDF-1.7\nreproduced in Docker\n")
             stdout = "Latexmk: All targets are up-to-date"
-        elif request.argv[-1].endswith("_AscendAxiomCheck.lean"):
+        elif request.argv[-1].endswith("_MatekAxiomCheck.lean"):
             stdout = "'result' does not depend on any axioms"
         else:
             stdout = ""
@@ -117,8 +117,8 @@ def _create_run(tmp_path: Path, *, with_artifacts: bool = True) -> tuple[Path, R
 \\section{Related Work}
 The relevant result is established in \\cite{good}.
 \\section*{Statement of AI Usage}
-The ASCEND system with GPT 5.6 was used in this work
-\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}.
+The MATEK system with GPT 5.6 was used in this work
+\\cite{matekSoftwareFixture,matekWhitepaperFixture}.
 \\bibliographystyle{plain}
 \\bibliography{references}
 \\end{document}
@@ -133,16 +133,16 @@ The ASCEND system with GPT 5.6 was used in this work
   journal = {Journal of Exact Results},
   doi = {10.1000/example}
 }
-@misc{ascendSoftwareFixture,
-  author = {ASCEND test-fixture contributors},
-  title = {ASCEND: Autonomous System for Conjecture Exploration and Verified Deduction},
+@misc{matekSoftwareFixture,
+  author = {MATEK test-fixture contributors},
+  title = {MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph Memory},
   year = {2099},
   howpublished = {Software repository},
-  url = {https://github.com/ascend-test-fixtures/ascend-math-agent}
+  url = {https://github.com/matek-test-fixtures/matek-theorem-agent}
 }
-@misc{ascendWhitepaperFixture,
-  author = {ASCEND test-fixture contributors},
-  title = {ASCEND: Autonomous System for Conjecture Exploration and Verified Deduction},
+@misc{matekWhitepaperFixture,
+  author = {MATEK test-fixture contributors},
+  title = {MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph Memory},
   year = {2099},
   howpublished = {arXiv preprint},
   eprint = {2099.99999},
@@ -157,8 +157,8 @@ The ASCEND system with GPT 5.6 was used in this work
                 "status": "verified",
                 "entries": [
                     {"citation_key": "good", "status": "verified"},
-                    {"citation_key": "ascendSoftwareFixture", "status": "verified"},
-                    {"citation_key": "ascendWhitepaperFixture", "status": "verified"},
+                    {"citation_key": "matekSoftwareFixture", "status": "verified"},
+                    {"citation_key": "matekWhitepaperFixture", "status": "verified"},
                 ],
                 "claim_checks": [],
                 "blocking_issues": [],
@@ -225,14 +225,14 @@ async def test_docker_latex_reproduction_uses_writable_active_run_workspace(
     run_root, _ = _create_run(tmp_path)
     before = _tree_hashes(run_root)
     host = SuccessfulDockerHost()
-    backend = DockerBackend("ascend:test", native_backend=host)  # type: ignore[arg-type]
+    backend = DockerBackend("matek:test", native_backend=host)  # type: ignore[arg-type]
 
     result = await verify_run(run_root, backend)
 
     assert result.passed
     latex_request = next(request for request in host.requests if "latexmk" in request.argv)
     assert latex_request.cwd.is_relative_to(run_root / "report")
-    assert latex_request.cwd.name.startswith(".ascend-latex-verify-")
+    assert latex_request.cwd.name.startswith(".matek-latex-verify-")
     mount_index = latex_request.argv.index("--mount")
     assert not latex_request.argv[mount_index + 1].endswith(",readonly")
     lean_requests = [request for request in host.requests if "lake" in request.argv]

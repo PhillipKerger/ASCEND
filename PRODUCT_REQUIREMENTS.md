@@ -2,7 +2,7 @@
 
 ## Product summary
 
-**ASCEND** (**Autonomous System for Conjecture Exploration and Verified Deduction**) is a local CLI that accepts a research-level mathematical problem,
+**MATEK** (**Multi-Agent Theorem Exploration through Knowledge-Graph Memory**) is a local CLI that accepts a research-level mathematical problem,
 compiles it into a rigorous research prompt, runs an adaptive multi-agent research process,
 audits any candidate solution, writes a publication-oriented LaTeX manuscript, attempts Lean
 formalization, and generates a reproducible final report.
@@ -20,7 +20,7 @@ formalization, and generates a reproducible final report.
 - Default to the official Codex CLI and reuse its saved **Sign in with ChatGPT** authentication.
 - Do not require `OPENAI_API_KEY` for the default Codex path.
 - Preserve the direct OpenAI Responses API as an advanced, explicitly selected backend.
-- Resolve backend selection from CLI, `ASCEND_BACKEND`, project configuration, then the `codex`
+- Resolve backend selection from CLI, `MATEK_BACKEND`, project configuration, then the `codex`
   built-in default, and freeze the result in run state.
 - Never silently fall back from Codex to API billing.
 - Feature-detect installed Codex capabilities and determine only a coarse authentication class
@@ -42,7 +42,7 @@ formalization, and generates a reproducible final report.
 - Expected bundled SHA-256: `bd724294a261f4bc2e5da2191813e40c1340bc6ee039c753cb5c60276e7a512c`.
 - Use xhigh reasoning and web search by default.
 - Provide an explicit `--no-web-search` override that disables search across all model stages
-  and ASCEND's identifier-resolution HTTP calls without weakening citation gates.
+  and MATEK's identifier-resolution HTTP calls without weakening citation gates.
 - Produce both a complete adapted prompt and structured metadata.
 - Front-load a compact research-mandate snapshot containing the exact target, boundary cases,
   insufficient outcomes, adaptive independent search, persistence, adversarial review, public
@@ -123,8 +123,8 @@ formalization, and generates a reproducible final report.
 
 ### FR-3A Persistent mathematical knowledge graph
 
-- ASCEND shall maintain one project-scoped, persistent graph per source problem beneath
-  `.ascend/knowledge/`, independent of run directories and reusable by later runs.
+- MATEK shall maintain one project-scoped, persistent graph per source problem beneath
+  `.matek/knowledge/`, independent of run directories and reusable by later runs.
 - Portable Markdown with flat typed YAML frontmatter is authoritative. The SQLite index is a
   disposable acceleration layer rebuildable from Markdown.
 - The graph shall represent problem, definition, claim, proof, approach, task, counterexample,
@@ -167,8 +167,8 @@ formalization, and generates a reproducible final report.
 - Generate `paper.tex`, `references.bib`, a claim map, and a proof dependency map.
 - Include a thorough introduction and related-work discussion.
 - Explain how the result differs from and advances existing work.
-- Include a Statement of AI Usage naming ASCEND with GPT 5.6 and cite both the canonical ASCEND
-  GitHub repository and ASCEND whitepaper arXiv preprint.
+- Include a Statement of AI Usage naming MATEK with GPT 5.6 and cite both the canonical MATEK
+  GitHub repository and MATEK whitepaper arXiv preprint.
 - Do not cite a source solely because another model asserted that it exists.
 - Compile with `latexmk` or a configurable LaTeX command.
 

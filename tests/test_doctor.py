@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.config import AppConfig
-from ascend_math_agent.doctor import (
+from matek_theorem_agent.config import AppConfig
+from matek_theorem_agent.doctor import (
     CheckLevel,
     CodexAuthentication,
     DoctorGroup,
@@ -147,7 +147,7 @@ def test_doctor_checks_configured_docker_image_without_pulling(tmp_path: Path) -
         {
             "lean": {
                 "execution_backend": "docker",
-                "docker_image": "registry.example/ascend-lean:test",
+                "docker_image": "registry.example/matek-lean:test",
             }
         }
     )
@@ -164,7 +164,7 @@ def test_doctor_checks_configured_docker_image_without_pulling(tmp_path: Path) -
         "/usr/bin/docker",
         "image",
         "inspect",
-        "registry.example/ascend-lean:test",
+        "registry.example/matek-lean:test",
     ) in commands
     assert all("pull" not in command for command in commands)
 

@@ -1,4 +1,4 @@
-"""Model-free reproducibility checks for a persisted ASCEND run.
+"""Model-free reproducibility checks for a persisted MATEK run.
 
 The public :func:`verify_run` entry point deliberately does not update ``state.json`` and
 does not call a model.  Compiler commands run against temporary copies of generated source
@@ -32,8 +32,8 @@ from .verification import (
     VerificationCertificate,
     classify_latex_result,
     extract_theorem_statements,
-    validate_ascend_ai_usage,
     validate_bibliography_files,
+    validate_matek_ai_usage,
     verify_build,
 )
 from .workspace import ensure_path_confined, sha256_file
@@ -112,7 +112,7 @@ async def verify_run(
 
     ``config`` is an injection seam for callers that already loaded the frozen snapshot.
     Normal callers should leave it unset; current environment variables and the project's
-    mutable ``ascend.toml`` are intentionally ignored in favor of
+    mutable ``matek.toml`` are intentionally ignored in favor of
     ``input/config.resolved.toml``.
     """
 
@@ -414,7 +414,7 @@ def _check_bibliography(
             if audit_path is not None
             else None,
         )
-        ai_usage = validate_ascend_ai_usage(
+        ai_usage = validate_matek_ai_usage(
             _regular_artifact(root, "manuscript/paper.tex").read_text(encoding="utf-8"),
             _regular_artifact(root, "manuscript/references.bib").read_text(encoding="utf-8"),
         )
@@ -467,7 +467,7 @@ async def _check_latex(
     try:
         report_directory = _verified_report_directory(root)
         with tempfile.TemporaryDirectory(
-            prefix=".ascend-latex-verify-", dir=report_directory
+            prefix=".matek-latex-verify-", dir=report_directory
         ) as temporary_name:
             temporary = Path(temporary_name)
             _copy_manuscript_inputs(manuscript, temporary)
@@ -530,7 +530,7 @@ async def _check_lean(
 ) -> ReproductionCheck:
     lean_dir = root / "lean"
     final_sources = sorted(
-        path for path in lean_dir.glob("*.lean") if path.name != "_AscendAxiomCheck.lean"
+        path for path in lean_dir.glob("*.lean") if path.name != "_MatekAxiomCheck.lean"
     )
     if not final_sources:
         return ReproductionCheck(
@@ -574,7 +574,7 @@ async def _check_lean(
     try:
         report_directory = _verified_report_directory(root)
         with tempfile.TemporaryDirectory(
-            prefix=".ascend-lean-verify-", dir=report_directory
+            prefix=".matek-lean-verify-", dir=report_directory
         ) as temporary_name:
             temporary = Path(temporary_name)
             for source in final_sources:
@@ -608,7 +608,7 @@ async def _check_lean(
             axiom_error: str | None = None
             axiom_result: CommandResult | None = None
             if build.exit_code == 0 and not build.timed_out:
-                axiom_source = temporary / "_AscendAxiomCheck.lean"
+                axiom_source = temporary / "_MatekAxiomCheck.lean"
                 axiom_source.write_text(
                     challenge.read_text(encoding="utf-8").rstrip()
                     + f"\n\n#print axioms {theorem_name}\n",

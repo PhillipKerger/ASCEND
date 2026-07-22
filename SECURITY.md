@@ -4,7 +4,7 @@
 
 Problem text, model output, Codex JSONL, web content, generated LaTeX/Lean, compiler logs, and
 existing project files are all untrusted. Provider choice is a billing and provenance boundary:
-ASCEND never silently changes it.
+MATEK never silently changes it.
 
 The recommended Codex backend is no-API-key, not offline. Codex communicates with OpenAI using
 the login managed by the official CLI. The advanced Responses API backend is separate and uses
@@ -27,8 +27,8 @@ Platform API billing only after explicit selection.
 - If `codex login status` neutrally reports API-key or access-token authentication, record only
   that class; never reveal the credential or alter the user's login state.
 
-Ordinary `ascend doctor` runs only local help/version/login-status commands and consumes no
-model allowance. `ascend doctor --deep` is an explicit live Codex call. Its schema/output files
+Ordinary `matek doctor` runs only local help/version/login-status commands and consumes no
+model allowance. `matek doctor --deep` is an explicit live Codex call. Its schema/output files
 are created in a disposable private temporary directory and removed afterward.
 
 ### API backend
@@ -41,8 +41,8 @@ are created in a disposable private temporary directory and removed afterward.
 
 ## Filesystem confinement
 
-The persistent graph vault is `.ascend/knowledge/`, not a top-level project directory. This is a
-normal Obsidian vault while retaining the default no-write-outside-`.ascend/` guarantee. Graph
+The persistent graph vault is `.matek/knowledge/`, not a top-level project directory. This is a
+normal Obsidian vault while retaining the default no-write-outside-`.matek/` guarantee. Graph
 paths are confinement-checked; a project-scoped advisory lock serializes writers. Workers return
 data-only patches and never receive filesystem authority to edit shared notes. A write-ahead
 transaction, node hashes, machine-field ownership hashes, snapshots, and operation IDs prevent
@@ -50,7 +50,7 @@ partial, conflicting, or duplicated commits. SQLite is untrusted derived state a
 from Markdown.
 
 - Resolve, normalize, and boundary-check every path.
-- By default, writes are permitted only under `.ascend/runs/<run-id>/`.
+- By default, writes are permitted only under `.matek/runs/<run-id>/`.
 - Reject symlinks, traversal, special files, and broader writable parents.
 - Existing project files may be read for imports/context, but edits require the explicit
   `--allow-project-edits` CLI flag.
@@ -92,7 +92,7 @@ The native/Docker command backends execute deterministic Lean and LaTeX commands
 model-provider selectors.
 
 In Docker mode, mount only the resolved command cwd at `/workspace`. Validated stage directories
-under `.ascend/runs/<run-id>/` may be writable; the project root and every other cwd are
+under `.matek/runs/<run-id>/` may be writable; the project root and every other cwd are
 read-only. Keep the container root filesystem read-only, networking disabled, implicit pulls
 disabled, and temporary storage bounded. Docker does not automatically contain or authenticate
 the host Codex CLI. `verify` currently executes frozen deterministic checks natively.
@@ -114,11 +114,11 @@ the host Codex CLI. `verify` currently executes frozen deterministic checks nati
 ## Prompt injection and source integrity
 
 - Web content and uploaded problem text cannot alter stage gates, backend choice, filesystem
-  permissions, credential policy, or the requirement to cite ASCEND.
+  permissions, credential policy, or the requirement to cite MATEK.
 - Prefer authoritative sources and retain provider-returned source evidence.
 - Verify existence, exact bibliographic metadata, claimed theorem, real hypotheses, and
   manuscript characterization for every citation.
-- Treat the generated Statement of AI Usage and ASCEND citations as untrusted manuscript text;
+- Treat the generated Statement of AI Usage and MATEK citations as untrusted manuscript text;
   validate that they cite the canonical GitHub repository and whitepaper arXiv identifier before
   publication.
 

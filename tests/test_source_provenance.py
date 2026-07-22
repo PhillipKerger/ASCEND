@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.source_provenance import (
+from matek_theorem_agent.source_provenance import (
     BoundedHttpSourceVerifier,
     HttpResponse,
     SourceVerificationStatus,

@@ -1,4 +1,4 @@
-"""Project initialization used by ``ascend init``."""
+"""Project initialization used by ``matek init``."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .workspace import atomic_write_text, ensure_path_confined
 EXAMPLE_PROBLEM = """# Mathematical research problem
 
 State the setting, definitions, conventions, hypotheses, and exact desired conclusion.
-Include known sources or bottlenecks when available. Replace this text before running ASCEND.
+Include known sources or bottlenecks when available. Replace this text before running MATEK.
 """
 
 
@@ -34,17 +34,17 @@ def initialize_project(project_root: Path, *, force: bool = False) -> Initializa
     root = project_root.expanduser().resolve(strict=True)
     if not root.is_dir():
         raise InitializationError(f"project root is not a directory: {root}")
-    config_path = root / "ascend.toml"
+    config_path = root / "matek.toml"
     if config_path.exists() and not force:
         raise InitializationError(
             f"configuration already exists: {config_path}; pass --force to replace it"
         )
 
-    ascend_dir = ensure_path_confined(root, root / ".ascend")
-    ascend_dir.mkdir(exist_ok=True)
+    matek_dir = ensure_path_confined(root, root / ".matek")
+    matek_dir.mkdir(exist_ok=True)
     entries = {
         config_path: config_as_toml(AppConfig()),
-        ascend_dir / ".gitignore": "*\n!.gitignore\n",
+        matek_dir / ".gitignore": "*\n!.gitignore\n",
         root / "problem.example.md": EXAMPLE_PROBLEM,
     }
     created: list[Path] = []

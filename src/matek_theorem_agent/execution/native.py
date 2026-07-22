@@ -177,7 +177,7 @@ def _sanitized_environment(argv: tuple[str, ...]) -> dict[str, str]:
     """Retain normal tool configuration while withholding ambient credentials.
 
     Codex subprocesses reuse the official login stored and managed by Codex itself.
-    In particular, ASCEND never injects ``OPENAI_API_KEY`` or ``CODEX_API_KEY`` into
+    In particular, MATEK never injects ``OPENAI_API_KEY`` or ``CODEX_API_KEY`` into
     Codex (or any other child process), preventing an ambient Platform credential
     from silently changing the selected authentication and billing path.
     """

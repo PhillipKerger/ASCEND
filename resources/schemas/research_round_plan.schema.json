@@ -52,7 +52,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Legacy fixed-round plan retained for completed-run compatibility.\n\nNew research runs use :class:`ResearchCoordinatorDecision`; keeping this model lets\nASCEND read old ``result.json`` and schema artifacts without silently reinterpreting\ntheir scheduling semantics.",
+  "description": "Legacy fixed-round plan retained for completed-run compatibility.\n\nNew research runs use :class:`ResearchCoordinatorDecision`; keeping this model lets\nMATEK read old ``result.json`` and schema artifacts without silently reinterpreting\ntheir scheduling semantics.",
   "properties": {
     "assignments": {
       "items": {

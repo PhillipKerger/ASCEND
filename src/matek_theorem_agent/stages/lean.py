@@ -626,7 +626,7 @@ async def _verify_lean(
     _validate_generated_tree(lean_dir)
     challenge_path = lean_dir / "challenge.lean"
     main_path = lean_dir / "Main.lean"
-    axiom_check_path = lean_dir / "_AscendAxiomCheck.lean"
+    axiom_check_path = lean_dir / "_MatekAxiomCheck.lean"
     axiom_check_path.unlink(missing_ok=True)
 
     def command_path(path: Path) -> str:
@@ -797,7 +797,7 @@ def _formalization_yaml(
         else "unknown"
     )
     lines = [
-        'project_name: "ASCEND formalization"',
+        'project_name: "MATEK formalization"',
         f"main_theorem_name: {json.dumps(theorem_name)}",
         'challenge_file: "challenge.lean"',
         'implementation_file: "Main.lean"',
@@ -1352,7 +1352,7 @@ async def run_lean_pipeline(
                 statement_hash=approved_hash,
                 verification=verification,
             )
-        if "ASCEND_INFEASIBLE" in f"{codex_result.stdout}\n{codex_result.stderr}":
+        if "MATEK_INFEASIBLE" in f"{codex_result.stdout}\n{codex_result.stderr}":
             return make_result(
                 LeanOutcome.PARTIAL,
                 draft=draft,

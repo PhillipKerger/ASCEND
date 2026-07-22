@@ -12,8 +12,8 @@ import typer
 from pydantic import BaseModel
 from typer.testing import CliRunner
 
-import ascend_math_agent.cli as cli_module
-from ascend_math_agent.application import (
+import matek_theorem_agent.cli as cli_module
+from matek_theorem_agent.application import (
     LEAN_CONSENT_TIMEOUT_SECONDS,
     LeanConsentOutcome,
     LeanConsentRequest,
@@ -21,10 +21,10 @@ from ascend_math_agent.application import (
     WorkflowOptions,
     WorkflowRunner,
 )
-from ascend_math_agent.budget import BudgetExceeded
-from ascend_math_agent.cli import app
-from ascend_math_agent.codex_client import CodexRequest, CodexResult
-from ascend_math_agent.config import (
+from matek_theorem_agent.budget import BudgetExceeded
+from matek_theorem_agent.cli import app
+from matek_theorem_agent.codex_client import CodexRequest, CodexResult
+from matek_theorem_agent.config import (
     AppConfig,
     BackendSettings,
     CodexSettings,
@@ -34,25 +34,25 @@ from ascend_math_agent.config import (
     ResearchSettings,
     merge_config,
 )
-from ascend_math_agent.execution.base import CommandRequest, CommandResult
-from ascend_math_agent.intake import ingest_problem
-from ascend_math_agent.knowledge_graph import KnowledgeGraph, NodeType
-from ascend_math_agent.models import ScientificStatus, StageName, StageStatus
-from ascend_math_agent.openai_client import ModelRequest, ModelResult
-from ascend_math_agent.progress import Ascension
-from ascend_math_agent.source_provenance import (
+from matek_theorem_agent.execution.base import CommandRequest, CommandResult
+from matek_theorem_agent.intake import ingest_problem
+from matek_theorem_agent.knowledge_graph import KnowledgeGraph, NodeType
+from matek_theorem_agent.models import ScientificStatus, StageName, StageStatus
+from matek_theorem_agent.openai_client import ModelRequest, ModelResult
+from matek_theorem_agent.progress import Ascension
+from matek_theorem_agent.source_provenance import (
     SourceVerificationRecord,
     SourceVerificationReport,
     SourceVerificationStatus,
     WebDisabledSourceVerifier,
 )
-from ascend_math_agent.stages.common import sha256_json, sha256_text
-from ascend_math_agent.stages.compile_prompt import (
+from matek_theorem_agent.stages.common import sha256_json, sha256_text
+from matek_theorem_agent.stages.compile_prompt import (
     CompiledProblem,
     PromptCompilationStatus,
     PromptPlaceholderRepair,
 )
-from ascend_math_agent.stages.lean import (
+from matek_theorem_agent.stages.lean import (
     MANDATORY_ALIGNMENT_FIELDS,
     AlignmentCheck,
     AlignmentStatus,
@@ -61,7 +61,7 @@ from ascend_math_agent.stages.lean import (
     LeanFeasibilityClass,
     LeanStatementDraft,
 )
-from ascend_math_agent.stages.manuscript import (
+from matek_theorem_agent.stages.manuscript import (
     BibliographyAudit,
     BibliographyEntryAudit,
     BibliographyEntryStatus,
@@ -71,7 +71,7 @@ from ascend_math_agent.stages.manuscript import (
     ManuscriptDraft,
     RelatedWorkClaimAudit,
 )
-from ascend_math_agent.stages.research import (
+from matek_theorem_agent.stages.research import (
     AuditDecision,
     AuditVerdict,
     CandidateProofPackage,
@@ -82,7 +82,7 @@ from ascend_math_agent.stages.research import (
     ResearchWorkerReport,
     WorkerStatus,
 )
-from ascend_math_agent.state import StateStore
+from matek_theorem_agent.state import StateStore
 
 E2E_CLAIM_CONTRACT = {
     "quantifiers": "for every natural number n",
@@ -103,9 +103,9 @@ FRAMEWORK_SECTIONS = (
     "Final-response format",
 )
 VERIFIED_SOURCE_URL = "https://doi.org/10.5555/12345678"
-ASCEND_FIXTURE_REPOSITORY_URL = "https://github.com/ascend-test-fixtures/ascend-math-agent"
-ASCEND_FIXTURE_WHITEPAPER_ID = "2099.99999"
-ASCEND_FIXTURE_WHITEPAPER_URL = f"https://arxiv.org/abs/{ASCEND_FIXTURE_WHITEPAPER_ID}"
+MATEK_FIXTURE_REPOSITORY_URL = "https://github.com/matek-test-fixtures/matek-theorem-agent"
+MATEK_FIXTURE_WHITEPAPER_ID = "2099.99999"
+MATEK_FIXTURE_WHITEPAPER_URL = f"https://arxiv.org/abs/{MATEK_FIXTURE_WHITEPAPER_ID}"
 
 
 def web_source_metadata() -> tuple[dict[str, Any], ...]:
@@ -124,13 +124,13 @@ def web_source_metadata() -> tuple[dict[str, Any], ...]:
                     },
                     {
                         "type": "url",
-                        "url": ASCEND_FIXTURE_REPOSITORY_URL,
-                        "title": "ASCEND software test fixture",
+                        "url": MATEK_FIXTURE_REPOSITORY_URL,
+                        "title": "MATEK software test fixture",
                     },
                     {
                         "type": "url",
-                        "url": ASCEND_FIXTURE_WHITEPAPER_URL,
-                        "title": "ASCEND whitepaper test fixture",
+                        "url": MATEK_FIXTURE_WHITEPAPER_URL,
+                        "title": "MATEK whitepaper test fixture",
                     },
                 ],
             },
@@ -355,22 +355,22 @@ def manuscript_draft() -> ManuscriptDraft:
             "difference before using the comparison lemma.\n"
             "\\section{Proof}\nThe complete fixture proof follows the accepted package.\n"
             "\\section*{Statement of AI Usage}\n"
-            "The ASCEND system with GPT 5.6 was used in this work "
-            "\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}.\n"
+            "The MATEK system with GPT 5.6 was used in this work "
+            "\\cite{matekSoftwareFixture,matekWhitepaperFixture}.\n"
             "\\bibliography{references}\n"
             "\\end{document}\n"
         ),
         references_bib=(
             "@article{smith2020, title={A Real Paper}, author={Smith, Ada}, "
             "year={2020}, journal={Journal of Fixtures}, doi={10.5555/12345678}}\n"
-            "@misc{ascendSoftwareFixture, author={ASCEND test-fixture contributors}, "
-            "title={ASCEND: Autonomous System for Conjecture Exploration and Verified "
-            "Deduction}, year={2099}, howpublished={Software repository}, "
-            f"url={{{ASCEND_FIXTURE_REPOSITORY_URL}}}}}\n"
-            "@misc{ascendWhitepaperFixture, author={ASCEND test-fixture contributors}, "
-            "title={ASCEND: Autonomous System for Conjecture Exploration and Verified "
-            "Deduction}, year={2099}, howpublished={arXiv preprint}, "
-            f"eprint={{{ASCEND_FIXTURE_WHITEPAPER_ID}}}, archiveprefix={{arXiv}}}}\n"
+            "@misc{matekSoftwareFixture, author={MATEK test-fixture contributors}, "
+            "title={MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+            "Memory}, year={2099}, howpublished={Software repository}, "
+            f"url={{{MATEK_FIXTURE_REPOSITORY_URL}}}}}\n"
+            "@misc{matekWhitepaperFixture, author={MATEK test-fixture contributors}, "
+            "title={MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+            "Memory}, year={2099}, howpublished={arXiv preprint}, "
+            f"eprint={{{MATEK_FIXTURE_WHITEPAPER_ID}}}, archiveprefix={{arXiv}}}}\n"
         ),
         claims=[{"claim": "fixture theorem", "proof": "main"}],
         proof_dependency_graph={"main": ["fixture"]},
@@ -416,7 +416,7 @@ def bibliography_audit(*, verified: bool) -> BibliographyAudit:
                 authoritative_evidence=(["https://doi.org/10.5555/12345678"] if verified else []),
             ),
             BibliographyEntryAudit(
-                citation_key="ascendSoftwareFixture",
+                citation_key="matekSoftwareFixture",
                 status=(
                     BibliographyEntryStatus.VERIFIED
                     if verified
@@ -430,10 +430,10 @@ def bibliography_audit(*, verified: bool) -> BibliographyAudit:
                 stable_identifier_checked=verified,
                 characterization_supported=verified,
                 theorem_hypotheses_supported=verified,
-                authoritative_evidence=([ASCEND_FIXTURE_REPOSITORY_URL] if verified else []),
+                authoritative_evidence=([MATEK_FIXTURE_REPOSITORY_URL] if verified else []),
             ),
             BibliographyEntryAudit(
-                citation_key="ascendWhitepaperFixture",
+                citation_key="matekWhitepaperFixture",
                 status=(
                     BibliographyEntryStatus.VERIFIED
                     if verified
@@ -447,7 +447,7 @@ def bibliography_audit(*, verified: bool) -> BibliographyAudit:
                 stable_identifier_checked=verified,
                 characterization_supported=verified,
                 theorem_hypotheses_supported=verified,
-                authoritative_evidence=([ASCEND_FIXTURE_WHITEPAPER_URL] if verified else []),
+                authoritative_evidence=([MATEK_FIXTURE_WHITEPAPER_URL] if verified else []),
             ),
         ],
         claim_checks=[
@@ -602,10 +602,10 @@ class FullWorkflowModel(ResearchWorkflowModel):
         elif output_type is LeanStatementDraft:
             self.requests.append((request, output_type))
             parsed = LeanStatementDraft(
-                challenge_lean="theorem ascend_main : True := by\n  sorry\n",
+                challenge_lean="theorem matek_main : True := by\n  sorry\n",
                 statement_explanation="The frozen fixture claim is represented by True.",
                 claim_map={"conclusion": "True"},
-                theorem_name="ascend_main",
+                theorem_name="matek_main",
             )
         elif output_type is ClaimAlignment:
             self.requests.append((request, output_type))
@@ -666,8 +666,8 @@ class FullWorkflowBackend:
         if request.cwd.name == "manuscript":
             (request.cwd / "paper.pdf").write_bytes(b"%PDF-offline-e2e-fixture")
             stdout = "Latexmk: success"
-        elif request.argv[-1].endswith("_AscendAxiomCheck.lean"):
-            stdout = "'ascend_main' depends on no axioms"
+        elif request.argv[-1].endswith("_MatekAxiomCheck.lean"):
+            stdout = "'matek_main' depends on no axioms"
         return CommandResult(
             argv=request.argv,
             cwd=request.cwd,
@@ -888,7 +888,7 @@ def test_ambiguous_problem_stops_before_research_and_asks_for_clarification(
     assert invocation.exit_code == 0, invocation.output
     assert "stopped before research" in invocation.output
     assert "What mathematical objects are being extended?" in invocation.output
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     state = StateStore(run_root).load()
     assert state.scientific_status is ScientificStatus.NEEDS_PROBLEM_CLARIFICATION
     assert state.stages[StageName.PROMPT_COMPILATION].status is StageStatus.SUCCEEDED
@@ -901,7 +901,7 @@ def test_ambiguous_problem_stops_before_research_and_asks_for_clarification(
     assert codex.calls == 0
     clarification = (run_root / "prompts" / "clarification_request.md").read_text(encoding="utf-8")
     report = (run_root / "report" / "REPORT.md").read_text(encoding="utf-8")
-    assert "start a new ASCEND run" in clarification
+    assert "start a new MATEK run" in clarification
     assert "Problem clarification required" in report
     assert "revise the problem file" in report.lower()
 
@@ -936,7 +936,7 @@ async def test_run_wide_deadline_interrupts_the_active_stage_and_writes_report(
             environment_snapshot={"fixture": "offline"},
         )
 
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     state = StateStore(run_root).load()
     assert model.cancelled
     assert state.stages[StageName.PROMPT_COMPILATION].status is StageStatus.INTERRUPTED
@@ -1034,7 +1034,7 @@ async def test_force_prompt_stage_reuses_compiler_and_retries_only_bounded_repai
     with pytest.raises(ValueError, match=r"\[INSERT TARGET HERE\]"):
         await runner.run_new(make_problem(project), project)
 
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     failed = StateStore(run_root).load()
     assert failed.stages[StageName.PROMPT_COMPILATION].status is StageStatus.FAILED
     assert (run_root / "prompts" / "compiled_problem.json").is_file()
@@ -1292,7 +1292,7 @@ async def test_saved_lean_consent_is_reused_after_boundary_failure(
     with pytest.raises(RuntimeError, match="after durable consent"):
         await runner.run_new(make_problem(project), project)
 
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     interrupted = StateStore(run_root).load()
     assert interrupted.metadata["lean_consent"]["outcome"] == "user_approved"
     assert consent_calls == 1
@@ -1338,7 +1338,7 @@ async def test_cancellation_checkpoints_interrupted_stage_and_resume_completes(
             environment_snapshot={"fixture": "offline"},
         )
 
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     interrupted = StateStore(run_root).load()
     assert interrupted.stages[StageName.PROMPT_COMPILATION].status is StageStatus.INTERRUPTED
     assert interrupted.stages[StageName.REPORT].status is StageStatus.SUCCEEDED
@@ -1389,7 +1389,7 @@ async def test_resume_after_worker_events_reuses_paid_calls_and_persisted_artifa
             environment_snapshot={"fixture": "offline"},
         )
 
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
     interrupted = StateStore(run_root).load()
     decision_path = run_root / "research" / "coordinator" / "decisions" / "00000001.json"
     worker_paths = tuple(sorted((run_root / "research" / "workers").glob("*.json")))
@@ -1824,7 +1824,7 @@ def test_cli_dry_run_creates_no_workspace_and_never_constructs_live_runner(
 
     assert result.exit_code == 0, result.output
     assert "Dry run complete" in result.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_cli_no_web_search_is_global_and_default_is_unchanged(
@@ -1846,7 +1846,7 @@ def test_cli_no_web_search_is_global_and_default_is_unchanged(
     assert disabled.exit_code == 0, disabled.output
     assert "enabled per stage" in default.output
     assert "disabled globally" in disabled.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_cli_time_limit_is_resolved_without_starting_a_run(
@@ -1865,7 +1865,7 @@ def test_cli_time_limit_is_resolved_without_starting_a_run(
     assert result.exit_code == 0, result.output
     assert "total active time limit" in result.output
     assert "25 minutes" in result.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
@@ -1889,7 +1889,7 @@ def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
     assert "concurrent agents" in result.output
     assert result.output.count("32") >= 2
     assert "total research-subagent limit" not in result.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_cli_resolves_continuous_decision_limit_and_rejects_legacy_conflict(
@@ -1933,7 +1933,7 @@ def test_cli_resolves_continuous_decision_limit_and_rejects_legacy_conflict(
     assert "64" in legacy.output
     assert conflict.exit_code == 2
     assert "cannot be combined" in conflict.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_global_no_web_policy_reaches_every_model_stage_and_source_resolver(
@@ -2064,8 +2064,8 @@ def test_cli_init_status_and_usage_exit_codes(
 
     initialized = cli.invoke(app, ["init"])
     assert initialized.exit_code == 0, initialized.output
-    assert (tmp_path / "ascend.toml").is_file()
-    assert (tmp_path / ".ascend" / ".gitignore").is_file()
+    assert (tmp_path / "matek.toml").is_file()
+    assert (tmp_path / ".matek" / ".gitignore").is_file()
 
     problem = make_problem(tmp_path)
     intake = ingest_problem(

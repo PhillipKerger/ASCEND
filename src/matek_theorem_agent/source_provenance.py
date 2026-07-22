@@ -117,7 +117,7 @@ async def _default_fetcher(url: str, timeout_seconds: float, maximum_bytes: int)
             url,
             headers={
                 "Accept": "application/json, application/atom+xml, text/html;q=0.8",
-                "User-Agent": "ASCEND/0.2 source verifier",
+                "User-Agent": "MATEK/0.2 source verifier",
             },
         )
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:

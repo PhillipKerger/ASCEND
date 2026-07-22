@@ -47,5 +47,5 @@ Requirements:
 - For every source-ledger entry, assign a stable `source_id`, list canonical DOI/arXiv/ISBN/MR
   or authoritative HTTPS identifiers, and link each prose evidence claim through `source_ids`.
   Set `required_for_claim` only when the mathematical claim logically depends on that source.
-  Leave verification to ASCEND.
+  Leave verification to MATEK.
 - Return the complete adapted prompt and the required structured metadata.

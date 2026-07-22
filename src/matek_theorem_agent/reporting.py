@@ -199,11 +199,11 @@ def build_final_report(
             else {}
         ),
         reproducibility=[
-            f"ascend status {state.run_id}",
-            f"ascend verify {state.run_id}",
-            f"ascend resume {state.run_id}",
-            "ascend graph validate",
-            "ascend graph status",
+            f"matek status {state.run_id}",
+            f"matek verify {state.run_id}",
+            f"matek resume {state.run_id}",
+            "matek graph validate",
+            "matek graph status",
         ],
         narrative=narrative,
     )
@@ -216,7 +216,7 @@ def _markdown_link(relative: str) -> str:
 
 def render_report_markdown(report: FinalReport) -> str:
     lines = [
-        f"# ASCEND report — `{report.run_id}`",
+        f"# MATEK report — `{report.run_id}`",
         "",
         "## Outcome",
         "",
@@ -232,7 +232,7 @@ def render_report_markdown(report: FinalReport) -> str:
             [
                 "## Problem clarification required",
                 "",
-                "ASCEND stopped before research because the supplied description did not "
+                "MATEK stopped before research because the supplied description did not "
                 "uniquely identify one mathematical target.",
                 "",
                 str(
@@ -257,7 +257,7 @@ def render_report_markdown(report: FinalReport) -> str:
                 str(
                     report.problem_clarification.get(
                         "next_action",
-                        "Revise the problem file, then start a new ASCEND run.",
+                        "Revise the problem file, then start a new MATEK run.",
                     )
                 ),
                 "",
@@ -283,8 +283,8 @@ def render_report_markdown(report: FinalReport) -> str:
                 f"- Problem node: `{report.knowledge_graph.get('problem_id', 'unknown')}`",
                 f"- Revision: `{report.knowledge_graph.get('revision', 'unknown')}`",
                 "- Obsidian vault: [open Home](../../../knowledge/Home.md) "
-                "(project path: `.ascend/knowledge`)",
-                "- Rebuildable index: project path `.ascend/graph-index.sqlite`",
+                "(project path: `.matek/knowledge`)",
+                "- Rebuildable index: project path `.matek/graph-index.sqlite`",
                 "",
             ]
         )
@@ -381,7 +381,7 @@ def render_report_markdown(report: FinalReport) -> str:
         lines.extend(
             [
                 "",
-                "Codex token/call observations are shown when available. ASCEND does not "
+                "Codex token/call observations are shown when available. MATEK does not "
                 "convert ChatGPT/Codex allowance or credits into an estimated dollar cost.",
             ]
         )

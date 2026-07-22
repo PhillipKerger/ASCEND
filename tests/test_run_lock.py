@@ -7,17 +7,17 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from ascend_math_agent.application import (
+from matek_theorem_agent.application import (
     WorkflowDependencies,
     WorkflowOptions,
     WorkflowRunner,
 )
-from ascend_math_agent.codex_client import CodexRequest
-from ascend_math_agent.config import AppConfig
-from ascend_math_agent.execution.base import CommandRequest
-from ascend_math_agent.openai_client import ModelRequest
-from ascend_math_agent.reporting import assert_report_certificate_inventory
-from ascend_math_agent.workspace import RunLock, RunLockHeldError
+from matek_theorem_agent.codex_client import CodexRequest
+from matek_theorem_agent.config import AppConfig
+from matek_theorem_agent.execution.base import CommandRequest
+from matek_theorem_agent.openai_client import ModelRequest
+from matek_theorem_agent.reporting import assert_report_certificate_inventory
+from matek_theorem_agent.workspace import RunLock, RunLockHeldError
 
 
 class BlockingModel:
@@ -73,7 +73,7 @@ async def test_active_execution_blocks_resume_and_both_report_writers(tmp_path: 
         )
     )
     await asyncio.wait_for(model.started.wait(), timeout=2)
-    [run_root] = (project / ".ascend" / "runs").iterdir()
+    [run_root] = (project / ".matek" / "runs").iterdir()
 
     with pytest.raises(RunLockHeldError, match="already active"):
         await runner.resume(project, run_id=run_root.name)

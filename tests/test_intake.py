@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.config import AppConfig
-from ascend_math_agent.intake import IntakeError, _version, ingest_problem
-from ascend_math_agent.models import StageName, StageStatus
+from matek_theorem_agent.config import AppConfig
+from matek_theorem_agent.intake import IntakeError, _version, ingest_problem
+from matek_theorem_agent.models import StageName, StageStatus
 
 
 def test_intake_preserves_original_and_normalizes_copy(tmp_path: Path) -> None:
@@ -61,7 +61,7 @@ def test_intake_rejects_empty_problem_before_creating_run(tmp_path: Path) -> Non
             config=AppConfig(),
             invocation={},
         )
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 def test_intake_redacts_credentials_embedded_in_problem_copy(
@@ -111,7 +111,7 @@ def test_environment_tool_versions_do_not_receive_or_persist_secrets(
             stderr="",
         )
 
-    monkeypatch.setattr("ascend_math_agent.intake.shutil.which", lambda command: command)
+    monkeypatch.setattr("matek_theorem_agent.intake.shutil.which", lambda command: command)
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     version = _version(("tool", "--version"))

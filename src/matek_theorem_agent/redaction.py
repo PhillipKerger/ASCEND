@@ -234,7 +234,7 @@ def sanitized_environment(
     """Copy an environment while withholding credential-like variables.
 
     ``allow_sensitive_names`` is intentionally name-based and should be used only for a
-    subprocess integration whose explicit contract requires that named credential. ASCEND's
+    subprocess integration whose explicit contract requires that named credential. MATEK's
     Codex backend deliberately leaves this empty and reuses Codex-managed saved login state.
     """
 

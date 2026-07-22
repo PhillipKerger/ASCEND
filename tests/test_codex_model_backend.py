@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from ascend_math_agent.codex_model_backend import (
+from matek_theorem_agent.codex_model_backend import (
     CodexAuthenticationClass,
     CodexAuthenticationExpiredError,
     CodexCliModelClient,
@@ -30,26 +30,26 @@ from ascend_math_agent.codex_model_backend import (
     parse_codex_capabilities,
     parse_codex_jsonl,
 )
-from ascend_math_agent.config import ModelSettings
-from ascend_math_agent.execution.base import CommandRequest, CommandResult, CommandTimeoutError
-from ascend_math_agent.execution.native import NativeBackend
-from ascend_math_agent.openai_client import ModelRequest
-from ascend_math_agent.reporting import ReportNarrative
-from ascend_math_agent.stages.compile_prompt import CompiledProblem
-from ascend_math_agent.stages.lean import (
+from matek_theorem_agent.config import ModelSettings
+from matek_theorem_agent.execution.base import CommandRequest, CommandResult, CommandTimeoutError
+from matek_theorem_agent.execution.native import NativeBackend
+from matek_theorem_agent.openai_client import ModelRequest
+from matek_theorem_agent.reporting import ReportNarrative
+from matek_theorem_agent.stages.compile_prompt import CompiledProblem
+from matek_theorem_agent.stages.lean import (
     ClaimAlignment,
     LeanFeasibilityAssessment,
     LeanStatementDraft,
 )
-from ascend_math_agent.stages.manuscript import BibliographyAudit, ManuscriptDraft
-from ascend_math_agent.stages.research import (
+from matek_theorem_agent.stages.manuscript import BibliographyAudit, ManuscriptDraft
+from matek_theorem_agent.stages.research import (
     AuditVerdict,
     CandidateProofPackage,
     FinalJudgeVerdict,
     ResearchRoundPlan,
     ResearchWorkerReport,
 )
-from ascend_math_agent.structured_schema import StrictSchemaError, strict_json_schema
+from matek_theorem_agent.structured_schema import StrictSchemaError, strict_json_schema
 
 ROOT_HELP = """Codex CLI
 
@@ -253,7 +253,7 @@ class FakeCodexBackend:
 
 
 def _run_root(tmp_path: Path) -> Path:
-    run_root = tmp_path / ".ascend" / "runs" / "test-run"
+    run_root = tmp_path / ".matek" / "runs" / "test-run"
     run_root.mkdir(parents=True)
     return run_root
 

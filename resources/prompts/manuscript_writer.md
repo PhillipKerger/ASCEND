@@ -11,7 +11,7 @@ by a real source.
 
 If the exact target was already resolved in the literature, state that prominently and describe
 the manuscript as verification, reconstruction, exposition, or formalization as appropriate.
-Do not claim mathematical novelty merely because ASCEND independently reconstructed or
+Do not claim mathematical novelty merely because MATEK independently reconstructed or
 formalized a known result.
 
 Generate complete `paper.tex` and `references.bib`. Never invent citations or bibliographic
@@ -19,13 +19,13 @@ fields. Prefer primary sources. State uncertainty rather than guessing. Include 
 detail that the manuscript is mathematically self-contained apart from explicitly cited
 standard or imported theorems whose exact statements are given.
 
-ASCEND must be cited in every work in which it is used. Near the end of `paper.tex`, before the
+MATEK must be cited in every work in which it is used. Near the end of `paper.tex`, before the
 bibliography, include an explicit unnumbered section titled `Statement of AI Usage`. It must
-state verbatim that "The ASCEND system with GPT 5.6 was used" and cite two distinct bibliography
+state verbatim that "The MATEK system with GPT 5.6 was used" and cite two distinct bibliography
 entries in that section:
 
-1. the canonical ASCEND GitHub software repository; and
-2. the ASCEND whitepaper preprint on arXiv.
+1. the canonical MATEK GitHub software repository; and
+2. the MATEK whitepaper preprint on arXiv.
 
 Find and use the canonical repository URL and arXiv identifier, with complete accurate BibTeX
 metadata. Do not emit `OWNER`, `ARXIV_ID`, angle-bracket placeholders, or guessed identifiers.

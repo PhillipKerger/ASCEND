@@ -1,20 +1,20 @@
-# ASCEND Knowledge Graph Integration Instructions
+# MATEK Knowledge Graph Integration Instructions
 
-**Purpose:** Implement a persistent, Obsidian-compatible knowledge graph for each ASCEND research problem.
+**Purpose:** Implement a persistent, Obsidian-compatible knowledge graph for each MATEK research problem.
 
-**Important:** The research orchestration in the current codebase may differ from earlier ASCEND designs. Adapt these instructions to the existing architecture. The only required orchestration assumption is that a **central research coordinator agent** manages and delegates work to subagents.
+**Important:** The research orchestration in the current codebase may differ from earlier MATEK designs. Adapt these instructions to the existing architecture. The only required orchestration assumption is that a **central research coordinator agent** manages and delegates work to subagents.
 
 ---
 
 ## 1. Objective
 
-For every research problem, ASCEND should maintain a persistent knowledge graph that:
+For every research problem, MATEK should maintain a persistent knowledge graph that:
 
 1. records mathematically meaningful progress across runs;
 2. helps the central research coordinator identify and assign useful follow-up work;
 3. preserves failed, blocked, and superseded approaches so they are not repeatedly rediscovered;
 4. links claims, proofs, dependencies, audits, sources, experiments, formalizations, and open tasks;
-5. survives incomplete or interrupted ASCEND runs;
+5. survives incomplete or interrupted MATEK runs;
 6. can be inspected and navigated by a human in Obsidian;
 7. remains usable without Obsidian installed.
 
@@ -29,7 +29,7 @@ Create or extend one persistent workspace per problem:
 ```text
 <problem-workspace>/
 ├── problem.md
-├── ascend.toml
+├── matek.toml
 ├── knowledge/
 │   ├── Home.md
 │   ├── Definitions/
@@ -44,7 +44,7 @@ Create or extend one persistent workspace per problem:
 │   ├── Formalizations/
 │   ├── Runs/
 │   └── Dashboards/
-├── .ascend/
+├── .matek/
 │   ├── graph-schema.json
 │   ├── graph-index.sqlite
 │   ├── graph-state.json
@@ -165,7 +165,7 @@ Example:
 
 ```markdown
 ---
-ascend_id: CLM-01...
+matek_id: CLM-01...
 node_type: claim
 claim_type: lemma
 problem_id: PRB-01...
@@ -183,8 +183,8 @@ audited_by:
   - "[[AUD-...--foundational-audit]]"
 formalized_by: []
 tags:
-  - ascend/claim
-  - ascend/lemma
+  - matek/claim
+  - matek/lemma
 ---
 
 # Bounded Completion Lemma
@@ -425,7 +425,7 @@ The graph must remain valid and queryable when Obsidian is not installed.
 
 Humans may edit the vault, but establish ownership rules:
 
-- `ascend_*` frontmatter fields are machine-managed;
+- `matek_*` frontmatter fields are machine-managed;
 - prose outside generated blocks is human-editable;
 - generated sections use explicit markers;
 - editing a claim statement increments its version;
@@ -480,27 +480,27 @@ Do not weaken any existing bibliography, proof-audit, manuscript-compilation, or
 Add commands appropriate to the current CLI architecture:
 
 ```bash
-ascend graph init
-ascend graph validate
-ascend graph status
-ascend graph frontier
-ascend graph rebuild-index
-ascend graph open
-ascend graph export
-ascend graph diff <revision-a> <revision-b>
+matek graph init
+matek graph validate
+matek graph status
+matek graph frontier
+matek graph rebuild-index
+matek graph open
+matek graph export
+matek graph diff <revision-a> <revision-b>
 ```
 
 Useful optional commands:
 
 ```bash
-ascend graph show <node-id>
-ascend graph dependencies <node-id>
-ascend graph downstream <node-id>
-ascend graph stale
-ascend graph tasks
+matek graph show <node-id>
+matek graph dependencies <node-id>
+matek graph downstream <node-id>
+matek graph stale
+matek graph tasks
 ```
 
-`ascend graph open` may open the vault in Obsidian when available, but must fail gracefully and print the vault path when Obsidian is absent.
+`matek graph open` may open the vault in Obsidian when available, but must fail gracefully and print the vault path when Obsidian is absent.
 
 ---
 
@@ -578,11 +578,11 @@ The work is complete when:
 - [ ] Lean verification is attached to an exact statement version.
 - [ ] Incomplete runs leave useful persistent progress.
 - [ ] Obsidian can open and navigate the vault.
-- [ ] ASCEND remains functional without Obsidian installed.
+- [ ] MATEK remains functional without Obsidian installed.
 - [ ] Human edits are preserved under explicit ownership rules.
 - [ ] Existing research, manuscript, source-verification, audit, and Lean gates remain intact.
 - [ ] Unit tests cover schema validation, patch merging, conflicts, invalidation, and persistence.
-- [ ] An end-to-end test demonstrates two separate ASCEND runs extending the same problem graph.
+- [ ] An end-to-end test demonstrates two separate MATEK runs extending the same problem graph.
 
 ---
 

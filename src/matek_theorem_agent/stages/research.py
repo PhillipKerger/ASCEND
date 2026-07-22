@@ -106,7 +106,7 @@ class ResearchRoundPlan(BaseModel):
     """Legacy fixed-round plan retained for completed-run compatibility.
 
     New research runs use :class:`ResearchCoordinatorDecision`; keeping this model lets
-    ASCEND read old ``result.json`` and schema artifacts without silently reinterpreting
+    MATEK read old ``result.json`` and schema artifacts without silently reinterpreting
     their scheduling semantics.
     """
 
@@ -2946,7 +2946,7 @@ async def run_adaptive_research(
                     report=report.model_dump(mode="json", exclude={"graph_patch"}),
                     proposed_patch=report.graph_patch,
                     source_artifact=(
-                        f".ascend/runs/{run_id}/research/workers/{record.assignment.id}.json"
+                        f".matek/runs/{run_id}/research/workers/{record.assignment.id}.json"
                     ),
                     operation_id=f"worker-report:{run_id}:{record.assignment.id}",
                 )

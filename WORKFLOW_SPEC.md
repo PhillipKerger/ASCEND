@@ -27,14 +27,14 @@ The compiler receives:
 It first decides whether the input uniquely identifies one mathematical target and exact success
 criterion. A concise input is sufficient when it does. If choosing a target would require
 guessing between materially different interpretations, the compiler returns
-`needs_clarification` with a reason and focused questions. ASCEND persists that request, skips
+`needs_clarification` with a reason and focused questions. MATEK persists that request, skips
 all research/manuscript/Lean stages, writes the final report, and asks the user to revise the
 problem file and start a new run.
 
 Otherwise it returns a full adapted prompt plus a formal claim contract, a source ledger, and a
 literature classification: `unknown`, `no_exact_match_found`, `partially_resolved`, or
 `fully_resolved`. Placeholder validation flags only strong editorial markers; ordinary
-mathematical bracket notation, citations, links, code, and LaTeX are protected. ASCEND persists
+mathematical bracket notation, citations, links, code, and LaTeX are protected. MATEK persists
 the compiled result and validation diagnostics before attempting one bounded, sentence-only
 repair. An unresolved marker blocks the workflow only in the exact target or success criterion;
 an optional sentence is removed with a recorded warning. Partial/full resolution claims require
@@ -43,7 +43,7 @@ verified sources and an exact statement-and-hypothesis comparison.
 The adapted prompt front-loads a compact research-mandate snapshot modeled at a high level on
 the public Cycle Double Cover prompt: exact target, boundary conventions, near-misses, adaptive
 independent search, persistence, adversarial review, search policy, and a proof-only completion
-condition. The longer framework then expands each item into ASCEND's auditable protocol.
+condition. The longer framework then expands each item into MATEK's auditable protocol.
 
 ## Stage 2 — Adaptive research
 
@@ -56,16 +56,16 @@ publishes the worker event. Valid partial and blocked results therefore survive 
 
 Research is a nested orchestration boundary. The deterministic outer workflow starts or resumes
 one application-owned logical research coordinator and gives it the complete, unabridged compiled
-research prompt and exact claim contract. This is ASCEND's closest reproducible analogue of giving
+research prompt and exact claim contract. This is MATEK's closest reproducible analogue of giving
 the main prompt to a GPT 5.6 Sol Ultra research session: `Ultra` is not treated as an API setting.
 The Responses API defaults the coordinator to `gpt-5.6-sol` pro/max and research workers to
 `gpt-5.6-sol` pro/xhigh. The default Codex path selects the same model and requests max coordinator
 effort and xhigh worker effort; `reasoning.mode = "pro"` is a Responses API control, not a separate
-Codex CLI setting in ASCEND. Models, modes, and efforts remain configurable where supported by the
+Codex CLI setting in MATEK. Models, modes, and efforts remain configurable where supported by the
 selected backend.
 
 The coordinator is logically continuous but need not be one indefinitely open provider call.
-ASCEND may use fresh calls while presenting the same logical actor's canonical durable checkpoint
+MATEK may use fresh calls while presenting the same logical actor's canonical durable checkpoint
 and evidence. Hidden provider memory and a surviving provider conversation are never required for
 correctness.
 
@@ -82,7 +82,7 @@ Known results must remain labeled as known rather than novel.
 
 ### Completion-driven coordinator loop
 
-ASCEND runs a durable event loop with no round barrier:
+MATEK runs a durable event loop with no round barrier:
 
 1. Validate and persist each coordinator decision and assignment before admitting work.
 2. Admit useful queued assignments while the applicable concurrency, backend, and budget ceilings
@@ -148,7 +148,7 @@ partial_result_only
 A repairable verdict returns its complete audit reports and exact obligations directly to the
 live research coordinator; it does not wait for or create another research round.
 
-When a worker returns `candidate_complete`, or the coordinator requests packaging, ASCEND pauses
+When a worker returns `candidate_complete`, or the coordinator requests packaging, MATEK pauses
 admission of new research workers and packages that specific proof immediately. It does not wait
 for unrelated active workers. A package that exposes unresolved proof steps fails closed before
 independent judging; every structurally complete package immediately runs every mandatory
@@ -156,7 +156,7 @@ independent audit plus the final judge. Reports that finish while admission is p
 appended to the mailbox and remain available to the coordinator.
 
 Acceptance stops the research scheduler, cancels work that no longer needs to start, and advances
-the workflow. If the gate does not pass, ASCEND appends the full failed-audit reports, judge
+the workflow. If the gate does not pass, MATEK appends the full failed-audit reports, judge
 verdict, and exact repair obligations as high-priority mailbox events; it then reactivates the
 coordinator immediately and resumes/refills admission. This feedback path does not wait for the
 rest of a former batch. With the Responses API, independent auditors use fresh `gpt-5.6-sol`
@@ -174,8 +174,8 @@ applied by default.
 The manuscript writer receives only the frozen accepted proof package, claim contract, audit
 reports, verified source ledger, dependency-ordered accepted graph slice, and manuscript prompt.
 It must not silently change the
-result. It must include a Statement of AI Usage disclosing ASCEND with GPT 5.6 and cite both the
-canonical ASCEND GitHub repository and ASCEND whitepaper arXiv preprint.
+result. It must include a Statement of AI Usage disclosing MATEK with GPT 5.6 and cite both the
+canonical MATEK GitHub repository and MATEK whitepaper arXiv preprint.
 
 After the stage, graph nodes record claim/section and source/BibTeX mappings plus manuscript
 artifact nodes. Existing research, bibliography, and LaTeX gates remain authoritative.
@@ -186,7 +186,7 @@ may regenerate the manuscript, after which verification runs again. Limit cycles
 
 Only a fully verified bibliography may proceed.
 
-`--no-web-search` also disables ASCEND's deterministic public-identifier HTTP resolver. Any
+`--no-web-search` also disables MATEK's deterministic public-identifier HTTP resolver. Any
 evidence that cannot be established from persisted provider metadata remains unavailable; gates
 fail truthfully instead of treating offline status as verification. Consequently, a fully
 search-free invocation is primarily intended for `--research-only` runs and cannot bypass the

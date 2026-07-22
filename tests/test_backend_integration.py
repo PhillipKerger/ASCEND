@@ -9,16 +9,16 @@ import pytest
 from pydantic import BaseModel
 from typer.testing import CliRunner
 
-import ascend_math_agent.cli as cli_module
-from ascend_math_agent.accounting import AccountingModelClient
-from ascend_math_agent.application import (
+import matek_theorem_agent.cli as cli_module
+from matek_theorem_agent.accounting import AccountingModelClient
+from matek_theorem_agent.application import (
     WorkflowDependencies,
     WorkflowRunner,
     _model_cache_namespace,
 )
-from ascend_math_agent.budget import BudgetExceeded, BudgetTracker
-from ascend_math_agent.cli import app
-from ascend_math_agent.config import (
+from matek_theorem_agent.budget import BudgetExceeded, BudgetTracker
+from matek_theorem_agent.cli import app
+from matek_theorem_agent.config import (
     AppConfig,
     BackendSettings,
     Limits,
@@ -26,13 +26,13 @@ from ascend_math_agent.config import (
     config_as_toml,
     load_config,
 )
-from ascend_math_agent.intake import ingest_problem
-from ascend_math_agent.logging import RunLogger
-from ascend_math_agent.models import StageName, StageStatus, new_run_state
-from ascend_math_agent.openai_client import ModelRequest, ModelResult
-from ascend_math_agent.reporting import build_final_report, write_final_report
-from ascend_math_agent.state import StateStore
-from ascend_math_agent.workspace import create_run_root
+from matek_theorem_agent.intake import ingest_problem
+from matek_theorem_agent.logging import RunLogger
+from matek_theorem_agent.models import StageName, StageStatus, new_run_state
+from matek_theorem_agent.openai_client import ModelRequest, ModelResult
+from matek_theorem_agent.reporting import build_final_report, write_final_report
+from matek_theorem_agent.state import StateStore
+from matek_theorem_agent.workspace import create_run_root
 
 
 class _UnusedModel:
@@ -134,13 +134,13 @@ def test_cli_backend_flag_overrides_environment_and_project_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     (tmp_path / ".git").mkdir()
-    (tmp_path / "ascend.toml").write_text(
+    (tmp_path / "matek.toml").write_text(
         'config_version = 2\n[backend]\nprovider = "codex"\n',
         encoding="utf-8",
     )
     problem = _problem(tmp_path)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("ASCEND_BACKEND", "codex")
+    monkeypatch.setenv("MATEK_BACKEND", "codex")
 
     result = CliRunner().invoke(
         app,
@@ -150,7 +150,7 @@ def test_cli_backend_flag_overrides_environment_and_project_config(
     assert result.exit_code == 0, result.output
     assert "model backend" in result.output
     assert "api" in result.output
-    assert not (tmp_path / ".ascend").exists()
+    assert not (tmp_path / ".matek").exists()
 
 
 @pytest.mark.asyncio
@@ -637,7 +637,7 @@ def test_status_and_report_describe_codex_allowance_without_inventing_dollar_cos
     assert "Codex CLI using saved ChatGPT authentication" in markdown
     assert "Authentication class: ChatGPT subscription (`chatgpt`)" in markdown
     assert "Requested reasoning effort: `xhigh`" in markdown
-    assert "ASCEND does not convert ChatGPT/Codex allowance" in markdown
+    assert "MATEK does not convert ChatGPT/Codex allowance" in markdown
 
 
 def test_report_labels_explicit_api_mode_as_platform_billing(tmp_path: Path) -> None:

@@ -173,11 +173,11 @@ class BibliographyValidationReport:
 
 @dataclass(frozen=True)
 class AIUsageValidationReport:
-    """Deterministic validation of ASCEND attribution in a generated manuscript."""
+    """Deterministic validation of MATEK attribution in a generated manuscript."""
 
     passed: bool
     has_statement_section: bool
-    discloses_ascend_with_gpt_5_6: bool
+    discloses_matek_with_gpt_5_6: bool
     citation_keys: tuple[str, ...]
     repository_citation_key: str | None
     whitepaper_citation_key: str | None
@@ -187,7 +187,7 @@ class AIUsageValidationReport:
         return {
             "passed": self.passed,
             "has_statement_section": self.has_statement_section,
-            "discloses_ascend_with_gpt_5_6": self.discloses_ascend_with_gpt_5_6,
+            "discloses_matek_with_gpt_5_6": self.discloses_matek_with_gpt_5_6,
             "citation_keys": list(self.citation_keys),
             "repository_citation_key": self.repository_citation_key,
             "whitepaper_citation_key": self.whitepaper_citation_key,
@@ -204,8 +204,8 @@ _AI_USAGE_SECTION_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _SECTION_PATTERN = re.compile(r"\\(?:sub)*section\*?\s*\{", re.IGNORECASE)
-_ASCEND_GPT_5_6_DISCLOSURE = re.compile(
-    r"\bASCEND system with GPT 5[.]6 was used\b",
+_MATEK_GPT_5_6_DISCLOSURE = re.compile(
+    r"\bMATEK system with GPT 5[.]6 was used\b",
     re.IGNORECASE,
 )
 _GITHUB_REPOSITORY_URL = re.compile(
@@ -249,17 +249,17 @@ def extract_latex_citations(tex_source: str) -> tuple[str, ...]:
     return tuple(sorted(keys))
 
 
-def validate_ascend_ai_usage(
+def validate_matek_ai_usage(
     tex_source: str,
     bib_source: str,
 ) -> AIUsageValidationReport:
-    """Require ASCEND/GPT 5.6 disclosure plus distinct software and preprint citations.
+    """Require MATEK/GPT 5.6 disclosure plus distinct software and preprint citations.
 
     This validator deliberately checks citation *roles*, not hard-coded project identifiers.
     Canonical repository ownership and the whitepaper's arXiv identifier are release metadata,
     and the bibliography stage remains responsible for independently verifying them. This
-    function rejects placeholder metadata and ensures the disclosure cites an ASCEND-titled
-    GitHub record and a separate ASCEND-titled arXiv record.
+    function rejects placeholder metadata and ensures the disclosure cites a MATEK-titled
+    GitHub record and a separate MATEK-titled arXiv record.
     """
 
     source = _strip_latex_comments(tex_source)
@@ -271,7 +271,7 @@ def validate_ascend_ai_usage(
         section_body = source[section_match.end() : end]
 
     normalized_body = _normalize_latex_prose(section_body)
-    disclosure_found = bool(_ASCEND_GPT_5_6_DISCLOSURE.search(normalized_body))
+    disclosure_found = bool(_MATEK_GPT_5_6_DISCLOSURE.search(normalized_body))
     citation_keys = extract_latex_citations(section_body)
     entries, parse_errors = parse_bibtex(bib_source)
     entry_map = {entry.key: entry for entry in entries}
@@ -288,8 +288,7 @@ def validate_ascend_ai_usage(
         issues.append(
             VerificationIssue(
                 "incomplete_ai_usage_statement",
-                "The Statement of AI Usage must state that the ASCEND system with GPT 5.6 "
-                "was used.",
+                "The Statement of AI Usage must state that the MATEK system with GPT 5.6 was used.",
             )
         )
 
@@ -300,7 +299,7 @@ def validate_ascend_ai_usage(
         if entry is None:
             continue
         title = _normalize_latex_prose(entry.fields.get("title", ""))
-        if "ascend" not in title.casefold():
+        if "matek" not in title.casefold():
             continue
         field_text = " ".join(entry.fields.values())
         if _CITATION_PLACEHOLDER.search(field_text):
@@ -320,22 +319,22 @@ def validate_ascend_ai_usage(
     if repository_key is None:
         issues.append(
             VerificationIssue(
-                "missing_ascend_repository_citation",
-                "The Statement of AI Usage must cite the canonical ASCEND GitHub repository.",
+                "missing_matek_repository_citation",
+                "The Statement of AI Usage must cite the canonical MATEK GitHub repository.",
             )
         )
     if whitepaper_key is None:
         issues.append(
             VerificationIssue(
-                "missing_ascend_whitepaper_citation",
-                "The Statement of AI Usage must cite the ASCEND whitepaper arXiv preprint.",
+                "missing_matek_whitepaper_citation",
+                "The Statement of AI Usage must cite the MATEK whitepaper arXiv preprint.",
             )
         )
     if repository_key is not None and repository_key == whitepaper_key:
         issues.append(
             VerificationIssue(
-                "ascend_citations_not_distinct",
-                "The ASCEND software repository and whitepaper must be separate citations.",
+                "matek_citations_not_distinct",
+                "The MATEK software repository and whitepaper must be separate citations.",
             )
         )
 
@@ -343,7 +342,7 @@ def validate_ascend_ai_usage(
     return AIUsageValidationReport(
         passed=not deduplicated,
         has_statement_section=section_match is not None,
-        discloses_ascend_with_gpt_5_6=disclosure_found,
+        discloses_matek_with_gpt_5_6=disclosure_found,
         citation_keys=citation_keys,
         repository_citation_key=repository_key,
         whitepaper_citation_key=whitepaper_key,

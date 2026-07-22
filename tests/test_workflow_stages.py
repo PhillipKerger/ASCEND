@@ -9,25 +9,25 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-import ascend_math_agent.stages.research as research_stage
-from ascend_math_agent.budget import BudgetExceeded, BudgetSnapshot
-from ascend_math_agent.codex_client import CodexRequest, CodexResult
-from ascend_math_agent.config import ModelSettings
-from ascend_math_agent.execution.base import CommandRequest, CommandResult
-from ascend_math_agent.openai_client import ModelRequest, ModelResult
-from ascend_math_agent.source_provenance import (
+import matek_theorem_agent.stages.research as research_stage
+from matek_theorem_agent.budget import BudgetExceeded, BudgetSnapshot
+from matek_theorem_agent.codex_client import CodexRequest, CodexResult
+from matek_theorem_agent.config import ModelSettings
+from matek_theorem_agent.execution.base import CommandRequest, CommandResult
+from matek_theorem_agent.openai_client import ModelRequest, ModelResult
+from matek_theorem_agent.source_provenance import (
     SourceVerificationRecord,
     SourceVerificationReport,
     SourceVerificationStatus,
 )
-from ascend_math_agent.stages.common import (
+from matek_theorem_agent.stages.common import (
     StageGateError,
     StageValidationError,
     atomic_write_text,
     sha256_json,
     sha256_text,
 )
-from ascend_math_agent.stages.compile_prompt import (
+from matek_theorem_agent.stages.compile_prompt import (
     EXPECTED_FRAMEWORK_SHA256,
     CompiledProblem,
     LiteratureStatus,
@@ -39,7 +39,7 @@ from ascend_math_agent.stages.compile_prompt import (
     compile_prompt,
     find_unresolved_placeholders,
 )
-from ascend_math_agent.stages.lean import (
+from matek_theorem_agent.stages.lean import (
     MANDATORY_ALIGNMENT_FIELDS,
     AlignmentCheck,
     AlignmentStatus,
@@ -52,7 +52,7 @@ from ascend_math_agent.stages.lean import (
     run_lean_pipeline,
     scan_generated_lean,
 )
-from ascend_math_agent.stages.manuscript import (
+from matek_theorem_agent.stages.manuscript import (
     BibliographyAudit,
     BibliographyEntryAudit,
     BibliographyEntryStatus,
@@ -68,7 +68,7 @@ from ascend_math_agent.stages.manuscript import (
     generate_manuscript,
     resume_manuscript_bibliography,
 )
-from ascend_math_agent.stages.research import (
+from matek_theorem_agent.stages.research import (
     ApproachRegistry,
     AuditDecision,
     AuditVerdict,
@@ -122,9 +122,9 @@ FRAMEWORK_SECTIONS = (
     "Final-response format",
 )
 VERIFIED_SOURCE_URL = "https://doi.org/10.5555/12345678"
-ASCEND_FIXTURE_REPOSITORY_URL = "https://github.com/ascend-test-fixtures/ascend-math-agent"
-ASCEND_FIXTURE_WHITEPAPER_ID = "2099.99999"
-ASCEND_FIXTURE_WHITEPAPER_URL = f"https://arxiv.org/abs/{ASCEND_FIXTURE_WHITEPAPER_ID}"
+MATEK_FIXTURE_REPOSITORY_URL = "https://github.com/matek-test-fixtures/matek-theorem-agent"
+MATEK_FIXTURE_WHITEPAPER_ID = "2099.99999"
+MATEK_FIXTURE_WHITEPAPER_URL = f"https://arxiv.org/abs/{MATEK_FIXTURE_WHITEPAPER_ID}"
 
 
 def test_prompt_compiler_requires_compact_cdc_aligned_research_mandate() -> None:
@@ -155,13 +155,13 @@ def web_source_metadata(url: str = VERIFIED_SOURCE_URL) -> tuple[dict[str, Any],
                     {"type": "url", "url": url, "title": "Fixture source"},
                     {
                         "type": "url",
-                        "url": ASCEND_FIXTURE_REPOSITORY_URL,
-                        "title": "ASCEND software test fixture",
+                        "url": MATEK_FIXTURE_REPOSITORY_URL,
+                        "title": "MATEK software test fixture",
                     },
                     {
                         "type": "url",
-                        "url": ASCEND_FIXTURE_WHITEPAPER_URL,
-                        "title": "ASCEND whitepaper test fixture",
+                        "url": MATEK_FIXTURE_WHITEPAPER_URL,
+                        "title": "MATEK whitepaper test fixture",
                     },
                 ],
             },
@@ -416,7 +416,7 @@ async def test_prompt_compiler_returns_a_terminal_clarification_request(
     request = (tmp_path / "clarification_request.md").read_text(encoding="utf-8")
     assert "stopped before mathematical research" in request
     assert "Which objects are being extended?" in request
-    assert "start a new ASCEND run" in request
+    assert "start a new MATEK run" in request
 
 
 @pytest.mark.asyncio
@@ -2771,22 +2771,22 @@ def manuscript_draft() -> ManuscriptDraft:
             "ours explicitly.\n"
             "\\section{Proof}\nThe complete proof is given here.\n"
             "\\section*{Statement of AI Usage}\n"
-            "The ASCEND system with GPT 5.6 was used in this work "
-            "\\cite{ascendSoftwareFixture,ascendWhitepaperFixture}.\n"
+            "The MATEK system with GPT 5.6 was used in this work "
+            "\\cite{matekSoftwareFixture,matekWhitepaperFixture}.\n"
             "\\bibliography{references}\n"
             "\\end{document}\n"
         ),
         references_bib=(
             "@article{smith2020, title={A Real Paper}, author={Smith, Ada}, "
             "year={2020}, journal={Journal of Fixtures}, doi={10.5555/12345678}}\n"
-            "@misc{ascendSoftwareFixture, author={ASCEND test-fixture contributors}, "
-            "title={ASCEND: Autonomous System for Conjecture Exploration and Verified "
-            "Deduction}, year={2099}, howpublished={Software repository}, "
-            f"url={{{ASCEND_FIXTURE_REPOSITORY_URL}}}}}\n"
-            "@misc{ascendWhitepaperFixture, author={ASCEND test-fixture contributors}, "
-            "title={ASCEND: Autonomous System for Conjecture Exploration and Verified "
-            "Deduction}, year={2099}, howpublished={arXiv preprint}, "
-            f"eprint={{{ASCEND_FIXTURE_WHITEPAPER_ID}}}, archiveprefix={{arXiv}}}}\n"
+            "@misc{matekSoftwareFixture, author={MATEK test-fixture contributors}, "
+            "title={MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+            "Memory}, year={2099}, howpublished={Software repository}, "
+            f"url={{{MATEK_FIXTURE_REPOSITORY_URL}}}}}\n"
+            "@misc{matekWhitepaperFixture, author={MATEK test-fixture contributors}, "
+            "title={MATEK: Multi-Agent Theorem Exploration through Knowledge-Graph "
+            "Memory}, year={2099}, howpublished={arXiv preprint}, "
+            f"eprint={{{MATEK_FIXTURE_WHITEPAPER_ID}}}, archiveprefix={{arXiv}}}}\n"
         ),
         claims=[{"claim": "fixture theorem", "proof": "main"}],
         proof_dependency_graph={"main": ["lemma"]},
@@ -2824,7 +2824,7 @@ def verified_bibliography() -> BibliographyAudit:
                 authoritative_evidence=["https://doi.org/10.5555/12345678"],
             ),
             BibliographyEntryAudit(
-                citation_key="ascendSoftwareFixture",
+                citation_key="matekSoftwareFixture",
                 status=BibliographyEntryStatus.VERIFIED,
                 exists=True,
                 exact_title_verified=True,
@@ -2834,10 +2834,10 @@ def verified_bibliography() -> BibliographyAudit:
                 stable_identifier_checked=True,
                 characterization_supported=True,
                 theorem_hypotheses_supported=True,
-                authoritative_evidence=[ASCEND_FIXTURE_REPOSITORY_URL],
+                authoritative_evidence=[MATEK_FIXTURE_REPOSITORY_URL],
             ),
             BibliographyEntryAudit(
-                citation_key="ascendWhitepaperFixture",
+                citation_key="matekWhitepaperFixture",
                 status=BibliographyEntryStatus.VERIFIED,
                 exists=True,
                 exact_title_verified=True,
@@ -2847,7 +2847,7 @@ def verified_bibliography() -> BibliographyAudit:
                 stable_identifier_checked=True,
                 characterization_supported=True,
                 theorem_hypotheses_supported=True,
-                authoritative_evidence=[ASCEND_FIXTURE_WHITEPAPER_URL],
+                authoritative_evidence=[MATEK_FIXTURE_WHITEPAPER_URL],
             ),
         ],
         claim_checks=[
@@ -2918,8 +2918,8 @@ async def test_manuscript_requires_verified_bibliography_and_real_pdf(tmp_path: 
     assert result.passed_lean_gate
     assert result.bibliography_verified
     assert result.related_work.ai_usage_disclosure_verified
-    assert result.related_work.ascend_repository_citation_key == "ascendSoftwareFixture"
-    assert result.related_work.ascend_whitepaper_citation_key == "ascendWhitepaperFixture"
+    assert result.related_work.matek_repository_citation_key == "matekSoftwareFixture"
+    assert result.related_work.matek_whitepaper_citation_key == "matekWhitepaperFixture"
     assert result.latex_build is not None and result.latex_build.pdf_path is not None
     assert len(backend.requests) == 1
     assert "-no-shell-escape" in backend.requests[0].argv
@@ -3316,7 +3316,7 @@ class LeanBackend:
         self.requests.append(request)
         output = (
             "'main_result' depends on no axioms"
-            if "_AscendAxiomCheck.lean" in request.argv[-1]
+            if "_MatekAxiomCheck.lean" in request.argv[-1]
             else ""
         )
         return CommandResult(
@@ -3340,7 +3340,7 @@ async def test_lean_pipeline_uses_alignment_codex_and_deterministic_verifier(
     manuscript = compiled_manuscript(research, tmp_path)
     codex = EditingCodex()
     backend = LeanBackend()
-    lean_dir = project / ".ascend" / "runs" / "fixture" / "lean"
+    lean_dir = project / ".matek" / "runs" / "fixture" / "lean"
 
     result = await run_lean_pipeline(
         client=LeanModelClient(),
@@ -3378,7 +3378,7 @@ async def test_lean_pipeline_rejects_generated_symlinks_before_read_or_build(
     research = accepted_research()
     manuscript = compiled_manuscript(research, tmp_path)
     backend = LeanBackend()
-    lean_dir = project / ".ascend" / "runs" / "fixture" / "lean"
+    lean_dir = project / ".matek" / "runs" / "fixture" / "lean"
 
     with pytest.raises(StageValidationError, match="must be a non-symlink"):
         await run_lean_pipeline(
@@ -3407,7 +3407,7 @@ async def test_lean_pipeline_audits_all_broader_project_edits(tmp_path: Path) ->
     (project / "old.bin").write_bytes(b"old")
     research = accepted_research()
     manuscript = compiled_manuscript(research, tmp_path)
-    lean_dir = project / ".ascend" / "runs" / "fixture" / "lean"
+    lean_dir = project / ".matek" / "runs" / "fixture" / "lean"
 
     result = await run_lean_pipeline(
         client=LeanModelClient(),
@@ -3449,7 +3449,7 @@ async def test_lean_pipeline_reuses_completed_iteration_without_repeating_codex(
     (project / "lean-toolchain").write_text("leanprover/lean4:stable", encoding="utf-8")
     research = accepted_research()
     manuscript = compiled_manuscript(research, tmp_path)
-    lean_dir = project / ".ascend" / "runs" / "fixture" / "lean"
+    lean_dir = project / ".matek" / "runs" / "fixture" / "lean"
     codex = EditingCodex()
     settings = LeanWorkflowSettings(maximum_codex_iterations=1)
 

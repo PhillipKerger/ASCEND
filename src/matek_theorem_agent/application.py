@@ -1,4 +1,4 @@
-"""Resumable application service that owns ASCEND's stage gates."""
+"""Resumable application service that owns MATEK's stage gates."""
 
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def resolve_run_root(project_root: Path, run_id: str | None = None) -> Path:
         return find_run_root(project_root, run_id)
     latest = latest_run_root(project_root)
     if latest is None:
-        raise RunNotFoundError(f"no ASCEND runs found beneath {project_root}")
+        raise RunNotFoundError(f"no MATEK runs found beneath {project_root}")
     return latest
 
 
@@ -290,8 +290,8 @@ class WorkflowRunner:
         state.metadata["knowledge_graph"] = {
             "problem_id": problem_id,
             "revision": revision,
-            "vault": ".ascend/knowledge",
-            "index": ".ascend/graph-index.sqlite",
+            "vault": ".matek/knowledge",
+            "index": ".matek/graph-index.sqlite",
             "validation_warnings": [
                 issue.message for issue in validation.issues if issue.severity == "warning"
             ],
@@ -1600,7 +1600,7 @@ class WorkflowRunner:
                 {
                     "research_status": ScientificStatus.NEEDS_PROBLEM_CLARIFICATION.value,
                     "strongest_result": (
-                        "No research claim was attempted because ASCEND could not identify "
+                        "No research claim was attempted because MATEK could not identify "
                         "a unique mathematical problem from the supplied description."
                     ),
                     "unresolved_obligations": result.compiled_problem.clarification_questions,
@@ -1613,7 +1613,7 @@ class WorkflowRunner:
                         ),
                         "next_action": (
                             "Revise the problem file to identify one exact target, then start "
-                            "a new ASCEND run."
+                            "a new MATEK run."
                         ),
                     },
                     "manuscript_status": "SKIPPED_PROBLEM_CLARIFICATION",

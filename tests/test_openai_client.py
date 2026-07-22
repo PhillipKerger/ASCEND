@@ -6,8 +6,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from ascend_math_agent.config import ModelSettings
-from ascend_math_agent.openai_client import (
+from matek_theorem_agent.config import ModelSettings
+from matek_theorem_agent.openai_client import (
     IncompleteResponseError,
     ModelAdapterError,
     ModelRefusalError,

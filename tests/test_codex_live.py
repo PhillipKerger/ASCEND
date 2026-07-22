@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from ascend_math_agent.codex_model_backend import (
+from matek_theorem_agent.codex_model_backend import (
     CodexAuthenticationClass,
     CodexCliModelClient,
 )
-from ascend_math_agent.config import ModelSettings
-from ascend_math_agent.openai_client import ModelRequest
-from ascend_math_agent.stages.compile_prompt import (
+from matek_theorem_agent.config import ModelSettings
+from matek_theorem_agent.openai_client import ModelRequest
+from matek_theorem_agent.stages.compile_prompt import (
     CompiledProblem,
     PromptCompilationStatus,
 )
@@ -27,8 +27,8 @@ class _LiveProbeOutput(BaseModel):
 pytestmark = [
     pytest.mark.codex_live,
     pytest.mark.skipif(
-        os.environ.get("ASCEND_CODEX_LIVE_TESTS") != "1",
-        reason="set ASCEND_CODEX_LIVE_TESTS=1 to consume Codex allowance",
+        os.environ.get("MATEK_CODEX_LIVE_TESTS") != "1",
+        reason="set MATEK_CODEX_LIVE_TESTS=1 to consume Codex allowance",
     ),
 ]
 
@@ -37,7 +37,7 @@ pytestmark = [
 async def test_live_codex_saved_auth_structured_read_only_call(tmp_path: Path) -> None:
     run_root = tmp_path / "run"
     run_root.mkdir()
-    use_search = os.environ.get("ASCEND_CODEX_LIVE_SEARCH") == "1"
+    use_search = os.environ.get("MATEK_CODEX_LIVE_SEARCH") == "1"
     client = CodexCliModelClient(
         tmp_path,
         max_attempts=1,

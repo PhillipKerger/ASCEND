@@ -92,7 +92,7 @@ require_related_work = true
 [lean]
 enabled = true
 execution_backend = "native"
-docker_image = "ascend-math-agent:latest"
+docker_image = "matek-theorem-agent:latest"
 allow_project_edits = false
 codex_command = "codex"
 maximum_codex_iterations = 50

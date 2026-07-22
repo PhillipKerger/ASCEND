@@ -35,7 +35,7 @@ problem.md + CLI/environment/project configuration
 ```
 
 The backend changes how model work is executed, not the stage order or acceptance criteria.
-The manuscript and bibliography gate always precedes Lean work. ASCEND itself owns agent-role
+The manuscript and bibliography gate always precedes Lean work. MATEK itself owns agent-role
 separation, concurrency, budgets, checkpoints, and independent audits under both providers.
 
 ## Model-execution backends
@@ -45,8 +45,8 @@ results. The application resolves it in this order:
 
 ```text
 explicit --backend flag
-  -> ASCEND_BACKEND
-  -> [backend].provider in ascend.toml
+  -> MATEK_BACKEND
+  -> [backend].provider in matek.toml
   -> codex
 ```
 
@@ -57,7 +57,7 @@ charge.
 ### Codex CLI backend — recommended and default
 
 The Codex backend invokes the official CLI noninteractively with an argument array and sends
-the prompt on stdin. It reuses the saved authentication managed by `codex login`; ASCEND calls
+the prompt on stdin. It reuses the saved authentication managed by `codex login`; MATEK calls
 only `codex login status` and never opens a credential file. With ChatGPT authentication, no
 Platform API key is required.
 
@@ -73,8 +73,8 @@ The adapter is responsible for:
 - independent sessions for independent research and audit roles; and
 - post-run file-change auditing for write-capable stages.
 
-Ordinary `ascend doctor` checks only installation, capabilities, and public login status. It
-does not consume model allowance. `ascend doctor --deep` is the explicit live probe.
+Ordinary `matek doctor` checks only installation, capabilities, and public login status. It
+does not consume model allowance. `matek doctor --deep` is the explicit live probe.
 
 ### OpenAI Responses API backend — advanced and optional
 
@@ -110,7 +110,7 @@ never reintroduces fixed-round scheduling or a batch barrier.
 
 ### Workspace
 
-Discover the project root, create `.ascend/runs/<run-id>/`, enforce path confinement, and write
+Discover the project root, create `.matek/runs/<run-id>/`, enforce path confinement, and write
 files atomically. Reports use relative artifact paths. Generated output and provider traces are
 untrusted input.
 
@@ -189,7 +189,7 @@ The compiled problem carries a prior-literature classification. Exact known solu
 eligible for source verification, proof reconstruction, exposition, and formalization, but must
 never be reported as mathematically novel.
 
-Codex internal subagents are not a substitute for ASCEND's independent roles and checkpoints.
+Codex internal subagents are not a substitute for MATEK's independent roles and checkpoints.
 
 ### Persistent knowledge graph
 
@@ -206,12 +206,12 @@ sources, and Lean formalizations. Status promotion and staleness are determinist
 rules. The manuscript and Lean stages consume accepted graph slices, and their mappings and exact
 verification records are written back only after existing gates pass.
 
-`.ascend/knowledge/` is an ordinary Obsidian-compatible vault and the portable source of truth.
-`.ascend/graph-state.json` stores revision/hashes, ownership baselines, source-problem mappings,
-processed operation IDs, and change records; `.ascend/snapshots/` supports diffs and safe stale
-rebases. `.ascend/graph-index.sqlite` is derived and may be deleted/rebuilt. A pending transaction
-file plus `.ascend/locks/graph.lock` makes multi-note commits crash-recoverable and cross-process
-serialized. This placement preserves the default no-write-outside-`.ascend/` boundary.
+`.matek/knowledge/` is an ordinary Obsidian-compatible vault and the portable source of truth.
+`.matek/graph-state.json` stores revision/hashes, ownership baselines, source-problem mappings,
+processed operation IDs, and change records; `.matek/snapshots/` supports diffs and safe stale
+rebases. `.matek/graph-index.sqlite` is derived and may be deleted/rebuilt. A pending transaction
+file plus `.matek/locks/graph.lock` makes multi-note commits crash-recoverable and cross-process
+serialized. This placement preserves the default no-write-outside-`.matek/` boundary.
 
 ### Command execution backends
 
@@ -254,7 +254,7 @@ Domain models do not import the SDK, CLI presentation, or subprocess implementat
   its pending-event write-ahead field, and validates its cursor, decisions, completed assignments,
   and hashes against immutable event/evidence files. It refreshes materialized mailbox and index
   views as execution continues. A missing or invalid canonical checkpoint blocks ordinary resume;
-  ASCEND does not infer scheduler state from the evidence files alone. Completed events are not
+  MATEK does not infer scheduler state from the evidence files alone. Completed events are not
   redelivered after acknowledgement, and unacknowledged events are replayed idempotently.
 - `resume` starts at the first incomplete stage with the frozen backend.
 - `--force-stage NAME` invalidates that boundary and downstream stages while preserving prior

@@ -427,7 +427,7 @@ def find_unresolved_placeholders(text: str, *, allowlist: Collection[str] = ()) 
 
     Generic brackets are mathematical notation far more often than they are template holes.
     The detector therefore recognizes explicit editing commands and exact placeholders from
-    ASCEND's bundled framework, while protecting code, LaTeX, citations, Markdown links, and
+    MATEK's bundled framework, while protecting code, LaTeX, citations, Markdown links, and
     symbolic/index notation.  Ambiguous natural-language brackets are intentionally accepted.
     """
 
@@ -875,7 +875,7 @@ def _render_clarification_request(compiled: CompiledProblem) -> str:
         "# Problem clarification required",
         "",
         (
-            "ASCEND stopped before mathematical research because it could not identify one "
+            "MATEK stopped before mathematical research because it could not identify one "
             "unique problem and exact success criterion from the supplied description."
         ),
         "",
@@ -901,7 +901,7 @@ def _render_clarification_request(compiled: CompiledProblem) -> str:
             "",
             (
                 "Revise the problem file so that it uniquely identifies the intended target, "
-                "then start a new ASCEND run. The intake snapshot of this run remains immutable."
+                "then start a new MATEK run. The intake snapshot of this run remains immutable."
             ),
             "",
         ]

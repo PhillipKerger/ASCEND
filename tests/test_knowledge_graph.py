@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ascend_math_agent.cli import app
-from ascend_math_agent.knowledge_graph import (
+from matek_theorem_agent.cli import app
+from matek_theorem_agent.knowledge_graph import (
     ClaimType,
     EpistemicStatus,
     GraphConflictError,
@@ -115,7 +115,7 @@ def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path:
         task_id=task_id,
         create_nodes=[
             GraphNodeCreate(
-                ascend_id=claim_id,
+                matek_id=claim_id,
                 node_type=NodeType.CLAIM,
                 claim_type=ClaimType.LEMMA,
                 title="Intermediate lemma",
@@ -123,7 +123,7 @@ def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path:
                 epistemic_status=EpistemicStatus.CANDIDATE,
             ),
             GraphNodeCreate(
-                ascend_id=proof_id,
+                matek_id=proof_id,
                 node_type=NodeType.PROOF,
                 title="Proof of intermediate lemma",
                 body="## Proof content\n\nA complete candidate argument.",
@@ -152,7 +152,7 @@ def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path:
         task_id=task_id,
         proposed_status_changes=[
             GraphStatusChange(
-                ascend_id=claim_id,
+                matek_id=claim_id,
                 expected_content_hash=claim.content_hash,
                 epistemic_status=EpistemicStatus.LEAN_VERIFIED,
                 reason="The worker says Lean succeeded.",
@@ -181,7 +181,7 @@ def test_optimistic_conflict_detection_and_dependency_invalidation(tmp_path: Pat
             task_id=task_id,
             create_nodes=[
                 GraphNodeCreate(
-                    ascend_id=dependency_id,
+                    matek_id=dependency_id,
                     node_type=NodeType.CLAIM,
                     claim_type=ClaimType.LEMMA,
                     title="Dependency lemma",
@@ -189,7 +189,7 @@ def test_optimistic_conflict_detection_and_dependency_invalidation(tmp_path: Pat
                     epistemic_status=EpistemicStatus.CANDIDATE,
                 ),
                 GraphNodeCreate(
-                    ascend_id=downstream_id,
+                    matek_id=downstream_id,
                     node_type=NodeType.CLAIM,
                     claim_type=ClaimType.THEOREM,
                     title="Downstream theorem",
@@ -218,7 +218,7 @@ def test_optimistic_conflict_detection_and_dependency_invalidation(tmp_path: Pat
         task_id=task_id,
         update_nodes=[
             GraphNodeUpdate(
-                ascend_id=dependency_id,
+                matek_id=dependency_id,
                 expected_content_hash=dependency.content_hash,
                 body="## Exact statement\n\nVersion two.",
                 reason="Strengthen the exact dependency statement.",
@@ -283,7 +283,7 @@ def test_lean_verification_is_bound_to_exact_claim_version(tmp_path: Path) -> No
         lean_result={
             "outcome": "LEAN_VERIFIED",
             "approved_statement_hash": statement_digest,
-            "statement_draft": {"theorem_name": "ascend_main"},
+            "statement_draft": {"theorem_name": "matek_main"},
             "alignment": {"status": "aligned"},
             "verification": {
                 "passed": True,
@@ -300,23 +300,23 @@ def test_lean_verification_is_bound_to_exact_claim_version(tmp_path: Path) -> No
     assert merged.committed
     claim = graph.show(graph.main_claim_id(problem_id))
     assert claim.epistemic_status is EpistemicStatus.LEAN_VERIFIED
-    assert claim.metadata["ascend_lean_statement_version"] == 1
+    assert claim.metadata["matek_lean_statement_version"] == 1
     formalizations = [
         node for node in graph.load_nodes() if node.node_type is NodeType.FORMALIZATION
     ]
     assert len(formalizations) == 1
     formalization = formalizations[0]
     assert formalization.metadata == {
-        "ascend_claim_id": claim.ascend_id,
-        "ascend_statement_version": 1,
-        "ascend_statement_hash": statement_digest,
-        "ascend_lean_declaration": "ascend_main",
-        "ascend_source_file_hash": source_digest,
-        "ascend_lean_version": "leanprover/lean4:v4.21.0",
-        "ascend_mathlib_revision": "0123456789abcdef",
-        "ascend_build_result": "LEAN_VERIFIED",
-        "ascend_axiom_report_hash": axiom_digest,
-        "ascend_deterministic_verification_passed": True,
+        "matek_claim_id": claim.matek_id,
+        "matek_statement_version": 1,
+        "matek_statement_hash": statement_digest,
+        "matek_lean_declaration": "matek_main",
+        "matek_source_file_hash": source_digest,
+        "matek_lean_version": "leanprover/lean4:v4.21.0",
+        "matek_mathlib_revision": "0123456789abcdef",
+        "matek_build_result": "LEAN_VERIFIED",
+        "matek_axiom_report_hash": axiom_digest,
+        "matek_deterministic_verification_passed": True,
     }
 
 
@@ -325,7 +325,7 @@ def test_interrupted_multi_note_commit_recovers_from_write_ahead_record(
 ) -> None:
     graph, _, problem_id, _ = initialized_graph(tmp_path)
     task_id, revision = graph_task(graph, problem_id)
-    from ascend_math_agent.knowledge_graph import service as graph_service
+    from matek_theorem_agent.knowledge_graph import service as graph_service
 
     original_atomic_write_json = graph_service.atomic_write_json
     crashed = False
@@ -344,7 +344,7 @@ def test_interrupted_multi_note_commit_recovers_from_write_ahead_record(
         task_id=task_id,
         create_nodes=[
             GraphNodeCreate(
-                ascend_id="CLM-RECOVER1",
+                matek_id="CLM-RECOVER1",
                 node_type=NodeType.CLAIM,
                 claim_type=ClaimType.LEMMA,
                 title="Recovered lemma",
@@ -370,12 +370,12 @@ def test_graph_cli_operates_without_obsidian(
     project.mkdir()
     (project / ".git").mkdir()
     monkeypatch.chdir(project)
-    monkeypatch.setattr("ascend_math_agent.knowledge_graph.service.shutil.which", lambda _: None)
+    monkeypatch.setattr("matek_theorem_agent.knowledge_graph.service.shutil.which", lambda _: None)
     cli = CliRunner()
 
     initialized = cli.invoke(app, ["init"])
     assert initialized.exit_code == 0, initialized.output
-    assert (project / ".ascend" / "knowledge" / "Home.md").is_file()
+    assert (project / ".matek" / "knowledge" / "Home.md").is_file()
     validated = cli.invoke(app, ["graph", "validate"])
     assert validated.exit_code == 0, validated.output
     status = cli.invoke(app, ["graph", "status"])

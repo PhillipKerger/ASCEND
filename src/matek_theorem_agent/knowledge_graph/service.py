@@ -75,7 +75,7 @@ from .models import (
 )
 
 GRAPH_SCHEMA_VERSION = 1
-GRAPH_VAULT_RELATIVE = Path(".ascend") / "knowledge"
+GRAPH_VAULT_RELATIVE = Path(".matek") / "knowledge"
 GRAPH_DIRECTORIES = (
     "Problems",
     "Definitions",
@@ -148,7 +148,7 @@ def _revision(number: int, node_hashes: Mapping[str, str]) -> str:
 
 def _node_summary(node: GraphNode) -> GraphNodeSummary:
     return GraphNodeSummary(
-        ascend_id=node.ascend_id,
+        matek_id=node.matek_id,
         node_type=node.node_type,
         title=node.title,
         epistemic_status=node.epistemic_status,
@@ -173,8 +173,8 @@ def _unique_edges(edges: Iterable[GraphEdge]) -> list[GraphEdge]:
 class KnowledgeGraph:
     """One project-scoped graph supporting multiple stable problem nodes.
 
-    ASCEND's existing security contract permits automatic writes only beneath
-    ``.ascend/``.  The Obsidian vault therefore lives at ``.ascend/knowledge``;
+    MATEK's existing security contract permits automatic writes only beneath
+    ``.matek/``.  The Obsidian vault therefore lives at ``.matek/knowledge``;
     opening that directory in Obsidian behaves like any other Markdown vault while
     keeping ordinary workflow runs out of the user's source tree.
     """
@@ -191,14 +191,14 @@ class KnowledgeGraph:
         if not root.is_dir():
             raise KnowledgeGraphError(f"project root is not a directory: {project_root}")
         self.project_root = root
-        self.ascend_root = ensure_path_confined(root, root / ".ascend")
+        self.matek_root = ensure_path_confined(root, root / ".matek")
         self.vault_root = ensure_path_confined(root, root / GRAPH_VAULT_RELATIVE)
-        self.state_path = ensure_path_confined(root, self.ascend_root / "graph-state.json")
-        self.schema_path = ensure_path_confined(root, self.ascend_root / "graph-schema.json")
-        self.index_path = ensure_path_confined(root, self.ascend_root / "graph-index.sqlite")
-        self.pending_path = ensure_path_confined(root, self.ascend_root / "graph-pending.json")
-        self.snapshots_root = ensure_path_confined(root, self.ascend_root / "snapshots")
-        self.locks_root = ensure_path_confined(root, self.ascend_root / "locks")
+        self.state_path = ensure_path_confined(root, self.matek_root / "graph-state.json")
+        self.schema_path = ensure_path_confined(root, self.matek_root / "graph-schema.json")
+        self.index_path = ensure_path_confined(root, self.matek_root / "graph-index.sqlite")
+        self.pending_path = ensure_path_confined(root, self.matek_root / "graph-pending.json")
+        self.snapshots_root = ensure_path_confined(root, self.matek_root / "snapshots")
+        self.locks_root = ensure_path_confined(root, self.matek_root / "locks")
         self.lock_path = ensure_path_confined(root, self.locks_root / "graph.lock")
         self._clock = clock or _utc_now
         self.maximum_context_nodes = maximum_context_nodes
@@ -214,7 +214,7 @@ class KnowledgeGraph:
 
     @contextmanager
     def _locked(self) -> Iterator[None]:
-        self.ascend_root.mkdir(mode=0o700, exist_ok=True)
+        self.matek_root.mkdir(mode=0o700, exist_ok=True)
         self.locks_root.mkdir(mode=0o700, exist_ok=True)
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
@@ -235,7 +235,7 @@ class KnowledgeGraph:
         return self.state_path.is_file() and self.vault_root.is_dir()
 
     def _ensure_layout(self) -> None:
-        self.ascend_root.mkdir(mode=0o700, exist_ok=True)
+        self.matek_root.mkdir(mode=0o700, exist_ok=True)
         self.vault_root.mkdir(mode=0o700, exist_ok=True)
         self.snapshots_root.mkdir(mode=0o700, exist_ok=True)
         self.locks_root.mkdir(mode=0o700, exist_ok=True)
@@ -253,13 +253,13 @@ class KnowledgeGraph:
         schema = {
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "schema_version": GRAPH_SCHEMA_VERSION,
-            "description": "ASCEND Markdown knowledge graph node and patch schemas",
+            "description": "MATEK Markdown knowledge graph node and patch schemas",
             "node": GraphNode.model_json_schema(),
             "patch": GraphPatch.model_json_schema(),
             "relation_types": [item.value for item in RelationType],
             "node_types": [item.value for item in NodeType],
         }
-        atomic_write_json(self.schema_path, schema, confinement_root=self.ascend_root)
+        atomic_write_json(self.schema_path, schema, confinement_root=self.matek_root)
 
     def initialize(self) -> GraphState:
         """Create an empty portable vault and derived index idempotently."""
@@ -278,7 +278,7 @@ class KnowledgeGraph:
                     created_at=now,
                     updated_at=now,
                 )
-                atomic_write_json(self.state_path, state, confinement_root=self.ascend_root)
+                atomic_write_json(self.state_path, state, confinement_root=self.matek_root)
                 self._write_snapshot_unlocked(state, [])
             nodes = self._load_nodes_unlocked(include_human_notes=True)
             self._write_navigation_unlocked(state, nodes)
@@ -288,8 +288,7 @@ class KnowledgeGraph:
     def _load_state_unlocked(self) -> GraphState:
         if not self.state_path.is_file():
             raise GraphNotInitializedError(
-                "knowledge graph is not initialized; run 'ascend graph init' in "
-                f"{self.project_root}"
+                f"knowledge graph is not initialized; run 'matek graph init' in {self.project_root}"
             )
         try:
             state = GraphState.model_validate_json(self.state_path.read_text(encoding="utf-8"))
@@ -338,7 +337,7 @@ class KnowledgeGraph:
                 atomic_write_text(
                     target, cast(str, contents), confinement_root=self.vault_root, mode=0o600
                 )
-        atomic_write_json(self.state_path, state_after, confinement_root=self.ascend_root)
+        atomic_write_json(self.state_path, state_after, confinement_root=self.matek_root)
         nodes = self._load_nodes_unlocked(include_human_notes=True)
         self._write_snapshot_unlocked(state_after, nodes)
         self._write_navigation_unlocked(state_after, nodes)
@@ -360,7 +359,7 @@ class KnowledgeGraph:
                 prefix = path.read_text(encoding="utf-8")[:2048]
             except (OSError, UnicodeError) as exc:
                 raise GraphMarkdownError(f"cannot read graph note {path}: {exc}") from exc
-            if "ascend_id:" not in prefix:
+            if "matek_id:" not in prefix:
                 if include_human_notes:
                     node_id = _deterministic_id(NodeType.HUMAN_NOTE, relative)
                     stat_result = path.stat()
@@ -369,7 +368,7 @@ class KnowledgeGraph:
                     text = path.read_text(encoding="utf-8")
                     nodes.append(
                         GraphNode(
-                            ascend_id=node_id,
+                            matek_id=node_id,
                             node_type=NodeType.HUMAN_NOTE,
                             problem_id=problem_id,
                             title=path.stem,
@@ -379,18 +378,18 @@ class KnowledgeGraph:
                             created_at=timestamp,
                             updated_at=timestamp,
                             body=text,
-                            tags=["ascend/human-note"],
+                            tags=["matek/human-note"],
                             path=relative,
                             content_hash=sha256_file(path),
                         )
                     )
                 continue
             node = parse_node_note(path, relative_path=relative)
-            if node.ascend_id in seen:
-                raise GraphValidationError(f"duplicate graph node ID: {node.ascend_id}")
-            seen.add(node.ascend_id)
+            if node.matek_id in seen:
+                raise GraphValidationError(f"duplicate graph node ID: {node.matek_id}")
+            seen.add(node.matek_id)
             if node.node_type is NodeType.PROBLEM:
-                problem_ids.append(node.ascend_id)
+                problem_ids.append(node.matek_id)
             nodes.append(node)
         return nodes
 
@@ -403,11 +402,11 @@ class KnowledgeGraph:
     def _node_path(self, node: GraphNode, state: GraphState) -> str:
         # A parsed node path is authoritative for an allowed human rename. Stable
         # identity comes from frontmatter, never from the filename.
-        existing = node.path or state.node_paths.get(node.ascend_id)
+        existing = node.path or state.node_paths.get(node.matek_id)
         if existing:
             return existing
         directory = NODE_TYPE_DIRECTORIES[node.node_type]
-        return f"{directory}/{node.ascend_id}--{_slug(node.title)}.md"
+        return f"{directory}/{node.matek_id}--{_slug(node.title)}.md"
 
     def _commit_nodes_unlocked(
         self,
@@ -426,7 +425,7 @@ class KnowledgeGraph:
         if operation_id in state.processed_operations:
             previous = state.processed_operations[operation_id]
             return previous.model_copy(update={"status": "already_applied"})
-        nodes = {node.ascend_id: node.model_copy(deep=True) for node in all_nodes}
+        nodes = {node.matek_id: node.model_copy(deep=True) for node in all_nodes}
         changed = list(dict.fromkeys(changed_node_ids))
         missing = sorted(set(changed) - nodes.keys())
         if missing:
@@ -453,11 +452,11 @@ class KnowledgeGraph:
         # A human may rename an unchanged note. Preserve the discovered location in state.
         for node in nodes.values():
             if node.path and node.node_type is not NodeType.HUMAN_NOTE:
-                next_paths[node.ascend_id] = node.path
+                next_paths[node.matek_id] = node.path
                 if node.content_hash:
-                    next_hashes.setdefault(node.ascend_id, node.content_hash)
-                next_machine.setdefault(node.ascend_id, machine_hash(node))
-                next_statements.setdefault(node.ascend_id, statement_hash(node))
+                    next_hashes.setdefault(node.matek_id, node.content_hash)
+                next_machine.setdefault(node.matek_id, machine_hash(node))
+                next_statements.setdefault(node.matek_id, statement_hash(node))
         now = self._now()
         next_number = state.revision_number + 1
         next_revision = _revision(next_number, next_hashes)
@@ -505,13 +504,13 @@ class KnowledgeGraph:
             "writes": writes,
             "state_after": next_state.model_dump(mode="json"),
         }
-        atomic_write_json(self.pending_path, transaction, confinement_root=self.ascend_root)
+        atomic_write_json(self.pending_path, transaction, confinement_root=self.matek_root)
         for write in writes:
             target = ensure_path_confined(self.vault_root, self.vault_root / write["path"])
             atomic_write_text(
                 target, write["contents"], confinement_root=self.vault_root, mode=0o600
             )
-        atomic_write_json(self.state_path, next_state, confinement_root=self.ascend_root)
+        atomic_write_json(self.state_path, next_state, confinement_root=self.matek_root)
         committed_nodes = list(nodes.values())
         self._write_snapshot_unlocked(next_state, committed_nodes)
         self._write_navigation_unlocked(next_state, committed_nodes)
@@ -532,8 +531,8 @@ class KnowledgeGraph:
             "node_hashes": dict(sorted(state.node_hashes.items())),
             "nodes": [
                 node.model_dump(mode="json")
-                for node in sorted(nodes, key=lambda item: item.ascend_id)
-                if node.node_type is not NodeType.HUMAN_NOTE or node.ascend_id in state.node_paths
+                for node in sorted(nodes, key=lambda item: item.matek_id)
+                if node.node_type is not NodeType.HUMAN_NOTE or node.matek_id in state.node_paths
             ],
             "edges": [
                 edge.model_dump(mode="json")
@@ -567,7 +566,7 @@ class KnowledgeGraph:
             else self._load_nodes_unlocked(include_human_notes=True)
         )
         descriptor, temporary_name = tempfile.mkstemp(
-            prefix=".graph-index.", suffix=".sqlite", dir=self.ascend_root
+            prefix=".graph-index.", suffix=".sqlite", dir=self.matek_root
         )
         os.close(descriptor)
         temporary = Path(temporary_name)
@@ -580,7 +579,7 @@ class KnowledgeGraph:
                     PRAGMA foreign_keys=OFF;
                     CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
                     CREATE TABLE nodes (
-                        ascend_id TEXT PRIMARY KEY,
+                        matek_id TEXT PRIMARY KEY,
                         node_type TEXT NOT NULL,
                         problem_id TEXT NOT NULL,
                         title TEXT NOT NULL,
@@ -602,9 +601,9 @@ class KnowledgeGraph:
                         PRIMARY KEY (source_id, relation, target_id)
                     );
                     CREATE TABLE tags (
-                        ascend_id TEXT NOT NULL,
+                        matek_id TEXT NOT NULL,
                         tag TEXT NOT NULL,
-                        PRIMARY KEY (ascend_id, tag)
+                        PRIMARY KEY (matek_id, tag)
                     );
                     CREATE TABLE changes (
                         revision TEXT NOT NULL,
@@ -630,7 +629,7 @@ class KnowledgeGraph:
                     connection.execute(
                         "INSERT INTO nodes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
-                            node.ascend_id,
+                            node.matek_id,
                             node.node_type.value,
                             node.problem_id,
                             node.title,
@@ -648,7 +647,7 @@ class KnowledgeGraph:
                     )
                     connection.executemany(
                         "INSERT OR IGNORE INTO tags VALUES (?, ?)",
-                        [(node.ascend_id, tag) for tag in node.tags],
+                        [(node.matek_id, tag) for tag in node.tags],
                     )
                     connection.executemany(
                         "INSERT OR IGNORE INTO edges VALUES (?, ?, ?)",
@@ -712,12 +711,12 @@ class KnowledgeGraph:
         if source_types is not None and source.node_type not in source_types:
             return (
                 f"{edge.relation.value} cannot originate at {source.node_type.value} "
-                f"node {source.ascend_id}"
+                f"node {source.matek_id}"
             )
         if target_types is not None and target.node_type not in target_types:
             return (
                 f"{edge.relation.value} cannot target {target.node_type.value} "
-                f"node {target.ascend_id}"
+                f"node {target.matek_id}"
             )
         return None
 
@@ -759,7 +758,7 @@ class KnowledgeGraph:
         self, state: GraphState, nodes: Sequence[GraphNode]
     ) -> GraphValidationReport:
         issues: list[GraphValidationIssue] = []
-        by_id = {node.ascend_id: node for node in nodes}
+        by_id = {node.matek_id: node for node in nodes}
         managed = {node_id: node for node_id, node in by_id.items() if node_id in state.node_paths}
         for node_id, relative in state.node_paths.items():
             node = by_id.get(node_id)
@@ -829,10 +828,10 @@ class KnowledgeGraph:
                         severity="error",
                         code="missing_problem",
                         message=(
-                            f"node {node.ascend_id} references missing problem {node.problem_id}"
+                            f"node {node.matek_id} references missing problem {node.problem_id}"
                         ),
                         path=node.path,
-                        node_id=node.ascend_id,
+                        node_id=node.matek_id,
                     )
                 )
             for edge in node.relations:
@@ -846,7 +845,7 @@ class KnowledgeGraph:
                                 f"{edge.target_id} has no target node"
                             ),
                             path=node.path,
-                            node_id=node.ascend_id,
+                            node_id=node.matek_id,
                         )
                     )
                     continue
@@ -858,7 +857,7 @@ class KnowledgeGraph:
                             code="invalid_relation_types",
                             message=relation_issue,
                             path=node.path,
-                            node_id=node.ascend_id,
+                            node_id=node.matek_id,
                         )
                     )
         cycle = self._dependency_cycle(nodes)
@@ -884,7 +883,7 @@ class KnowledgeGraph:
                         GraphValidationIssue(
                             severity="warning",
                             code="index_stale",
-                            message="derived SQLite index is stale; run ascend graph rebuild-index",
+                            message="derived SQLite index is stale; run matek graph rebuild-index",
                         )
                     )
             except sqlite3.Error as exc:
@@ -1057,7 +1056,7 @@ class KnowledgeGraph:
             existing = home.read_text(encoding="utf-8")
             end = existing.find(GENERATED_END)
             human = existing[end + len(GENERATED_END) :].strip() if end >= 0 else existing
-        home_text = new_generated_body("ASCEND Knowledge Graph", "\n".join(home_generated), human)
+        home_text = new_generated_body("MATEK Knowledge Graph", "\n".join(home_generated), human)
         atomic_write_text(home, home_text, confinement_root=self.vault_root)
 
         candidate_proofs = [
@@ -1077,7 +1076,7 @@ class KnowledgeGraph:
             node
             for node in nodes
             if node.node_type is NodeType.SOURCE
-            and not bool(node.metadata.get("ascend_verified", False))
+            and not bool(node.metadata.get("matek_verified", False))
         ]
         recent_changed_nodes: list[GraphNode] = []
         for node_id in reversed(
@@ -1087,7 +1086,7 @@ class KnowledgeGraph:
                 )
             )
         ):
-            matched = next((item for item in nodes if item.ascend_id == node_id), None)
+            matched = next((item for item in nodes if item.matek_id == node_id), None)
             if matched is not None:
                 recent_changed_nodes.append(matched)
         dashboards: dict[str, tuple[str, list[GraphNode]]] = {
@@ -1158,17 +1157,17 @@ class KnowledgeGraph:
                 {RelationType.FORMALIZES, RelationType.RELATED_TO},
             ),
         }
-        by_id = {node.ascend_id: node for node in nodes}
+        by_id = {node.matek_id: node for node in nodes}
         for title, (node_types, relations) in specifications.items():
             selected = [
                 node
                 for node in nodes
                 if node.node_type in node_types and node.node_type is not NodeType.HUMAN_NOTE
             ][:40]
-            selected_ids = {node.ascend_id for node in selected}
+            selected_ids = {node.matek_id for node in selected}
             canvas_nodes = [
                 {
-                    "id": node.ascend_id,
+                    "id": node.matek_id,
                     "type": "file",
                     "file": node.path,
                     "x": (index % 5) * 360,
@@ -1235,7 +1234,7 @@ class KnowledgeGraph:
 
     @staticmethod
     def _select_problem_id(nodes: Sequence[GraphNode], problem_id: str | None) -> str:
-        problems = [node.ascend_id for node in nodes if node.node_type is NodeType.PROBLEM]
+        problems = [node.matek_id for node in nodes if node.node_type is NodeType.PROBLEM]
         if problem_id is not None:
             if problem_id not in problems:
                 raise GraphValidationError(f"unknown graph problem ID: {problem_id}")
@@ -1271,11 +1270,11 @@ class KnowledgeGraph:
             if edge.relation is RelationType.AUDITS
         }
         missing_dependency_sources = {
-            node.ascend_id
+            node.matek_id
             for node in selected
             if any(
                 edge.relation is RelationType.DEPENDS_ON
-                and edge.target_id not in {item.ascend_id for item in nodes}
+                and edge.target_id not in {item.matek_id for item in nodes}
                 for edge in node.relations
             )
             or "missing_dependency" in node.invalidation_reasons
@@ -1298,7 +1297,7 @@ class KnowledgeGraph:
             if node.node_type is NodeType.PROOF
             and node.epistemic_status
             in {EpistemicStatus.CANDIDATE, EpistemicStatus.PROVED_INFORMALLY}
-            and node.ascend_id not in audited_targets
+            and node.matek_id not in audited_targets
             and any(
                 edge.relation is RelationType.PROVES and edge.target_id in proof_targets
                 for edge in node.relations
@@ -1325,7 +1324,7 @@ class KnowledgeGraph:
             missing_dependencies=[
                 _node_summary(node)
                 for node in selected
-                if node.ascend_id in missing_dependency_sources
+                if node.matek_id in missing_dependency_sources
             ],
             high_value_tasks=[
                 _node_summary(node)
@@ -1360,7 +1359,7 @@ class KnowledgeGraph:
                 _node_summary(node)
                 for node in selected
                 if node.node_type is NodeType.SOURCE
-                and not bool(node.metadata.get("ascend_verified", False))
+                and not bool(node.metadata.get("matek_verified", False))
             ],
         )
 
@@ -1380,7 +1379,7 @@ class KnowledgeGraph:
         problem_id: str,
         task_id: str,
     ) -> GraphContextSlice:
-        by_id = {node.ascend_id: node for node in nodes}
+        by_id = {node.matek_id: node for node in nodes}
         task = by_id.get(task_id)
         if task is None or task.node_type is not NodeType.TASK:
             raise GraphValidationError(f"graph task does not exist: {task_id}")
@@ -1401,7 +1400,7 @@ class KnowledgeGraph:
             if node_id in seen or node_id not in by_id:
                 continue
             node = by_id[node_id]
-            if node.problem_id != problem_id and node.ascend_id != problem_id:
+            if node.problem_id != problem_id and node.matek_id != problem_id:
                 continue
             seen.add(node_id)
             selected_ids.append(node_id)
@@ -1447,7 +1446,7 @@ class KnowledgeGraph:
             if remaining_characters <= 0:
                 break
         problem_node_count = sum(
-            node.problem_id == problem_id or node.ascend_id == problem_id for node in nodes
+            node.problem_id == problem_id or node.matek_id == problem_id for node in nodes
         )
         return GraphContextSlice(
             graph_revision=state.revision,
@@ -1473,7 +1472,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            node = next((item for item in nodes if item.ascend_id == node_id), None)
+            node = next((item for item in nodes if item.matek_id == node_id), None)
             if node is None:
                 raise GraphValidationError(f"graph node does not exist: {node_id}")
             return node
@@ -1485,7 +1484,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes}
+            by_id = {node.matek_id: node for node in nodes}
             if node_id not in by_id:
                 raise GraphValidationError(f"graph node does not exist: {node_id}")
             adjacency: dict[str, list[str]] = defaultdict(list)
@@ -1536,7 +1535,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes}
+            by_id = {node.matek_id: node for node in nodes}
             node = by_id.get(node_id)
             if node is None:
                 raise GraphValidationError(f"graph node does not exist: {node_id}")
@@ -1553,7 +1552,7 @@ class KnowledgeGraph:
             node.invalidation_reasons = list(
                 dict.fromkeys([*node.invalidation_reasons, "tombstoned"])
             )
-            node.metadata["ascend_tombstone_reason"] = reason.strip()
+            node.metadata["matek_tombstone_reason"] = reason.strip()
             node.last_modified_run = run_id
             node.author_role = "human"
             node.updated_at = self._now()
@@ -1629,10 +1628,10 @@ class KnowledgeGraph:
                     + "\n"
                 )
             if output_format == "graphviz":
-                lines = ["digraph ASCEND {"]
+                lines = ["digraph MATEK {"]
                 for node in nodes:
-                    label = json.dumps(f"{node.ascend_id}\\n{node.title}")
-                    lines.append(f'  "{node.ascend_id}" [label={label}];')
+                    label = json.dumps(f"{node.matek_id}\\n{node.title}")
+                    lines.append(f'  "{node.matek_id}" [label={label}];')
                 for edge in edges:
                     lines.append(
                         f'  "{edge.source_id}" -> "{edge.target_id}" '
@@ -1643,7 +1642,7 @@ class KnowledgeGraph:
             lines = ["flowchart TD"]
             for node in nodes:
                 safe_title = node.title.replace('"', "'").replace("[", "(").replace("]", ")")
-                lines.append(f'  {node.ascend_id.replace("-", "_")}["{safe_title}"]')
+                lines.append(f'  {node.matek_id.replace("-", "_")}["{safe_title}"]')
             for edge in edges:
                 lines.append(
                     f"  {edge.source_id.replace('-', '_')} -->|{edge.relation.value}| "
@@ -1669,7 +1668,7 @@ class KnowledgeGraph:
                 )
             except OSError as exc:
                 return False, self.vault_root, f"Obsidian could not be launched: {exc}"
-            return True, self.vault_root, "Opened the ASCEND vault in Obsidian."
+            return True, self.vault_root, "Opened the MATEK vault in Obsidian."
         return (
             False,
             self.vault_root,
@@ -1730,7 +1729,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes}
+            by_id = {node.matek_id: node for node in nodes}
             conflicts: list[str] = []
             changed: list[str] = []
             stale: list[str] = []
@@ -1824,7 +1823,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes}
+            by_id = {node.matek_id: node for node in nodes}
             key = self._problem_file_key(source_path)
             problem_id = state.problem_files.get(key)
             now = self._now()
@@ -1833,7 +1832,7 @@ class KnowledgeGraph:
                 problem_id = _new_id(NodeType.PROBLEM)
                 state.problem_files[key] = problem_id
                 problem = GraphNode(
-                    ascend_id=problem_id,
+                    matek_id=problem_id,
                     node_type=NodeType.PROBLEM,
                     problem_id=problem_id,
                     title=source_path.stem.replace("_", " ").replace("-", " ").title(),
@@ -1841,7 +1840,7 @@ class KnowledgeGraph:
                     workflow_status=WorkflowStatus.ACTIVE,
                     created_in_run=run_id,
                     last_modified_run=run_id,
-                    author_role="ascend-intake",
+                    author_role="matek-intake",
                     created_at=now,
                     updated_at=now,
                     body=new_generated_body(
@@ -1850,8 +1849,8 @@ class KnowledgeGraph:
                         + problem_text.strip()
                         + "\n\n## Overall status\n\nResearch not yet compiled.",
                     ),
-                    tags=["ascend/problem"],
-                    source_artifacts=[f".ascend/runs/{run_id}/input/problem.md"],
+                    tags=["matek/problem"],
+                    source_artifacts=[f".matek/runs/{run_id}/input/problem.md"],
                 )
                 by_id[problem_id] = problem
                 changed.append(problem_id)
@@ -1869,11 +1868,11 @@ class KnowledgeGraph:
                         problem.title,
                         "## Exact main problem\n\n"
                         + problem_text.strip()
-                        + "\n\n## Overall status\n\nA later ASCEND run updated the problem input.",
+                        + "\n\n## Overall status\n\nA later MATEK run updated the problem input.",
                     )
                     problem.updated_at = now
                     problem.last_modified_run = run_id
-                    problem.author_role = "ascend-intake"
+                    problem.author_role = "matek-intake"
                     problem.invalidation_reasons = list(
                         dict.fromkeys([*problem.invalidation_reasons, "problem_statement_changed"])
                     )
@@ -1884,24 +1883,24 @@ class KnowledgeGraph:
             run_node_id = _deterministic_id(NodeType.RUN, problem_id, run_id)
             if run_node_id not in by_id:
                 run_node = GraphNode(
-                    ascend_id=run_node_id,
+                    matek_id=run_node_id,
                     node_type=NodeType.RUN,
                     problem_id=problem_id,
-                    title=f"ASCEND run {run_id}",
+                    title=f"MATEK run {run_id}",
                     epistemic_status=EpistemicStatus.OPEN,
                     workflow_status=WorkflowStatus.IN_PROGRESS,
                     created_in_run=run_id,
                     last_modified_run=run_id,
-                    author_role="ascend-workflow",
+                    author_role="matek-workflow",
                     created_at=now,
                     updated_at=now,
                     body=new_generated_body(
-                        f"ASCEND run {run_id}",
+                        f"MATEK run {run_id}",
                         "## Run summary\n\nWorkflow started.\n\n"
                         "## Run artifacts\n\n"
-                        f"- `.ascend/runs/{run_id}/`",
+                        f"- `.matek/runs/{run_id}/`",
                     ),
-                    tags=["ascend/run"],
+                    tags=["matek/run"],
                     relations=[
                         GraphEdge(
                             source_id=run_node_id,
@@ -1909,7 +1908,7 @@ class KnowledgeGraph:
                             target_id=problem_id,
                         )
                     ],
-                    source_artifacts=[f".ascend/runs/{run_id}/state.json"],
+                    source_artifacts=[f".matek/runs/{run_id}/state.json"],
                 )
                 by_id[run_node_id] = run_node
                 changed.append(run_node_id)
@@ -1919,7 +1918,7 @@ class KnowledgeGraph:
                     all_nodes=list(by_id.values()),
                     changed_node_ids=changed,
                     run_id=run_id,
-                    author="ascend-workflow",
+                    author="matek-workflow",
                     reason="Initialize or resume the persistent problem graph.",
                     operation_id=f"run-start:{run_id}",
                 )
@@ -1954,10 +1953,10 @@ class KnowledgeGraph:
             EpistemicStatus.LEAN_VERIFIED: 5,
         }
         for incoming in proposed:
-            existing = nodes.get(incoming.ascend_id)
+            existing = nodes.get(incoming.matek_id)
             if existing is None:
-                nodes[incoming.ascend_id] = incoming
-                changed.append(incoming.ascend_id)
+                nodes[incoming.matek_id] = incoming
+                changed.append(incoming.matek_id)
                 continue
             # Preserve human prose outside the generated block and the stable creation record.
             existing.title = incoming.title
@@ -2004,7 +2003,7 @@ class KnowledgeGraph:
                 dict.fromkeys([*existing.manuscript_mappings, *incoming.manuscript_mappings])
             )
             existing.metadata.update(incoming.metadata)
-            changed.append(existing.ascend_id)
+            changed.append(existing.matek_id)
         return self._commit_nodes_unlocked(
             state=state,
             all_nodes=list(nodes.values()),
@@ -2118,7 +2117,7 @@ class KnowledgeGraph:
                     new_revision=state.revision,
                     issues=errors,
                 )
-            by_id = {node.ascend_id: node.model_copy(deep=True) for node in nodes_list}
+            by_id = {node.matek_id: node.model_copy(deep=True) for node in nodes_list}
             task = by_id.get(patch.task_id)
             if task is None or task.node_type is not NodeType.TASK:
                 return GraphMergeResult(
@@ -2151,11 +2150,11 @@ class KnowledgeGraph:
                 )
             base_hashes = cast(dict[str, str], base_snapshot.get("node_hashes", {}))
             touched = {
-                *(update.ascend_id for update in patch.update_nodes),
-                *(change.ascend_id for change in patch.proposed_status_changes),
+                *(update.matek_id for update in patch.update_nodes),
+                *(change.matek_id for change in patch.proposed_status_changes),
                 *(edge.source_id for edge in [*patch.add_edges, *patch.remove_edges]),
             }
-            proposed_ids = [item.ascend_id for item in patch.create_nodes if item.ascend_id]
+            proposed_ids = [item.matek_id for item in patch.create_nodes if item.matek_id]
             conflicts: list[str] = []
             for node_id in touched:
                 current = by_id.get(node_id)
@@ -2171,13 +2170,13 @@ class KnowledgeGraph:
                         f"node {node_id} changed after base revision {patch.base_graph_revision}"
                     )
             for update in patch.update_nodes:
-                current = by_id.get(update.ascend_id)
+                current = by_id.get(update.matek_id)
                 if current is not None and current.content_hash != update.expected_content_hash:
-                    conflicts.append(f"content hash conflict for {update.ascend_id}")
+                    conflicts.append(f"content hash conflict for {update.matek_id}")
             for change in patch.proposed_status_changes:
-                current = by_id.get(change.ascend_id)
+                current = by_id.get(change.matek_id)
                 if current is not None and current.content_hash != change.expected_content_hash:
-                    conflicts.append(f"content hash conflict for {change.ascend_id}")
+                    conflicts.append(f"content hash conflict for {change.matek_id}")
             if len(proposed_ids) != len(set(proposed_ids)):
                 conflicts.append("patch proposes duplicate stable node IDs")
             conflicts.extend(
@@ -2186,7 +2185,7 @@ class KnowledgeGraph:
                 if node_id in by_id
             )
             existing_signatures = {
-                (node.node_type, node.title.casefold().strip()): node.ascend_id
+                (node.node_type, node.title.casefold().strip()): node.matek_id
                 for node in by_id.values()
                 if not node.tombstone
             }
@@ -2209,9 +2208,9 @@ class KnowledgeGraph:
             changed: list[str] = []
             created_ids: list[str] = []
             for item in patch.create_nodes:
-                node_id = item.ascend_id or _new_id(item.node_type)
+                node_id = item.matek_id or _new_id(item.node_type)
                 node = GraphNode(
-                    ascend_id=node_id,
+                    matek_id=node_id,
                     node_type=item.node_type,
                     problem_id=problem_id,
                     title=item.title,
@@ -2224,7 +2223,7 @@ class KnowledgeGraph:
                     created_at=now,
                     updated_at=now,
                     body=new_generated_body(item.title, item.body),
-                    tags=list(dict.fromkeys([f"ascend/{item.node_type.value}", *item.tags])),
+                    tags=list(dict.fromkeys([f"matek/{item.node_type.value}", *item.tags])),
                     evidence=list(dict.fromkeys([*item.evidence, *patch.evidence])),
                     source_artifacts=item.source_artifacts,
                 )
@@ -2232,7 +2231,7 @@ class KnowledgeGraph:
                 changed.append(node_id)
                 created_ids.append(node_id)
             for update in patch.update_nodes:
-                node = by_id[update.ascend_id]
+                node = by_id[update.matek_id]
                 if update.title is not None:
                     node.title = update.title.strip()
                 if update.body is not None:
@@ -2260,7 +2259,7 @@ class KnowledgeGraph:
                 node.updated_at = now
                 node.last_modified_run = patch.run_id
                 node.author_role = patch.agent_role
-                changed.append(node.ascend_id)
+                changed.append(node.matek_id)
             remove_keys = {
                 (edge.source_id, edge.relation, edge.target_id) for edge in patch.remove_edges
             }
@@ -2288,7 +2287,7 @@ class KnowledgeGraph:
                 if edge.relation is RelationType.DEPENDS_ON:
                     target = by_id[edge.target_id]
                     version = (
-                        f"{target.ascend_id}@{target.statement_version}:"
+                        f"{target.matek_id}@{target.statement_version}:"
                         f"{target.content_hash or sha256_text(render_node_note(target))}"
                     )
                     source.dependency_versions = list(
@@ -2296,7 +2295,7 @@ class KnowledgeGraph:
                     )
                 source.updated_at = now
                 source.last_modified_run = patch.run_id
-                changed.append(source.ascend_id)
+                changed.append(source.matek_id)
             if conflicts:
                 return GraphMergeResult(
                     operation_id=operation_id,
@@ -2307,7 +2306,7 @@ class KnowledgeGraph:
                     issues=list(dict.fromkeys(conflicts)),
                 )
             for change in patch.proposed_status_changes:
-                node = by_id[change.ascend_id]
+                node = by_id[change.matek_id]
                 if change.epistemic_status is EpistemicStatus.LEAN_VERIFIED:
                     conflicts.append("only deterministic Lean verification may set lean_verified")
                     continue
@@ -2321,7 +2320,7 @@ class KnowledgeGraph:
                     node.epistemic_status, change.epistemic_status
                 ):
                     conflicts.append(
-                        f"invalid epistemic transition for {node.ascend_id}: "
+                        f"invalid epistemic transition for {node.matek_id}: "
                         f"{node.epistemic_status.value} -> {change.epistemic_status.value}"
                     )
                     continue
@@ -2329,7 +2328,7 @@ class KnowledgeGraph:
                     node.workflow_status, change.workflow_status
                 ):
                     conflicts.append(
-                        f"invalid workflow transition for {node.ascend_id}: "
+                        f"invalid workflow transition for {node.matek_id}: "
                         f"{node.workflow_status.value} -> {change.workflow_status.value}"
                     )
                     continue
@@ -2341,7 +2340,7 @@ class KnowledgeGraph:
                 node.last_modified_run = patch.run_id
                 node.author_role = patch.agent_role
                 node.evidence = list(dict.fromkeys([*node.evidence, *patch.evidence]))
-                changed.append(node.ascend_id)
+                changed.append(node.matek_id)
             if conflicts:
                 return GraphMergeResult(
                     operation_id=operation_id,
@@ -2431,7 +2430,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes}
+            by_id = {node.matek_id: node for node in nodes}
             problem = by_id.get(problem_id)
             if problem is None or problem.node_type is not NodeType.PROBLEM:
                 raise GraphValidationError(f"problem node does not exist: {problem_id}")
@@ -2458,10 +2457,10 @@ class KnowledgeGraph:
             )
             problem.last_modified_run = run_id
             problem.updated_at = now
-            problem.metadata["ascend_literature_status"] = literature_status
+            problem.metadata["matek_literature_status"] = literature_status
             target_id = self.main_claim_id(problem_id)
             target = GraphNode(
-                ascend_id=target_id,
+                matek_id=target_id,
                 node_type=NodeType.CLAIM,
                 problem_id=problem_id,
                 title=f"Main target — {title}",
@@ -2480,9 +2479,9 @@ class KnowledgeGraph:
                     + "\n\n## Scope and conventions\n\n"
                     + contract
                     + "\n\n## Current significance\n\n"
-                    + "This is the exact claim governed by the compiled ASCEND claim contract.",
+                    + "This is the exact claim governed by the compiled MATEK claim contract.",
                 ),
-                tags=["ascend/claim", "ascend/theorem", "ascend/main-target"],
+                tags=["matek/claim", "matek/theorem", "matek/main-target"],
                 relations=[
                     GraphEdge(
                         source_id=target_id,
@@ -2491,10 +2490,10 @@ class KnowledgeGraph:
                     )
                 ],
                 source_artifacts=[
-                    f".ascend/runs/{run_id}/prompts/compiled_problem.json",
-                    f".ascend/runs/{run_id}/prompts/compiled_research_prompt.md",
+                    f".matek/runs/{run_id}/prompts/compiled_problem.json",
+                    f".matek/runs/{run_id}/prompts/compiled_research_prompt.md",
                 ],
-                metadata={"ascend_claim_contract_sha256": sha256_text(contract)},
+                metadata={"matek_claim_contract_sha256": sha256_text(contract)},
             )
             existing_target = by_id.get(target_id)
             stale_nodes: list[str] = []
@@ -2530,7 +2529,7 @@ class KnowledgeGraph:
                     ]
                     verified = bool(raw_source.get("verified", False))
                     source = GraphNode(
-                        ascend_id=source_id,
+                        matek_id=source_id,
                         node_type=NodeType.SOURCE,
                         problem_id=problem_id,
                         title=str(raw_source.get("title") or source_key),
@@ -2556,14 +2555,14 @@ class KnowledgeGraph:
                             ),
                         ),
                         tags=[
-                            "ascend/source",
-                            "ascend/source-verified" if verified else "ascend/source-open",
+                            "matek/source",
+                            "matek/source-verified" if verified else "matek/source-open",
                         ],
-                        source_artifacts=[f".ascend/runs/{run_id}/prompts/source_ledger.json"],
+                        source_artifacts=[f".matek/runs/{run_id}/prompts/source_ledger.json"],
                         metadata={
-                            "ascend_source_id": source_key,
-                            "ascend_identifiers": identifiers,
-                            "ascend_verified": verified,
+                            "matek_source_id": source_key,
+                            "matek_identifiers": identifiers,
+                            "matek_verified": verified,
                         },
                     )
                     source_nodes.append(source)
@@ -2583,7 +2582,7 @@ class KnowledgeGraph:
                 author="prompt-compiler",
                 reason="Compile the exact target and source ledger into the persistent graph.",
                 operation_id=f"prompt-compiled:{run_id}",
-                source_artifacts=[f".ascend/runs/{run_id}/prompts/compiled_problem.json"],
+                source_artifacts=[f".matek/runs/{run_id}/prompts/compiled_problem.json"],
                 stale_node_ids=[target_id, *stale_nodes] if stale_nodes else (),
             )
 
@@ -2601,7 +2600,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             if problem_id not in by_id:
                 raise GraphValidationError(f"problem node does not exist: {problem_id}")
             run_node_id = _deterministic_id(NodeType.RUN, problem_id, run_id)
@@ -2646,7 +2645,7 @@ class KnowledgeGraph:
                 ]
                 proposed.append(
                     GraphNode(
-                        ascend_id=task_id,
+                        matek_id=task_id,
                         node_type=NodeType.TASK,
                         problem_id=problem_id,
                         title=f"Task {assignment_id}: {task_text[:72]}",
@@ -2668,16 +2667,16 @@ class KnowledgeGraph:
                             + "\n\n## Approach family\n\n"
                             + str(assignment.get("approach_family") or "unspecified"),
                         ),
-                        tags=["ascend/task", "ascend/task-active"],
+                        tags=["matek/task", "matek/task-active"],
                         relations=relations,
                         source_artifacts=[
-                            f".ascend/runs/{run_id}/research/coordinator/decisions/"
+                            f".matek/runs/{run_id}/research/coordinator/decisions/"
                             f"{decision_id:08d}.json"
                         ],
                         metadata={
-                            "ascend_assignment_id": assignment_id,
-                            "ascend_decision_id": decision_id,
-                            "ascend_priority": "high"
+                            "matek_assignment_id": assignment_id,
+                            "matek_decision_id": decision_id,
+                            "matek_priority": "high"
                             if "audit" in task_text.casefold()
                             else "normal",
                         },
@@ -2759,7 +2758,7 @@ class KnowledgeGraph:
                 previous = state.processed_operations[operation_id]
                 return previous.model_copy(update={"status": "already_applied"})
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             task = by_id.get(task_id)
             if task is None or task.node_type is not NodeType.TASK:
                 raise GraphValidationError(f"worker graph task is missing: {task_id}")
@@ -2804,7 +2803,7 @@ class KnowledgeGraph:
                 else "Continue when a coordinator task targets the remaining obligation."
             )
             approach = GraphNode(
-                ascend_id=approach_id,
+                matek_id=approach_id,
                 node_type=NodeType.APPROACH,
                 problem_id=problem_id,
                 title=f"Approach: {family}",
@@ -2830,7 +2829,7 @@ class KnowledgeGraph:
                     + "\n\n## Reopen condition\n\n"
                     + reopen,
                 ),
-                tags=["ascend/approach", f"ascend/{classification}"],
+                tags=["matek/approach", f"matek/{classification}"],
                 relations=[
                     GraphEdge(
                         source_id=approach_id,
@@ -2846,10 +2845,10 @@ class KnowledgeGraph:
                 source_artifacts=[source_artifact],
                 evidence=[*formal_results, *counterexamples],
                 metadata={
-                    "ascend_assignment_ids": [assignment_id],
-                    "ascend_assumptions": assumptions,
-                    "ascend_dependencies": dependencies,
-                    "ascend_worker_status": status,
+                    "matek_assignment_ids": [assignment_id],
+                    "matek_assumptions": assumptions,
+                    "matek_dependencies": dependencies,
+                    "matek_worker_status": status,
                 },
             )
             proposed_nodes: list[GraphNode] = [approach]
@@ -2861,7 +2860,7 @@ class KnowledgeGraph:
                 result_claim_ids.append(claim_id)
                 proposed_nodes.append(
                     GraphNode(
-                        ascend_id=claim_id,
+                        matek_id=claim_id,
                         node_type=NodeType.CLAIM,
                         problem_id=problem_id,
                         title=f"Result from {assignment_id} #{index}",
@@ -2882,7 +2881,7 @@ class KnowledgeGraph:
                             + "\n\n## Current significance\n\n"
                             + f"Candidate result distilled from task {task_id}.",
                         ),
-                        tags=["ascend/claim", "ascend/lemma", "ascend/candidate"],
+                        tags=["matek/claim", "matek/lemma", "matek/candidate"],
                         relations=[
                             GraphEdge(
                                 source_id=claim_id,
@@ -2905,7 +2904,7 @@ class KnowledgeGraph:
                 proof_targets = result_claim_ids or [self.main_claim_id(problem_id)]
                 proposed_nodes.append(
                     GraphNode(
-                        ascend_id=proof_id,
+                        matek_id=proof_id,
                         node_type=NodeType.PROOF,
                         problem_id=problem_id,
                         title=f"Candidate proof from {assignment_id}",
@@ -2930,7 +2929,7 @@ class KnowledgeGraph:
                                 or "_No gap declared by the worker; independent audit required._"
                             ),
                         ),
-                        tags=["ascend/proof", "ascend/candidate"],
+                        tags=["matek/proof", "matek/candidate"],
                         relations=[
                             *(
                                 GraphEdge(
@@ -2957,7 +2956,7 @@ class KnowledgeGraph:
                 target = self.main_claim_id(problem_id) if status == "refuted" else approach_id
                 proposed_nodes.append(
                     GraphNode(
-                        ascend_id=counterexample_id,
+                        matek_id=counterexample_id,
                         node_type=NodeType.COUNTEREXAMPLE,
                         problem_id=problem_id,
                         title=f"Counterexample from {assignment_id} #{index}",
@@ -2974,7 +2973,7 @@ class KnowledgeGraph:
                             f"Counterexample from {assignment_id} #{index}",
                             "## Explicit counterexample\n\n" + counterexample,
                         ),
-                        tags=["ascend/counterexample"],
+                        tags=["matek/counterexample"],
                         relations=[
                             GraphEdge(
                                 source_id=counterexample_id,
@@ -2995,7 +2994,7 @@ class KnowledgeGraph:
                     verified = bool(raw_source.get("verified", False))
                     proposed_nodes.append(
                         GraphNode(
-                            ascend_id=source_id,
+                            matek_id=source_id,
                             node_type=NodeType.SOURCE,
                             problem_id=problem_id,
                             title=str(raw_source.get("title") or key),
@@ -3018,11 +3017,11 @@ class KnowledgeGraph:
                                 )
                                 + "\n```",
                             ),
-                            tags=["ascend/source"],
+                            tags=["matek/source"],
                             source_artifacts=[source_artifact],
                             metadata={
-                                "ascend_source_id": key,
-                                "ascend_verified": verified,
+                                "matek_source_id": key,
+                                "matek_verified": verified,
                             },
                         )
                     )
@@ -3116,7 +3115,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             target_id = self.main_claim_id(problem_id)
             target = by_id.get(target_id)
             if target is None:
@@ -3165,8 +3164,8 @@ class KnowledgeGraph:
                     dict.fromkeys(
                         [
                             *target.source_artifacts,
-                            f".ascend/runs/{run_id}/research/candidate/package.json",
-                            f".ascend/runs/{run_id}/research/verdict.json",
+                            f".matek/runs/{run_id}/research/candidate/package.json",
+                            f".matek/runs/{run_id}/research/verdict.json",
                         ]
                     )
                 )
@@ -3175,7 +3174,7 @@ class KnowledgeGraph:
                 )
                 proposed.append(
                     GraphNode(
-                        ascend_id=proof_id,
+                        matek_id=proof_id,
                         node_type=NodeType.PROOF,
                         problem_id=problem_id,
                         title="Accepted candidate proof" if accepted else "Audited candidate proof",
@@ -3206,8 +3205,8 @@ class KnowledgeGraph:
                             ),
                         ),
                         tags=[
-                            "ascend/proof",
-                            "ascend/audit-passed" if accepted else "ascend/candidate",
+                            "matek/proof",
+                            "matek/audit-passed" if accepted else "matek/candidate",
                         ],
                         relations=[
                             GraphEdge(
@@ -3222,14 +3221,14 @@ class KnowledgeGraph:
                             ),
                         ],
                         source_artifacts=[
-                            f".ascend/runs/{run_id}/research/candidate/package.json",
-                            f".ascend/runs/{run_id}/research/candidate/proof.md",
+                            f".matek/runs/{run_id}/research/candidate/package.json",
+                            f".matek/runs/{run_id}/research/candidate/proof.md",
                         ],
                         metadata={
-                            "ascend_quantitative_or_algorithmic": bool(
+                            "matek_quantitative_or_algorithmic": bool(
                                 candidate_map.get("quantitative_or_algorithmic", False)
                             ),
-                            "ascend_acceptance_gate_passed": accepted,
+                            "matek_acceptance_gate_passed": accepted,
                         },
                     )
                 )
@@ -3245,7 +3244,7 @@ class KnowledgeGraph:
                     target_of_audit = proof_id or target_id
                     proposed.append(
                         GraphNode(
-                            ascend_id=audit_id,
+                            matek_id=audit_id,
                             node_type=NodeType.AUDIT,
                             problem_id=problem_id,
                             title=f"{str(name).title()} research audit",
@@ -3281,7 +3280,7 @@ class KnowledgeGraph:
                                     or "_None._"
                                 ),
                             ),
-                            tags=["ascend/audit", f"ascend/audit-{verdict}"],
+                            tags=["matek/audit", f"matek/audit-{verdict}"],
                             relations=[
                                 GraphEdge(
                                     source_id=audit_id,
@@ -3294,8 +3293,8 @@ class KnowledgeGraph:
                                     target_id=_deterministic_id(NodeType.RUN, problem_id, run_id),
                                 ),
                             ],
-                            source_artifacts=[f".ascend/runs/{run_id}/research/audits/{name}.json"],
-                            metadata={"ascend_audit_verdict": verdict},
+                            source_artifacts=[f".matek/runs/{run_id}/research/audits/{name}.json"],
+                            metadata={"matek_audit_verdict": verdict},
                         )
                     )
             return self._upsert_generated_nodes_unlocked(
@@ -3306,7 +3305,7 @@ class KnowledgeGraph:
                 author="research-acceptance-gate",
                 reason=f"Record research outcome {outcome} with separate proof and audit nodes.",
                 operation_id=f"research-result:{run_id}",
-                source_artifacts=[f".ascend/runs/{run_id}/research/result.json"],
+                source_artifacts=[f".matek/runs/{run_id}/research/result.json"],
             )
 
     def manuscript_context(self, problem_id: str) -> dict[str, object]:
@@ -3364,7 +3363,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             now = self._now()
             outcome = str(manuscript_result.get("outcome") or "unknown")
             draft = manuscript_result.get("draft", {})
@@ -3378,7 +3377,7 @@ class KnowledgeGraph:
                         [
                             *target.manuscript_mappings,
                             *(
-                                f"{target.ascend_id} -> manuscript claim {index}"
+                                f"{target.matek_id} -> manuscript claim {index}"
                                 for index, _ in enumerate(
                                     claims if isinstance(claims, list) else [], start=1
                                 )
@@ -3399,7 +3398,7 @@ class KnowledgeGraph:
                 artifact_id = _deterministic_id(NodeType.ARTIFACT, problem_id, run_id, filename)
                 proposed.append(
                     GraphNode(
-                        ascend_id=artifact_id,
+                        matek_id=artifact_id,
                         node_type=NodeType.ARTIFACT,
                         problem_id=problem_id,
                         title=title,
@@ -3421,11 +3420,11 @@ class KnowledgeGraph:
                         body=new_generated_body(
                             title,
                             "## Artifact\n\n"
-                            + f"`.ascend/runs/{run_id}/manuscript/{filename}`"
+                            + f"`.matek/runs/{run_id}/manuscript/{filename}`"
                             + "\n\n## Manuscript outcome\n\n"
                             + f"`{outcome}`",
                         ),
-                        tags=["ascend/artifact", "ascend/manuscript"],
+                        tags=["matek/artifact", "matek/manuscript"],
                         relations=[
                             GraphEdge(
                                 source_id=artifact_id,
@@ -3438,8 +3437,8 @@ class KnowledgeGraph:
                                 target_id=_deterministic_id(NodeType.RUN, problem_id, run_id),
                             ),
                         ],
-                        source_artifacts=[f".ascend/runs/{run_id}/manuscript/{filename}"],
-                        metadata={"ascend_manuscript_outcome": outcome},
+                        source_artifacts=[f".matek/runs/{run_id}/manuscript/{filename}"],
+                        metadata={"matek_manuscript_outcome": outcome},
                     )
                 )
             bibliography = manuscript_result.get("bibliography_audit")
@@ -3455,18 +3454,18 @@ class KnowledgeGraph:
                         key = str(entry.get("citation_key") or "")
                         for source in source_nodes:
                             if key and (
-                                key == source.metadata.get("ascend_source_id")
+                                key == source.metadata.get("matek_source_id")
                                 or key.casefold() in source.title.casefold()
                             ):
                                 source.manuscript_mappings = list(
                                     dict.fromkeys(
                                         [
                                             *source.manuscript_mappings,
-                                            f"{source.ascend_id} -> {key}",
+                                            f"{source.matek_id} -> {key}",
                                         ]
                                     )
                                 )
-                                source.metadata["ascend_bibtex_key"] = key
+                                source.metadata["matek_bibtex_key"] = key
                                 source.updated_at = now
                                 source.last_modified_run = run_id
                                 proposed.append(source)
@@ -3478,7 +3477,7 @@ class KnowledgeGraph:
                 author="manuscript-stage",
                 reason=f"Record manuscript mappings and artifact nodes for outcome {outcome}.",
                 operation_id=f"manuscript-result:{run_id}",
-                source_artifacts=[f".ascend/runs/{run_id}/manuscript/result.json"],
+                source_artifacts=[f".matek/runs/{run_id}/manuscript/result.json"],
             )
 
     def formalization_context(self, problem_id: str) -> dict[str, object]:
@@ -3529,7 +3528,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             claim_id = self.main_claim_id(problem_id)
             claim = by_id.get(claim_id)
             if claim is None:
@@ -3563,7 +3562,7 @@ class KnowledgeGraph:
                 or ""
             )
             formalization = GraphNode(
-                ascend_id=formalization_id,
+                matek_id=formalization_id,
                 node_type=NodeType.FORMALIZATION,
                 problem_id=problem_id,
                 title=f"Lean formalization of {claim.title}",
@@ -3597,8 +3596,8 @@ class KnowledgeGraph:
                     ),
                 ),
                 tags=[
-                    "ascend/formalization",
-                    "ascend/lean-verified" if verified else "ascend/lean-open",
+                    "matek/formalization",
+                    "matek/lean-verified" if verified else "matek/lean-open",
                 ],
                 relations=[
                     GraphEdge(
@@ -3613,22 +3612,22 @@ class KnowledgeGraph:
                     ),
                 ],
                 source_artifacts=[
-                    f".ascend/runs/{run_id}/lean/challenge.lean",
-                    f".ascend/runs/{run_id}/lean/Main.lean",
-                    f".ascend/runs/{run_id}/lean/build.log",
-                    f".ascend/runs/{run_id}/lean/axioms.txt",
+                    f".matek/runs/{run_id}/lean/challenge.lean",
+                    f".matek/runs/{run_id}/lean/Main.lean",
+                    f".matek/runs/{run_id}/lean/build.log",
+                    f".matek/runs/{run_id}/lean/axioms.txt",
                 ],
                 metadata={
-                    "ascend_claim_id": claim_id,
-                    "ascend_statement_version": claim.statement_version,
-                    "ascend_statement_hash": statement_digest,
-                    "ascend_lean_declaration": theorem_name,
-                    "ascend_source_file_hash": source_file_hash,
-                    "ascend_lean_version": lean_toolchain,
-                    "ascend_mathlib_revision": mathlib_revision,
-                    "ascend_build_result": outcome,
-                    "ascend_axiom_report_hash": axiom_report_hash,
-                    "ascend_deterministic_verification_passed": verified,
+                    "matek_claim_id": claim_id,
+                    "matek_statement_version": claim.statement_version,
+                    "matek_statement_hash": statement_digest,
+                    "matek_lean_declaration": theorem_name,
+                    "matek_source_file_hash": source_file_hash,
+                    "matek_lean_version": lean_toolchain,
+                    "matek_mathlib_revision": mathlib_revision,
+                    "matek_build_result": outcome,
+                    "matek_axiom_report_hash": axiom_report_hash,
+                    "matek_deterministic_verification_passed": verified,
                 },
             )
             if verified:
@@ -3640,9 +3639,9 @@ class KnowledgeGraph:
                 claim.author_role = "deterministic-lean-verifier"
                 claim.metadata.update(
                     {
-                        "ascend_lean_statement_version": claim.statement_version,
-                        "ascend_lean_statement_hash": statement_digest,
-                        "ascend_lean_formalization_id": formalization_id,
+                        "matek_lean_statement_version": claim.statement_version,
+                        "matek_lean_statement_hash": statement_digest,
+                        "matek_lean_formalization_id": formalization_id,
                     }
                 )
             return self._upsert_generated_nodes_unlocked(
@@ -3653,7 +3652,7 @@ class KnowledgeGraph:
                 author="deterministic-lean-verifier" if verified else "lean-stage",
                 reason=f"Attach Lean outcome {outcome} to exact claim statement version.",
                 operation_id=f"lean-result:{run_id}",
-                source_artifacts=[f".ascend/runs/{run_id}/lean/result.json"],
+                source_artifacts=[f".matek/runs/{run_id}/lean/result.json"],
             )
 
     def record_run_status(
@@ -3670,7 +3669,7 @@ class KnowledgeGraph:
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes_list = self._load_nodes_unlocked(include_human_notes=True)
-            by_id = {node.ascend_id: node for node in nodes_list}
+            by_id = {node.matek_id: node for node in nodes_list}
             run_node_id = _deterministic_id(NodeType.RUN, problem_id, run_id)
             run_node = by_id.get(run_node_id)
             if run_node is None:
@@ -3701,17 +3700,17 @@ class KnowledgeGraph:
                 + "\n\n## Unresolved obligations\n\n"
                 + ("\n".join(f"- {item}" for item in unresolved_obligations) or "_None._")
                 + "\n\n## Run artifacts\n\n"
-                + f"- `.ascend/runs/{run_id}/`",
+                + f"- `.matek/runs/{run_id}/`",
             )
             return self._upsert_generated_nodes_unlocked(
                 state=state,
                 nodes=by_id,
                 proposed=[run_node],
                 run_id=run_id,
-                author="ascend-workflow",
+                author="matek-workflow",
                 reason=f"Record run status {scientific_status} in persistent graph memory.",
                 operation_id=f"run-status:{run_id}:{scientific_status}:{int(complete)}",
-                source_artifacts=[f".ascend/runs/{run_id}/state.json"],
+                source_artifacts=[f".matek/runs/{run_id}/state.json"],
             )
 
 

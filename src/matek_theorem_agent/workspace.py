@@ -90,7 +90,7 @@ class RunLockHeldError(RunLockError):
 class RunLock:
     """Fail-fast POSIX advisory lock for one run.
 
-    Locks live beneath ``.ascend/locks`` rather than inside a run so acquiring a
+    Locks live beneath ``.matek/locks`` rather than inside a run so acquiring a
     lock never changes that run's certified artifact inventory. The lock file is
     intentionally retained after release: unlinking it could let contenders lock
     different inodes and enter the same run concurrently.
@@ -107,13 +107,11 @@ class RunLock:
         if not resolved.is_dir():
             raise RunLockError(f"run workspace is not a directory: {resolved}")
         validate_run_id(resolved.name)
-        if resolved.parent.name != "runs" or resolved.parent.parent.name != ".ascend":
-            raise RunLockError(
-                f"run workspace must be located at .ascend/runs/<run-id>: {resolved}"
-            )
+        if resolved.parent.name != "runs" or resolved.parent.parent.name != ".matek":
+            raise RunLockError(f"run workspace must be located at .matek/runs/<run-id>: {resolved}")
 
-        ascend_root = resolved.parent.parent
-        locks_root = ascend_root / "locks"
+        matek_root = resolved.parent.parent
+        locks_root = matek_root / "locks"
         if locks_root.is_symlink():
             raise RunLockError(f"refusing to use a symlinked lock directory: {locks_root}")
         try:
@@ -121,7 +119,7 @@ class RunLock:
         except OSError as exc:
             raise RunLockError(f"cannot create run-lock directory {locks_root}: {exc}") from exc
         try:
-            lock_directory = ensure_path_confined(ascend_root, locks_root)
+            lock_directory = ensure_path_confined(matek_root, locks_root)
         except WorkspaceError as exc:
             raise RunLockError(f"unsafe run-lock directory {locks_root}: {exc}") from exc
         try:
@@ -401,7 +399,7 @@ def create_run_root(
 ) -> Path:
     """Create and return a new artifact-contract workspace.
 
-    An existing or symlinked run target is always rejected.  The ``.ascend`` path
+    An existing or symlinked run target is always rejected.  The ``.matek`` path
     itself must resolve under the project root, preventing a pre-created symlink from
     redirecting artifacts elsewhere.
     """
@@ -415,9 +413,9 @@ def create_run_root(
         else generate_run_id(run_name, problem_name=problem_name, now=now)
     )
 
-    ascend_root = ensure_path_confined(root, root / ".ascend")
-    runs_root = ensure_path_confined(root, ascend_root / "runs")
-    ascend_root.mkdir(exist_ok=True)
+    matek_root = ensure_path_confined(root, root / ".matek")
+    runs_root = ensure_path_confined(root, matek_root / "runs")
+    matek_root.mkdir(exist_ok=True)
     runs_root.mkdir(exist_ok=True)
 
     run_root = ensure_path_confined(runs_root, runs_root / selected_id)
@@ -434,7 +432,7 @@ def find_run_root(project_root: Path, run_id: str) -> Path:
 
     validate_run_id(run_id)
     root = project_root.expanduser().resolve(strict=True)
-    runs_root = ensure_path_confined(root, root / ".ascend" / "runs")
+    runs_root = ensure_path_confined(root, root / ".matek" / "runs")
     run_root = ensure_path_confined(runs_root, runs_root / run_id)
     if not run_root.is_dir():
         raise WorkspaceError(f"run does not exist: {run_id}")
@@ -445,7 +443,7 @@ def latest_run_root(project_root: Path) -> Path | None:
     """Return the latest valid run workspace by its embedded UTC timestamp, if any."""
 
     root = project_root.expanduser().resolve(strict=True)
-    runs_root = ensure_path_confined(root, root / ".ascend" / "runs")
+    runs_root = ensure_path_confined(root, root / ".matek" / "runs")
     if not runs_root.is_dir():
         return None
     valid: list[Path] = []

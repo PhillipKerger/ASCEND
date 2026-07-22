@@ -95,8 +95,8 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 
 ## Optional live tests
 
-Guard Codex tests with `ASCEND_CODEX_LIVE_TESTS=1` (and the optional
-`ASCEND_CODEX_LIVE_SEARCH=1`) and API tests with the project's explicit API-live switch. Use a
+Guard Codex tests with `MATEK_CODEX_LIVE_TESTS=1` (and the optional
+`MATEK_CODEX_LIVE_SEARCH=1`) and API tests with the project's explicit API-live switch. Use a
 low-cost configuration:
 
 - one ChatGPT-authenticated `codex exec --json` structured-output smoke test in a disposable
@@ -107,7 +107,7 @@ low-cost configuration:
 - tiny LaTeX document compilation.
 
 Never run live tests in ordinary CI without explicit account, allowance/credit, and cost
-approval. Ordinary `ascend doctor` and all default tests make no model call.
+approval. Ordinary `matek doctor` and all default tests make no model call.
 
 ## Quality gates
 

@@ -36,7 +36,7 @@ class CheckLevel(StrEnum):
 
 
 class DoctorGroup(StrEnum):
-    ENVIRONMENT = "ASCEND environment"
+    ENVIRONMENT = "MATEK environment"
     CODEX = "Codex backend (recommended and default)"
     API = "OpenAI API backend (advanced and optional)"
     RESEARCH_TOOLS = "Research tools"
@@ -83,9 +83,7 @@ CommandRunner = Callable[[Sequence[str], Path], tuple[int, str, str]]
 OnlineProbe = Callable[[], str]
 CodexDeepProbe = Callable[[str, Path], str]
 
-_CODEX_LOGIN_REMEDIATION = (
-    "Run: codex login; choose Sign in with ChatGPT; then rerun: ascend doctor"
-)
+_CODEX_LOGIN_REMEDIATION = "Run: codex login; choose Sign in with ChatGPT; then rerun: matek doctor"
 
 
 def _run_version(argv: Sequence[str], cwd: Path) -> tuple[int, str, str]:
@@ -151,7 +149,7 @@ def _default_codex_deep_probe(executable: str, project_root: Path) -> str:
         "required": ["ok"],
         "additionalProperties": False,
     }
-    with tempfile.TemporaryDirectory(prefix="ascend-codex-doctor-") as temporary_name:
+    with tempfile.TemporaryDirectory(prefix="matek-codex-doctor-") as temporary_name:
         temporary = Path(temporary_name).resolve()
         schema_path = temporary / "schema.json"
         output_path = temporary / "result.json"
@@ -183,7 +181,7 @@ def _default_codex_deep_probe(executable: str, project_root: Path) -> str:
                 cwd=temporary,
                 env=sanitized_environment(),
                 input=(
-                    "ASCEND doctor probe. Do not run shell commands or modify files. "
+                    "MATEK doctor probe. Do not run shell commands or modify files. "
                     "Use web search to find the official Lean theorem prover website, then "
                     "return exactly the requested JSON object with ok set to true."
                 ),
@@ -207,7 +205,7 @@ def _default_codex_deep_probe(executable: str, project_root: Path) -> str:
         return "live structured-output probe succeeded; search source URL metadata is available"
     return (
         "live structured-output probe succeeded; this Codex version did not emit search source "
-        "URLs, so ASCEND will use its deterministic source resolver"
+        "URLs, so MATEK will use its deterministic source resolver"
     )
 
 
@@ -325,7 +323,7 @@ def _codex_checks(
                 "Codex CLI",
                 absent_level,
                 f"version check exited with status {code}",
-                "Reinstall or update Codex, then rerun: ascend doctor",
+                "Reinstall or update Codex, then rerun: matek doctor",
                 DoctorGroup.CODEX,
             )
         )
@@ -350,7 +348,7 @@ def _codex_checks(
             ),
             None
             if git_repository or skip_git_check
-            else "Run ASCEND inside the intended Git repository, or explicitly set "
+            else "Run MATEK inside the intended Git repository, or explicitly set "
             "codex.skip_git_repo_check = true.",
             DoctorGroup.CODEX,
         )
@@ -458,7 +456,7 @@ def _codex_checks(
                         "Codex live probe",
                         absent_level,
                         f"failed ({type(exc).__name__})",
-                        "Check Codex access/network, then rerun: ascend doctor --deep",
+                        "Check Codex access/network, then rerun: matek doctor --deep",
                         DoctorGroup.CODEX,
                     )
                 )
@@ -539,7 +537,7 @@ def run_doctor_checks(
             else "OPENAI_API_KEY is not configured; this is not required for Codex mode",
             None
             if has_key or not api_required
-            else "Run: export OPENAI_API_KEY='your-api-key' (never put it in ascend.toml).",
+            else "Run: export OPENAI_API_KEY='your-api-key' (never put it in matek.toml).",
             DoctorGroup.API,
         )
     )
@@ -626,7 +624,7 @@ def run_doctor_checks(
                 root=root,
                 required=True,
                 remediation=(
-                    "Install Docker Desktop, or run: ascend run PROBLEM.md --sandbox native"
+                    "Install Docker Desktop, or run: matek run PROBLEM.md --sandbox native"
                 ),
                 group=DoctorGroup.RESEARCH_TOOLS,
                 which=which,
@@ -641,7 +639,7 @@ def run_doctor_checks(
                 root=root,
                 required=True,
                 remediation=(
-                    f"Build or load {config.lean.docker_image!r}; ASCEND never pulls images "
+                    f"Build or load {config.lean.docker_image!r}; MATEK never pulls images "
                     "implicitly. Alternatively, run with --sandbox native."
                 ),
                 group=DoctorGroup.RESEARCH_TOOLS,
@@ -650,10 +648,10 @@ def run_doctor_checks(
             )
         )
 
-    ascend_root = root / ".ascend"
+    matek_root = root / ".matek"
     try:
-        ascend_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(prefix="doctor-", dir=ascend_root):
+        matek_root.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(prefix="doctor-", dir=matek_root):
             pass
     except OSError as exc:
         checks.append(
@@ -661,7 +659,7 @@ def run_doctor_checks(
                 "Workspace write access",
                 CheckLevel.FAILURE,
                 str(exc),
-                f"Run: mkdir -p '{ascend_root}' && chmod u+rwx '{ascend_root}'",
+                f"Run: mkdir -p '{matek_root}' && chmod u+rwx '{matek_root}'",
                 DoctorGroup.ENVIRONMENT,
             )
         )
@@ -670,7 +668,7 @@ def run_doctor_checks(
             DoctorCheck(
                 "Workspace write access",
                 CheckLevel.PASS,
-                str(ascend_root),
+                str(matek_root),
                 group=DoctorGroup.ENVIRONMENT,
             )
         )
@@ -686,7 +684,7 @@ def run_doctor_checks(
             actual_hash,
             None
             if framework_ok
-            else "Reinstall ASCEND; use --framework only for an intentional custom framework.",
+            else "Reinstall MATEK; use --framework only for an intentional custom framework.",
             DoctorGroup.ENVIRONMENT,
         )
     )
@@ -711,7 +709,7 @@ def run_doctor_checks(
                         "OpenAI API connectivity",
                         CheckLevel.FAILURE if api_required else CheckLevel.WARNING,
                         f"failed ({type(exc).__name__})",
-                        "Check OPENAI_API_KEY and HTTPS, then rerun: ascend doctor --online.",
+                        "Check OPENAI_API_KEY and HTTPS, then rerun: matek doctor --online.",
                         DoctorGroup.API,
                     )
                 )

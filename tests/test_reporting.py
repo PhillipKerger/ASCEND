@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.models import new_run_state
-from ascend_math_agent.reporting import (
+from matek_theorem_agent.models import new_run_state
+from matek_theorem_agent.reporting import (
     ReportNarrative,
     assert_report_certificate_inventory,
     write_final_report,
 )
-from ascend_math_agent.state import ArtifactIntegrityError
-from ascend_math_agent.workspace import create_run_root
+from matek_theorem_agent.state import ArtifactIntegrityError
+from matek_theorem_agent.workspace import create_run_root
 
 
 def test_report_links_every_existing_non_report_artifact(tmp_path: Path) -> None:
@@ -88,7 +88,7 @@ def test_report_exposes_literature_and_problem_clarification_outcomes(tmp_path: 
                 "required": True,
                 "reason": "The domain and intended conclusion were not specified.",
                 "questions": ["Which objects should be extended?"],
-                "next_action": "Revise the problem file and start a new ASCEND run.",
+                "next_action": "Revise the problem file and start a new MATEK run.",
             },
         }
     )

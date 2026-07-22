@@ -1,15 +1,15 @@
-# ASCEND Setup Instructions for a Coding Agent
+# MATEK Setup Instructions for a Coding Agent
 
 This document is intended to be given to a coding agent that has terminal access to the
-machine where ASCEND will run. Its goal is to prepare and verify the local environment, not to
+machine where MATEK will run. Its goal is to prepare and verify the local environment, not to
 start a paid research run.
 
 A user can give their coding agent this instruction:
 
-> Follow `setup-instructions-for-agent.md` to prepare this project for ASCEND. Ask before any
+> Follow `setup-instructions-for-agent.md` to prepare this project for MATEK. Ask before any
 > privileged system change or interactive authentication step. Set up the least expensive mode
-> that satisfies my intended workflow, run `ascend doctor`, and report anything I must finish
-> manually. Do not start `ascend run` unless I separately ask you to do so.
+> that satisfies my intended workflow, run `matek doctor`, and report anything I must finish
+> manually. Do not start `matek run` unless I separately ask you to do so.
 
 ## Safety and scope
 
@@ -23,22 +23,22 @@ A user can give their coding agent this instruction:
   or modifying shell startup files.
 - Use only official Codex installation methods. Never configure the separately billed OpenAI API
   backend unless the user explicitly requests it.
-- Do not run `ascend doctor --deep` or `ascend run` during setup unless the user explicitly opts
-  in; both can consume Codex allowance. Ordinary `ascend doctor` does not make a model call.
-- Do not modify the user's project source to accommodate ASCEND. Normal ASCEND output belongs
-  under `.ascend/`.
+- Do not run `matek doctor --deep` or `matek run` during setup unless the user explicitly opts
+  in; both can consume Codex allowance. Ordinary `matek doctor` does not make a model call.
+- Do not modify the user's project source to accommodate MATEK. Normal MATEK output belongs
+  under `.matek/`.
 
 ## 1. Determine the requested workflow
 
 Ask the user to choose one mode if it is not already clear:
 
-1. **Research only:** requires Python, Git, Codex, and ASCEND. Lean and LaTeX are unnecessary.
+1. **Research only:** requires Python, Git, Codex, and MATEK. Lean and LaTeX are unnecessary.
 2. **Research and manuscript:** additionally requires a LaTeX distribution with `latexmk`.
 3. **Full workflow:** additionally requires an existing Lean/Lake project with working `lean`
    and `lake` commands.
 
 Use WSL2 rather than native Windows. Inside WSL2, keep the project and tools in the Linux
-filesystem. ASCEND is primarily validated on Linux; native macOS and WSL2 validation may lag the
+filesystem. MATEK is primarily validated on Linux; native macOS and WSL2 validation may lag the
 Linux release.
 
 ## 2. Inspect before changing anything
@@ -98,20 +98,20 @@ codex login
 Wait for the user to finish, then rerun `codex login status`. A ChatGPT-authenticated Codex setup
 does not require an `OPENAI_API_KEY`. Do not silently switch to API authentication or billing.
 
-## 4. Install ASCEND
+## 4. Install MATEK
 
 For an end-user installation, prefer an isolated tool installer:
 
 ```bash
-pipx install 'git+https://github.com/PhillipKerger/ASCEND.git'
+pipx install 'git+https://github.com/PhillipKerger/matek-theorem-agent.git'
 # or
-uv tool install 'git+https://github.com/PhillipKerger/ASCEND.git'
+uv tool install 'git+https://github.com/PhillipKerger/matek-theorem-agent.git'
 ```
 
-If ASCEND is already installed, use `pipx upgrade ascend-math-agent` or the corresponding `uv`
+If MATEK is already installed, use `pipx upgrade matek-theorem-agent` or the corresponding `uv`
 command only when the user asks to update it.
 
-When setting up an ASCEND source checkout for development, use a project-local virtual
+When setting up a MATEK source checkout for development, use a project-local virtual
 environment instead:
 
 ```bash
@@ -124,7 +124,7 @@ python -m pip install -e '.[dev]'
 Confirm the executable resolves without starting a workflow:
 
 ```bash
-ascend --help
+matek --help
 ```
 
 If a tool installer reports that its binary directory is not on `PATH`, describe the required
@@ -155,17 +155,17 @@ Do not upgrade the project's Lean toolchain or dependencies automatically. Respe
 
 ## 6. Initialize and diagnose the project
 
-From the project root, initialize ASCEND only if it has not already been initialized:
+From the project root, initialize MATEK only if it has not already been initialized:
 
 ```bash
-ascend init
+matek init
 ```
 
 Do not pass `--force` unless the user explicitly asks to replace generated setup files. Then run
 the offline-first diagnostic:
 
 ```bash
-ascend doctor
+matek doctor
 ```
 
 Read every warning and failure. Fix only setup issues within the selected workflow mode. For
@@ -175,7 +175,7 @@ for a manuscript run.
 Optionally validate a problem and resolved stage plan without making a model call:
 
 ```bash
-ascend run problem.md --dry-run
+matek run problem.md --dry-run
 ```
 
 Run this only when a real problem file exists. Do not create or overwrite the user's mathematical
@@ -187,20 +187,20 @@ Return a concise setup report containing:
 
 - detected operating system and Python version;
 - selected workflow mode;
-- paths and versions for `ascend`, `codex`, and required optional tools;
+- paths and versions for `matek`, `codex`, and required optional tools;
 - whether `codex login status` reports an authenticated session, without reproducing raw identity
   or credential data;
-- the result of ordinary `ascend doctor`;
+- the result of ordinary `matek doctor`;
 - commands or interactive steps still required from the user; and
 - the exact next command appropriate to the selected mode, without running it.
 
 Typical next commands are:
 
 ```bash
-ascend run problem.md --research-only  # Research only
-ascend run problem.md --no-lean        # Research and manuscript
-ascend run problem.md                  # Full workflow
+matek run problem.md --research-only  # Research only
+matek run problem.md --no-lean        # Research and manuscript
+matek run problem.md                  # Full workflow
 ```
 
 Do not claim setup is complete while a required doctor check is failing. Do not start a paid or
-allowance-consuming ASCEND run merely to prove the installation works.
+allowance-consuming MATEK run merely to prove the installation works.

@@ -15,7 +15,7 @@ class DockerBackend:
 
     def __init__(
         self,
-        image: str = "ascend-math-agent:latest",
+        image: str = "matek-theorem-agent:latest",
         *,
         docker_executable: str = "docker",
         native_backend: NativeBackend | None = None,
@@ -94,11 +94,11 @@ def _safe_mount_source(path: Path) -> Path:
 
 
 def _is_validated_run_stage(path: Path) -> bool:
-    """Limit writable binds to a concrete stage below ``.ascend/runs/<id>``."""
+    """Limit writable binds to a concrete stage below ``.matek/runs/<id>``."""
 
     parts = path.parts
     for index in range(len(parts) - 3):
-        if parts[index : index + 2] != (".ascend", "runs"):
+        if parts[index : index + 2] != (".matek", "runs"):
             continue
         run_id = parts[index + 2]
         if _RUN_ID_PATTERN.fullmatch(run_id) and len(parts) > index + 3:

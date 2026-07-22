@@ -5,11 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from ascend_math_agent.budget import BudgetExceeded, BudgetTracker, UsageRecord
-from ascend_math_agent.config import Limits
-from ascend_math_agent.logging import RunLogger
-from ascend_math_agent.redaction import REDACTED, SecretRedactor, contains_secret
-from ascend_math_agent.workspace import create_run_root
+from matek_theorem_agent.budget import BudgetExceeded, BudgetTracker, UsageRecord
+from matek_theorem_agent.config import Limits
+from matek_theorem_agent.logging import RunLogger
+from matek_theorem_agent.redaction import REDACTED, SecretRedactor, contains_secret
+from matek_theorem_agent.workspace import create_run_root
 
 
 def test_text_and_structured_secret_redaction() -> None:

@@ -1,4 +1,4 @@
-"""Typed command-line interface for ASCEND."""
+"""Typed command-line interface for MATEK."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ from .workspace import RunLock, WorkspaceError, discover_project_root, sha256_fi
 
 app = typer.Typer(
     no_args_is_help=True,
-    help="ASCEND: auditable mathematical research and optional Lean verification.",
+    help="MATEK: auditable mathematical research and optional Lean verification.",
 )
 graph_app = typer.Typer(
     no_args_is_help=True,
@@ -353,7 +353,7 @@ def _print_result(result: WorkflowResult) -> None:
     clarification = result.report.report.problem_clarification
     if clarification.get("required") is True:
         console.print(
-            "[yellow]ASCEND stopped before research because it could not uniquely identify "
+            "[yellow]MATEK stopped before research because it could not uniquely identify "
             "the mathematical problem to solve.[/yellow]"
         )
         reason = clarification.get("reason")
@@ -365,7 +365,7 @@ def _print_result(result: WorkflowResult) -> None:
                 console.print(f"  - {question}")
         console.print(
             "Revise the problem file with the requested details, then start a new run with "
-            "[bold]ascend run PROBLEM_FILE[/bold]."
+            "[bold]matek run PROBLEM_FILE[/bold]."
         )
     console.print(f"Report: {result.report.report_markdown}")
 
@@ -384,7 +384,7 @@ def _project_graph() -> KnowledgeGraph:
 def init(
     force: bool = typer.Option(False, "--force", help="Replace existing starter files."),
 ) -> None:
-    """Initialize ASCEND configuration in the current project."""
+    """Initialize MATEK configuration in the current project."""
 
     try:
         root = _project_root()
@@ -601,7 +601,7 @@ def doctor(
         config = load_config(config_path, project_root=root)
         _show_migration_notice(config)
         report = run_doctor_checks(config, root, online=online, deep=deep)
-        console.print("[bold]ASCEND environment[/bold]")
+        console.print("[bold]MATEK environment[/bold]")
         console.print(
             "Default model backend: "
             + ("Codex CLI" if config.backend.provider == "codex" else "OpenAI Responses API")
@@ -672,7 +672,7 @@ def run(
     no_web_search: bool = typer.Option(
         False,
         "--no-web-search",
-        help="Disable live model search and ASCEND source-identifier HTTP lookups.",
+        help="Disable live model search and MATEK source-identifier HTTP lookups.",
     ),
     research_only: bool = typer.Option(False, "--research-only"),
     sandbox: SandboxChoice | None = typer.Option(None, "--sandbox"),
@@ -712,7 +712,7 @@ def run(
                 framework_hash = sha256_file(bundled)
             if framework_hash != EXPECTED_FRAMEWORK_SHA256:
                 raise IntakeError(
-                    "bundled prompt framework integrity check failed; reinstall ASCEND "
+                    "bundled prompt framework integrity check failed; reinstall MATEK "
                     "or explicitly select an intentional custom framework with --framework"
                 )
         try:
@@ -721,7 +721,7 @@ def run(
             raise IntakeError("prompt framework must be valid UTF-8") from exc
 
         if dry_run:
-            table = Table(title="Resolved ASCEND plan")
+            table = Table(title="Resolved MATEK plan")
             table.add_column("Setting")
             table.add_column("Value")
             plan: Mapping[str, object] = {
@@ -744,7 +744,7 @@ def run(
                 "maximum pending assignments": (config.research.maximum_pending_assignments),
                 "coordinator decisions": (config.research.maximum_coordinator_decisions),
                 "concurrent agents": config.research.maximum_concurrent_agents,
-                "persistent knowledge graph": root / ".ascend" / "knowledge",
+                "persistent knowledge graph": root / ".matek" / "knowledge",
                 "graph context limit": (
                     f"{config.graph.maximum_context_nodes} nodes / "
                     f"{config.graph.maximum_context_characters} characters"
@@ -775,7 +775,7 @@ def run(
         _show_migration_notice(config)
         if allow_project_edits and not yes:
             typer.confirm(
-                "Allow Codex to edit files outside .ascend/ in this project?",
+                "Allow Codex to edit files outside .matek/ in this project?",
                 abort=True,
             )
         result = _run_async(
@@ -1043,7 +1043,7 @@ def resume(
             warning = (
                 f"Switch this run from {frozen.backend.provider} to "
                 f"{config.backend.provider}? Model behavior and provenance will differ, "
-                "and ASCEND will record the switch. No provider fallback is automatic."
+                "and MATEK will record the switch. No provider fallback is automatic."
             )
             console.print(f"[yellow]Warning:[/yellow] {warning}")
             if not yes:

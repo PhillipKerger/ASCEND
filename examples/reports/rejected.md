@@ -1,4 +1,4 @@
-# ASCEND report — `20260719T120000Z-example-rejected-0a1b2c`
+# MATEK report — `20260719T120000Z-example-rejected-0a1b2c`
 
 This sanitized example shows a truthful scientific rejection.
 
@@ -29,11 +29,11 @@ original universal claim was not established.
 
 ## Representative artifacts
 
-- [`research/registry.json`](../../.ascend/runs/EXAMPLE/research/registry.json)
-- [`research/candidate/package.json`](../../.ascend/runs/EXAMPLE/research/candidate/package.json)
-- [`research/audits/hostile.json`](../../.ascend/runs/EXAMPLE/research/audits/hostile.json)
-- [`research/verdict.json`](../../.ascend/runs/EXAMPLE/research/verdict.json)
-- [`report/verification_certificate.json`](../../.ascend/runs/EXAMPLE/report/verification_certificate.json)
+- [`research/registry.json`](../../.matek/runs/EXAMPLE/research/registry.json)
+- [`research/candidate/package.json`](../../.matek/runs/EXAMPLE/research/candidate/package.json)
+- [`research/audits/hostile.json`](../../.matek/runs/EXAMPLE/research/audits/hostile.json)
+- [`research/verdict.json`](../../.matek/runs/EXAMPLE/research/verdict.json)
+- [`report/verification_certificate.json`](../../.matek/runs/EXAMPLE/report/verification_certificate.json)
 
 No manuscript, bibliography, Codex, or Lean stage ran after rejection. The absence of those
 artifacts is part of the auditable outcome.
