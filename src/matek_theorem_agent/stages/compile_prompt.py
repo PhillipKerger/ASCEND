@@ -109,6 +109,18 @@ _FRAMEWORK_SECTIONS = (
 )
 _MINIMUM_SECTION_WORDS = 8
 _TARGET_CRITICAL_SECTIONS = frozenset({"Current task statement", "Exact success criterion"})
+_EXACT_TARGET_POLICY_HEADING = "MATEK exact-target persistence policy"
+_EXACT_TARGET_POLICY = """MATEK exact-target persistence policy
+
+- Allowed terminal reductions: none.
+- A reduction, special case, weaker theorem, added hypothesis, reformulation, or isolated lemma
+  may be recorded only as intermediate progress; it is not a resolution of the user's problem.
+- A reduction contributes to terminal success only after every downstream obligation and transfer
+  argument is proved and the resulting proof establishes or disproves the original claim contract
+  with unchanged hypotheses, quantifiers, domain, boundary cases, and conclusion.
+- Continue adaptive research toward the exact target until it is accepted by all mandatory audits
+  or an external configured resource limit forces a truthful incomplete stop.
+"""
 
 
 class PromptCompilationStatus(StrEnum):
@@ -867,6 +879,18 @@ def _qualify_unverified_literature_claims(
     compiled.compiled_prompt = prompt
 
 
+def _enforce_exact_target_persistence(compiled: CompiledProblem) -> None:
+    """Append MATEK's non-negotiable exact-target terminal policy idempotently."""
+
+    if compiled.status is not PromptCompilationStatus.COMPILED:
+        return
+    if _EXACT_TARGET_POLICY_HEADING.casefold() in compiled.compiled_prompt.casefold():
+        return
+    compiled.compiled_prompt = (
+        compiled.compiled_prompt.rstrip() + "\n\n" + _EXACT_TARGET_POLICY.rstrip() + "\n"
+    )
+
+
 async def verify_source_ledger(
     source_ledger: Sequence[SourceLedgerEntry],
     *,
@@ -1209,6 +1233,7 @@ async def compile_prompt(
                 "Compiled prompt does not preserve the reusable framework: "
                 + " ".join(coverage_issues)
             )
+        _enforce_exact_target_persistence(compiled)
         ledger_identifiers = _ledger_identifiers(compiled.source_ledger)
         prompt_identifiers = source_identifiers(compiled.compiled_prompt)
         unrepresented_prompt_sources = sorted(prompt_identifiers - ledger_identifiers)

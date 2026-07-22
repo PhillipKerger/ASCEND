@@ -171,10 +171,13 @@ The event loop is:
    Validate an optional graph proposal only after this scientific transaction. Stale or malformed
    mutations are quarantined as issue events; graph precondition hashes come from the frozen
    revision, never the worker.
-4. Wake the coordinator on useful new events. Each activation receives the original main prompt,
-   claim contract, unacknowledged events, lifecycle state, registry, audit obligations, and the
-   corresponding full raw reports. It may add, retire, redirect, package, or stop work without
-   waiting for all active workers.
+4. Wake the coordinator on useful new events. A deterministic context builder always includes the
+   original main prompt and claim contract, then packs unacknowledged events, lifecycle and audit
+   state, summaries, and prioritized full reports under the measured provider-input ceiling.
+   Omitted evidence remains available through hash-bound references and bounded retrieval. The
+   coordinator may add, retire, redirect, or package work without waiting for all active workers.
+   It may report a real resource boundary or an exact refutation, but an ordinary scientific
+   no-progress/reduction stop is durably declined and becomes another coordinator obligation.
 5. Persist the zero-padded immutable decision before scheduling its effects, then materialize the
    acknowledgement cursor. Event IDs, decision IDs, assignment IDs, and report hashes make replay
    idempotent after interruption.
@@ -193,9 +196,21 @@ integrity failures cross the orchestration boundary as hard stops.
 and blocked routes with their mathematical evidence. It may help fit a fresh model context, but it
 never overwrites or substitutes for the canonical scheduler checkpoint, immutable event evidence,
 or full raw reports.
+
+Each coordinator request is preflighted against a conservative 800,000-character default measured
+after backend framing. Its immutable context manifest records the cursor, included and omitted
+artifacts, hashes, character/token estimates, and compaction reason. Knowledge-graph neighborhoods
+are retrieval indexes, not proof evidence. Provider size rejection lowers the effective limit and
+rebuilds a new request; mandatory-state overflow pauses retriably rather than being classified as a
+Codex process crash. Candidate packaging and audits continue to receive complete candidate-specific
+evidence and retain their strict gates.
 There is no cumulative logical-worker ceiling and no fixed-round synchronization barrier.
 Total-open-assignment, concurrent-call, coordinator-decision, model-call, cost, token, and
 wall-clock limits are separate controls.
+
+The frozen claim contract is the terminal scientific identity throughout this loop. Valid
+reductions and special cases remain useful graph/report evidence, but they cannot terminate
+research, satisfy candidate packaging, or pass an audit as substitutes for the original problem.
 
 The compiled problem carries a prior-literature classification. Exact known solutions remain
 eligible for source verification, proof reconstruction, exposition, and formalization, but must

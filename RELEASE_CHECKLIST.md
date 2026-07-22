@@ -63,7 +63,12 @@
   failures alone hard-stop research.
 - [x] Candidate audits checkpoint independently and resume retries only missing checks.
 - [x] Invalid graph proposals cannot discard validated scientific worker reports.
+- [x] Coordinator inputs are deterministically budgeted, manifest-bound, and compacted without
+  truncating evidence; provider size rejection creates a smaller distinct resumable request.
 - [x] Schema-invalid and schema-repair provider attempts are usage-accounted.
+- [x] Reductions and weaker variants cannot terminate research or pass candidate acceptance as a
+  substitute for the frozen exact claim; scientific no-progress stop requests are durably
+  declined.
 - [x] No manuscript is generated after a rejected proof.
 - [x] Related-work requirement and independent bibliography verification are mandatory.
 - [x] False citations and unsupported theorem hypotheses block promotion at their applicable trust

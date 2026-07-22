@@ -190,6 +190,13 @@ def _research_checkpoint_summary(run_root: Path) -> dict[str, Any]:
         if isinstance(checkpoint.get("decisions"), list)
         else 0,
         "assignments": counts,
+        "open_assignments": counts["queued"] + counts["running"],
+        "completed_reports": counts["completed"],
+        "rejected_candidates": (
+            checkpoint.get("failed_candidate_attempts", 0)
+            if isinstance(checkpoint.get("failed_candidate_attempts", 0), int)
+            else 0
+        ),
         "candidate_attempt": attempt.get("attempt_name"),
         "completed_audits": completed_audits,
         "mandatory_audits": mandatory_audits,
@@ -384,6 +391,10 @@ def render_report_markdown(report: FinalReport) -> str:
                     f"- Completed workers: `{assignments.get('completed', 0)}`"
                     if isinstance(assignments, dict)
                     else "- Completed workers: `unknown`",
+                    "- Open assignments: "
+                    f"`{report.research_checkpoint.get('open_assignments', 0)}`",
+                    "- Rejected candidates: "
+                    f"`{report.research_checkpoint.get('rejected_candidates', 0)}`",
                     "- Completed audits: "
                     + ", ".join(report.research_checkpoint.get("completed_audits", []))
                     if report.research_checkpoint.get("completed_audits")

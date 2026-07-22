@@ -2023,6 +2023,9 @@ def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
     assert "16" in result.output
     assert "maximum pending assignments" in result.output
     assert "coordinator decision limit" in result.output
+    assert "coordinator context budget" in result.output
+    assert "800,000 serialized provider" in result.output
+    assert "8 on-demand evidence requests" in result.output
     assert "concurrent research agents" in result.output
     assert "up to 32 effective" in result.output
     assert "research coordinator" in result.output

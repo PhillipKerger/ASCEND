@@ -51,6 +51,12 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
   evidence.
 - Every coordinator activation includes the unchanged main prompt and claim contract,
   unacknowledged events, registry/audit state, and complete referenced raw reports.
+- Synthetic checkpoints with at least 32 large reports stay below the measured serialized-input
+  ceiling; new/candidate reports outrank older progress, repeated issues aggregate without losing
+  assignment IDs or paths, and every omitted artifact remains hash-addressable.
+- Bounded API retrieval services requested artifacts on a later activation. Provider
+  `input_too_large` rejection creates a smaller distinct request, preserves the event cursor across
+  resume, and mandatory-state exhaustion reports a retriable pause with partial progress intact.
 - A fast worker completion can trigger a decision and refill while slower workers remain active.
 - Candidate audit pauses new admission; in-flight completions remain durable, and a failed audit
   becomes an immediate high-priority coordinator event.
@@ -60,6 +66,9 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
   acceptance remains impossible with any missing audit or unverified imported theorem.
 - Invalid provider outputs and successful schema-repair attempts both count toward usage and call
   limits.
+- A coordinator's scientific stop based on a useful reduction is declined; the declined event and
+  recovery obligation are durable, a later exact-target assignment may complete the proof, and all
+  candidate/audit/judge inputs carry the no-terminal-reductions policy.
 - Sparse progress maps Ascension 2 to coordinator start/resume and Ascension 3 to live-pool
   management, with no per-batch repetition.
 - Retry classification and incomplete API responses.

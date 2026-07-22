@@ -33,6 +33,7 @@ from .execution.base import (
 from .execution.native import NativeBackend
 from .openai_client import (
     ModelAdapterError,
+    ModelInputTooLargeError,
     ModelRequest,
     ModelResult,
     ProviderAttempt,
@@ -83,6 +84,7 @@ class CodexErrorKind(StrEnum):
     NETWORK_OR_SEARCH_UNAVAILABLE = "CODEX_NETWORK_OR_SEARCH_UNAVAILABLE"
     PROCESS_TIMEOUT = "CODEX_PROCESS_TIMEOUT"
     PROCESS_CRASH = "CODEX_PROCESS_CRASH"
+    INPUT_TOO_LARGE = "CODEX_INPUT_TOO_LARGE"
     SCHEMA_INCOMPATIBLE = "CODEX_SCHEMA_INCOMPATIBLE"
     SCHEMA_VALIDATION_FAILED = "CODEX_SCHEMA_VALIDATION_FAILED"
     OUTPUT_MISSING = "CODEX_OUTPUT_MISSING"
@@ -176,6 +178,10 @@ class CodexProcessCrashError(CodexBackendError):
     pass
 
 
+class CodexInputTooLargeError(CodexBackendError, ModelInputTooLargeError):
+    pass
+
+
 class CodexSchemaCompatibilityError(CodexBackendError):
     pass
 
@@ -213,6 +219,7 @@ _ERROR_CLASSES: Mapping[CodexErrorKind, type[CodexBackendError]] = {
     CodexErrorKind.NETWORK_OR_SEARCH_UNAVAILABLE: CodexNetworkOrSearchUnavailableError,
     CodexErrorKind.PROCESS_TIMEOUT: CodexProcessTimeoutError,
     CodexErrorKind.PROCESS_CRASH: CodexProcessCrashError,
+    CodexErrorKind.INPUT_TOO_LARGE: CodexInputTooLargeError,
     CodexErrorKind.SCHEMA_INCOMPATIBLE: CodexSchemaCompatibilityError,
     CodexErrorKind.SCHEMA_VALIDATION_FAILED: CodexSchemaValidationError,
     CodexErrorKind.OUTPUT_MISSING: CodexOutputMissingError,
@@ -612,6 +619,25 @@ def classify_codex_failure(
             CodexErrorKind.PROCESS_TIMEOUT,
             True,
             "Retry the saved MATEK run after checking local Codex responsiveness.",
+        )
+    if any(
+        marker in normalized
+        for marker in (
+            "input_too_large",
+            "input too large",
+            "request too large",
+            "context_length_exceeded",
+            "maximum context length",
+            "prompt is too long",
+            "1,048,576-character limit",
+            "1048576-character limit",
+        )
+    ):
+        return CodexFailureClassification(
+            CodexErrorKind.INPUT_TOO_LARGE,
+            False,
+            "Rebuild the coordinator context under a smaller measured limit; do not retry "
+            "the identical request.",
         )
     if (
         "invalid_json_schema" in normalized
@@ -1183,6 +1209,15 @@ class CodexCliModelClient:
             completed_provider_attempts=completed_provider_attempts,
         )
         raise AssertionError("unreachable")
+
+    def final_input_characters(
+        self,
+        request: ModelRequest,
+        output_type: type[BaseModel],
+    ) -> int:
+        """Measure the exact stdin prompt before starting a Codex provider process."""
+
+        return len(_build_prompt(request, output_type, None))
 
     async def _ensure_capabilities(self) -> tuple[CodexCapabilities, str]:
         if self._shared.capabilities is not None and self._shared.version is not None:

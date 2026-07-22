@@ -86,10 +86,18 @@ formalization, and generates a reproducible final report.
   every assignment and full raw worker report, then atomically write one immutable zero-padded
   completion-event file and refresh the materialized mailbox snapshot. Activate the coordinator
   as useful events arrive.
-- Give every coordinator activation the complete main prompt and claim contract, all
-  not-yet-acknowledged mailbox events, the approach registry, audit obligations, and direct access
-  to the complete raw reports. Derived summaries or continuity snapshots must never replace or
-  truncate the underlying reports.
+- Build every coordinator activation deterministically under a hard default limit of 800,000
+  characters measured on the final serialized provider input. Always include the complete main
+  prompt and claim contract, then prioritize new events, candidate/audit/recovery state, compact
+  assignment state, structured report summaries, and relevant full reports. Never truncate JSON
+  or mathematical prose bytewise.
+- Keep every raw report and immutable event authoritative on disk. Compact contexts provide
+  authenticated artifact and graph-node references with stable IDs, validated relative paths,
+  revisions, and SHA-256 hashes. Codex may read those paths; backends without filesystem access
+  may request a bounded evidence set for the next activation.
+- Preflight before starting a provider process. Persist each context manifest and any omissions.
+  A provider `input_too_large` result must reduce the measured budget and create a distinct compact
+  request; if mandatory state cannot fit, pause retriably with `CONTEXT_BUDGET_EXHAUSTED`.
 - Refill useful work dynamically after completions instead of waiting for a batch barrier. Permit
   up to 32 total open assignments (queued plus running) by default. Permit up to 32 of that open
   set to be active research workers, subject to backend and budget limits. Initial workers and
@@ -106,6 +114,13 @@ formalization, and generates a reproducible final report.
   semantics.
 - Do not impose a cumulative research-worker count ceiling. Do not impose a global Codex
   call-count limit by default; retain explicit configurable limits.
+- Preserve the exact user claim as the only terminal scientific target. Reductions, special
+  cases, strengthened hypotheses, reformulations, and isolated lemmas may be retained as useful
+  intermediate results, but they are never terminal successes or accepted substitutes. A
+  coordinator recommendation to stop merely because the exact target remains difficult shall be
+  declined and returned as a durable recovery obligation. Continue until the exact claim is
+  accepted, exactly refuted, or an explicit resource/provider boundary forces a truthful stop or
+  retriable pause.
 - Persist `research/coordinator/state.json` as the canonical atomic scheduler checkpoint. Use its
   pending-event field as a write-ahead record: checkpoint the transition and proposed event first,
   create the immutable zero-padded event evidence, then clear the pending field. Validate the
@@ -148,9 +163,10 @@ formalization, and generates a reproducible final report.
   stable IDs and typed, constraint-checked relations.
 - Epistemic and workflow statuses are separate. Only deterministic Lean verification may assign
   `lean_verified`; worker proposals cannot bypass research/audit gates.
-- The coordinator shall query a research frontier and create graph-scoped tasks. Workers receive
-  bounded context slices and return structured optimistic-concurrency patches rather than
-  mutating the shared vault.
+- Before initial delegation, the coordinator shall review a problem-scoped graph overview and
+  research frontier when prior graph memory exists, then use prior results, failures, gaps,
+  audits, and tasks to shape graph-scoped assignments. Workers receive bounded context slices and
+  return structured optimistic-concurrency patches rather than mutating the shared vault.
 - Patch merges shall validate types, IDs, relation constraints, dependency acyclicity, duplicate
   likelihood, node hashes, status transitions, and base revisions before an atomic commit and
   snapshot/index update.

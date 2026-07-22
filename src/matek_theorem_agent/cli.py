@@ -406,11 +406,14 @@ def _resolved_run_summary(
         "initial research agents": (
             f"minimum {config.research.minimum_initial_agents}; may fill available pool"
         ),
-        "concurrent research agents": (
-            f"up to {concurrency} effective ({concurrency_ceilings})"
-        ),
+        "concurrent research agents": (f"up to {concurrency} effective ({concurrency_ceilings})"),
         "maximum pending assignments": config.research.maximum_pending_assignments,
         "coordinator decision limit": coordinator_decisions,
+        "coordinator context budget": (
+            f"{config.research.maximum_coordinator_context_characters:,} serialized provider "
+            f"characters; up to {config.research.maximum_coordinator_requested_artifacts} "
+            "on-demand evidence requests"
+        ),
         "total active time limit": _time_limit_display(config),
         "usage limit": usage_limit,
         "knowledge graph": graph_name,

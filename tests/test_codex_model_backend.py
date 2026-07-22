@@ -14,6 +14,7 @@ from matek_theorem_agent.codex_model_backend import (
     CodexAuthenticationExpiredError,
     CodexCliModelClient,
     CodexErrorKind,
+    CodexInputTooLargeError,
     CodexModelUnavailableError,
     CodexNetworkOrSearchUnavailableError,
     CodexNotAuthenticatedError,
@@ -206,6 +207,15 @@ class FakeCodexBackend:
             return CommandResult(argv, request.cwd, 1, "", "web search unavailable", 0.1)
         if outcome == "crash":
             return CommandResult(argv, request.cwd, 70, "", "unexpected runtime failure", 0.1)
+        if outcome == "input_too_large":
+            return CommandResult(
+                argv,
+                request.cwd,
+                1,
+                "",
+                "input_too_large: request exceeds the 1,048,576-character limit",
+                0.1,
+            )
         if outcome == "invalid_json_schema":
             return CommandResult(
                 argv,
@@ -540,6 +550,24 @@ async def test_rate_limit_retries_but_never_falls_back(tmp_path: Path) -> None:
     assert caught.value.attempts == 2
     assert len(backend.exec_requests) == 2
     assert "did not switch" in caught.value.remedy
+
+
+@pytest.mark.asyncio
+async def test_input_too_large_is_not_retried_with_the_identical_prompt(tmp_path: Path) -> None:
+    backend = FakeCodexBackend(["input_too_large", "success"])
+    client = CodexCliModelClient(
+        tmp_path,
+        backend=backend,
+        max_attempts=2,
+    ).for_stage("research", run_root=_run_root(tmp_path))
+
+    with pytest.raises(CodexInputTooLargeError) as caught:
+        await client.generate_structured(_request(), Answer)
+
+    assert caught.value.kind is CodexErrorKind.INPUT_TOO_LARGE
+    assert not caught.value.retryable
+    assert caught.value.attempts == 1
+    assert len(backend.exec_requests) == 1
 
 
 @pytest.mark.asyncio

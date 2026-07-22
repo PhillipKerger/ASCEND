@@ -9,6 +9,12 @@ reductions, calculations, counterexamples, or exact obstructions.
 The assignment narrows your route but never overrides the compiled prompt or claim contract.
 Do not coordinate with, imitate, or assume the conclusions of concurrent workers.
 
+There are no allowed terminal reductions. You may prove reductions, special cases, weaker lemmas,
+or conditional results as explicitly labeled intermediate progress, but they do not resolve the
+assignment's governing target. `candidate_complete` is forbidden unless every downstream claim
+and transfer argument is proved and the final conclusion establishes or disproves the unchanged
+claim contract.
+
 When a bounded `knowledge_graph_context` is present, use its stable IDs, exact task, nearby
 dependencies, prior proof attempts, counterexamples, audits, and sources. Do not edit the shared
 Markdown vault. Return `graph_patch` as a JSON-encoded structured proposal based on

@@ -15,7 +15,12 @@ from matek_theorem_agent.codex_client import CodexRequest, CodexResult
 from matek_theorem_agent.config import ModelSettings
 from matek_theorem_agent.execution.base import CommandRequest, CommandResult
 from matek_theorem_agent.knowledge_graph import KnowledgeGraph
-from matek_theorem_agent.openai_client import ModelRequest, ModelResult, StructuredOutputError
+from matek_theorem_agent.openai_client import (
+    ModelInputTooLargeError,
+    ModelRequest,
+    ModelResult,
+    StructuredOutputError,
+)
 from matek_theorem_agent.source_provenance import (
     SourceVerificationRecord,
     SourceVerificationReport,
@@ -293,6 +298,8 @@ async def test_prompt_compiler_checks_hash_placeholders_and_writes_contract(
     }
     assert client.requests[0].settings.reasoning_effort == "xhigh"
     assert client.requests[0].settings.web_search is True
+    assert "Allowed terminal reductions: none" in result.compiled_prompt
+    assert "external configured resource limit" in result.compiled_prompt
 
     bad_client = StaticClient(
         [compiled_problem(covered_compiled_prompt("Prove [INSERT TARGET HERE]."))]
@@ -676,16 +683,32 @@ async def test_invalid_optional_graph_proposal_does_not_discard_scientific_repor
     problem_id, _ = graph.initialize_problem(
         source_path=problem,
         problem_text=problem.read_text(encoding="utf-8"),
+        run_id="run-graph-prior",
+    )
+    graph.initialize_problem(
+        source_path=problem,
+        problem_text=problem.read_text(encoding="utf-8"),
         run_id="run-graph-warning",
     )
 
     class InvalidGraphProposalClient(SuccessfulResearchClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.initial_graph_review_seen = False
+
         async def generate_structured(
             self, request: ModelRequest, output_type: type[Any]
         ) -> ModelResult[Any]:
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision and payload["initial_portfolio"]:
+                memory = payload["knowledge_graph_memory"]
+                assert memory["review_required_before_delegation"] is True
+                assert memory["overview"]["prior_node_count"] > 0
+                assert memory["frontier"]["prior_runs"]
+                self.initial_graph_review_seen = True
             result = await super().generate_structured(request, output_type)
             if output_type is ResearchWorkerReport:
-                payload = json.loads(request.input_text)
+                assert self.initial_graph_review_seen
                 task_id = payload["graph_task_id"]
                 result.parsed.graph_patch = json.dumps(
                     {
@@ -704,8 +727,9 @@ async def test_invalid_optional_graph_proposal_does_not_discard_scientific_repor
                 )
             return result
 
+    client = InvalidGraphProposalClient()
     result = await run_adaptive_research(
-        client=InvalidGraphProposalClient(),
+        client=client,
         compiled_problem=compiled_problem(),
         research_dir=tmp_path / "research",
         knowledge_graph=graph,
@@ -714,6 +738,7 @@ async def test_invalid_optional_graph_proposal_does_not_discard_scientific_repor
     )
 
     assert result.worker_reports
+    assert client.initial_graph_review_seen
     assert result.accepted_for_manuscript
     graph_issue = next(
         issue for issue in result.execution_issues if issue.event_kind == "graph_mutation_rejected"
@@ -790,6 +815,7 @@ class SuccessfulResearchClient:
                     rationale="The remaining obligation cannot be resolved offline.",
                     stop_recommended=True,
                     stop_reason="No further admissible research route remains.",
+                    stop_category="budget",
                 )
         elif output_type is ResearchWorkerReport:
             assignment = json.loads(request.input_text)["assignment"]
@@ -1378,7 +1404,7 @@ class CleanupCandidateRaceResearchClient:
                     retire_assignment_ids=["unused-counterexample", "unused-literature"],
                     stop_recommended=True,
                     stop_reason="No route visible to the coordinator remains fundable.",
-                    stop_category="scientific",
+                    stop_category="budget",
                 )
             return ModelResult(parsed=parsed, response_id=response_id)
         if output_type is ResearchWorkerReport:
@@ -1497,7 +1523,7 @@ class DeferredCandidateGateClient:
                     rationale="The first audited candidate failed, so recommend stopping.",
                     stop_recommended=True,
                     stop_reason="No further work is needed if no other candidate passes.",
-                    stop_category="scientific",
+                    stop_category="budget",
                 ),
                 response_id=response_id,
             )
@@ -2289,7 +2315,131 @@ def test_research_workflow_defaults_use_a_large_continuous_pending_window() -> N
     assert settings.maximum_concurrent_agents == 32
     assert settings.maximum_pending_assignments == 32
     assert settings.maximum_coordinator_decisions == 256
+    assert settings.maximum_coordinator_context_characters == 800_000
+    assert settings.maximum_coordinator_requested_artifacts == 8
     assert "maximum_research_subagents" not in type(settings).model_fields
+    assert "exact_target_persistence" not in type(settings).model_fields
+
+
+@pytest.mark.asyncio
+async def test_scientific_reduction_stop_is_declined_and_exact_research_continues(
+    tmp_path: Path,
+) -> None:
+    class ExactTargetPersistenceClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.stop_declined = False
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                policy = payload["exact_target_policy"]
+                assert policy["terminal_reductions_allowed"] is False
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"persistence-route-{index}",
+                                approach_family=f"family-{index}",
+                                task=f"Investigate exact route {index}",
+                                expected_output="Exact proof or rigorous intermediate result",
+                            )
+                            for index in range(4)
+                        ],
+                        rationale="Launch diverse exact-target work.",
+                    )
+                elif not any(
+                    event["kind"] == "coordinator_scientific_stop_declined"
+                    for event in payload["unacknowledged_events"]
+                ):
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="Keep only the reduction and stop.",
+                        stop_recommended=True,
+                        stop_reason="A useful reduction was proved but its target remains open.",
+                        stop_category="scientific",
+                    )
+                else:
+                    self.stop_declined = True
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id="exact-target-finisher",
+                                approach_family="reduction-completion",
+                                task=(
+                                    "Prove the reduced theorem and transfer it to the exact target."
+                                ),
+                                expected_output="A complete proof of the unchanged claim contract",
+                            )
+                        ],
+                        rationale="The reduction is intermediate, so discharge its exact gap.",
+                    )
+            elif output_type is ResearchWorkerReport:
+                assert payload["exact_target_policy"]["terminal_reductions_allowed"] is False
+                assignment_id = payload["assignment"]["id"]
+                exact = assignment_id == "exact-target-finisher"
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment_id,
+                    status=(WorkerStatus.CANDIDATE_COMPLETE if exact else WorkerStatus.PROGRESS),
+                    formal_results=[
+                        "The exact target theorem." if exact else "A rigorous reduction lemma."
+                    ],
+                    proof_content=(
+                        "Complete proof of the reduced theorem, transfer, and exact target."
+                        if exact
+                        else "Complete proof of an intermediate reduction only."
+                    ),
+                    exact_gap=(None if exact else "Prove the reduced target and transfer back."),
+                    sources=[],
+                    mechanism=payload["assignment"]["task"],
+                )
+            elif output_type is CandidateProofPackage:
+                assert payload["exact_target_policy"]["terminal_reductions_allowed"] is False
+                parsed = candidate_package()
+            elif output_type is AuditVerdict:
+                assert payload["exact_target_policy"]["terminal_reductions_allowed"] is False
+                parsed = passing_audit()
+            elif output_type is FinalJudgeVerdict:
+                assert payload["exact_target_policy"]["terminal_reductions_allowed"] is False
+                parsed = FinalJudgeVerdict(
+                    verdict=FinalJudgeDecision.ACCEPTED,
+                    reasons=["The complete chain proves the exact target."],
+                    strongest_result="Fixture theorem",
+                )
+            else:  # pragma: no cover - exhaustiveness guard
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"persistence-{self.calls}")
+
+    client = ExactTargetPersistenceClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+            maximum_coordinator_decisions=8,
+        ),
+    )
+
+    assert result.outcome is ResearchOutcome.ACCEPTED
+    assert client.stop_declined
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((tmp_path / "events").glob("*.json"))
+    ]
+    assert any(event["kind"] == "coordinator_scientific_stop_declined" for event in events)
+    assert result.worker_reports[-1].assignment_id == "exact-target-finisher"
 
 
 @pytest.mark.asyncio
@@ -2336,15 +2486,14 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
                         rationale="All bounded initial routes have reported.",
                         stop_recommended=True,
                         stop_reason="No complete proof was found in the initial portfolio.",
+                        stop_category="budget",
                     )
             elif output_type is ResearchWorkerReport:
                 assignment = payload["assignment"]
                 assignment_id = assignment["id"]
                 self.worker_ids.add(assignment_id)
                 self.active_workers += 1
-                self.maximum_active_workers = max(
-                    self.maximum_active_workers, self.active_workers
-                )
+                self.maximum_active_workers = max(self.maximum_active_workers, self.active_workers)
                 if self.active_workers == 32:
                     self.all_workers_started.set()
                 try:
@@ -2371,9 +2520,331 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
         research_dir=tmp_path,
     )
 
-    assert result.outcome is ResearchOutcome.PARTIAL
+    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
     assert client.maximum_active_workers == 32
     assert len(client.worker_ids) == 32
+
+
+@pytest.mark.asyncio
+async def test_coordinator_input_too_large_rebuilds_a_smaller_distinct_context(
+    tmp_path: Path,
+) -> None:
+    class ContextRetryClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.later_coordinator_inputs: list[str] = []
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"large-route-{index}",
+                                approach_family=f"family-{index}",
+                                task=f"Investigate large route {index}",
+                                expected_output="A rigorous partial result",
+                            )
+                            for index in range(4)
+                        ],
+                        rationale="Launch four large independent reports.",
+                    )
+                else:
+                    self.later_coordinator_inputs.append(request.input_text)
+                    if len(self.later_coordinator_inputs) == 1:
+                        raise ModelInputTooLargeError("input_too_large at provider boundary")
+                    assert payload["context_mode"] == "compact"
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="The bounded evidence contains no complete proof.",
+                        stop_recommended=True,
+                        stop_reason="No complete route remains.",
+                        stop_category="budget",
+                    )
+            elif output_type is ResearchWorkerReport:
+                assignment = payload["assignment"]
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment["id"],
+                    status=WorkerStatus.PROGRESS,
+                    formal_results=[f"Partial lemma from {assignment['id']}"],
+                    proof_content="Detailed mathematical argument. " * 8_000,
+                    exact_gap="Complete the remaining boundary case.",
+                    sources=[],
+                    mechanism=assignment["task"],
+                )
+            else:  # pragma: no cover - workers deliberately produce no candidate
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"context-retry-{self.calls}")
+
+    client = ContextRetryClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
+    assert len(client.later_coordinator_inputs) == 2
+    assert client.later_coordinator_inputs[0] != client.later_coordinator_inputs[1]
+    assert len(client.later_coordinator_inputs[1]) < len(client.later_coordinator_inputs[0])
+    manifests = sorted((tmp_path / "coordinator" / "context-manifests").glob("00000002-*.json"))
+    assert len(manifests) == 2
+    scheduler = json.loads((tmp_path / "coordinator" / "state.json").read_text())
+    second_decision = scheduler["decisions"][1]["decision"]
+    assert scheduler["coordinator_ack_event_sequence"] == second_decision["after_event_sequence"]
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((tmp_path / "events").glob("*.json"))
+    ]
+    assert sum(event["kind"] == "coordinator_context_compacted" for event in events) == 2
+    assert sum(event["kind"] == "coordinator_input_too_large" for event in events) == 1
+
+
+@pytest.mark.asyncio
+async def test_repeated_context_rejection_pauses_with_partial_progress_and_resumable_request(
+    tmp_path: Path,
+) -> None:
+    class ExhaustedContextClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.rejected_inputs: list[str] = []
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"exhaustion-route-{index}",
+                                approach_family=f"family-{index}",
+                                task=f"Investigate exhaustion route {index}",
+                                expected_output="A rigorous partial result",
+                            )
+                            for index in range(4)
+                        ],
+                        rationale="Launch four independent routes.",
+                    )
+                else:
+                    self.rejected_inputs.append(request.input_text)
+                    raise ModelInputTooLargeError("input_too_large at provider boundary")
+            elif output_type is ResearchWorkerReport:
+                assignment = payload["assignment"]
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment["id"],
+                    status=WorkerStatus.PROGRESS,
+                    formal_results=[f"Durable partial lemma from {assignment['id']}"],
+                    proof_content="Preserved mathematical progress. " * 6_000,
+                    exact_gap="One boundary lemma remains.",
+                    sources=[],
+                    mechanism=assignment["task"],
+                )
+            else:  # pragma: no cover - workers deliberately produce no candidate
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"context-exhausted-{self.calls}")
+
+    client = ExhaustedContextClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert result.outcome is ResearchOutcome.PAUSED_RETRIABLE
+    assert result.pause_reason == "CONTEXT_BUDGET_EXHAUSTED"
+    assert len(result.worker_reports) == 4
+    assert result.strongest_result != "No complete result was established."
+    assert "matek resume" in (result.resume_action or "")
+    assert len(client.rejected_inputs) == 3
+    assert len(set(client.rejected_inputs)) == 3
+    assert all(
+        len(later) < len(earlier)
+        for earlier, later in zip(client.rejected_inputs, client.rejected_inputs[1:], strict=False)
+    )
+    scheduler = json.loads((tmp_path / "coordinator" / "state.json").read_text())
+    pending = scheduler["pending_coordinator_request"]
+    assert scheduler["phase"] == "running"
+    assert pending["request_payload"] != json.loads(client.rejected_inputs[-1])
+    assert len(json.dumps(pending["request_payload"], sort_keys=True)) < len(
+        client.rejected_inputs[-1]
+    )
+    prior_events = {
+        path.name: path.read_bytes() for path in sorted((tmp_path / "events").glob("*.json"))
+    }
+
+    class ResumeContextClient:
+        def __init__(self) -> None:
+            self.payload: dict[str, Any] | None = None
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            assert output_type is ResearchCoordinatorDecision
+            self.payload = json.loads(request.input_text)
+            return ModelResult(
+                parsed=ResearchCoordinatorDecision(
+                    decision_id=self.payload["decision_id"],
+                    after_event_sequence=self.payload["after_event_sequence"],
+                    assignments=[],
+                    rationale="The resumed bounded state remains partial.",
+                    stop_recommended=True,
+                    stop_reason="No complete proof remains.",
+                    stop_category="budget",
+                ),
+                response_id="context-resume",
+            )
+
+    resume_client = ResumeContextClient()
+    resumed = await run_adaptive_research(
+        client=resume_client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert resumed.outcome is ResearchOutcome.BUDGET_EXHAUSTED
+    assert resume_client.payload == pending["request_payload"]
+    assert all(
+        (tmp_path / "events" / name).read_bytes() == content
+        for name, content in prior_events.items()
+    )
+    resumed_scheduler = json.loads((tmp_path / "coordinator" / "state.json").read_text())
+    second_decision = resumed_scheduler["decisions"][1]["decision"]
+    assert (
+        resumed_scheduler["coordinator_ack_event_sequence"]
+        == second_decision["after_event_sequence"]
+    )
+    sequences = [
+        json.loads(path.read_text())["sequence"]
+        for path in sorted((tmp_path / "events").glob("*.json"))
+    ]
+    assert sequences == list(range(1, len(sequences) + 1))
+
+
+@pytest.mark.asyncio
+async def test_api_coordinator_can_request_and_receive_omitted_report(
+    tmp_path: Path,
+) -> None:
+    class RetrievalClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.requested_id: str | None = None
+            self.request_payload: dict[str, Any] | None = None
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"retrieval-route-{index}",
+                                approach_family=f"family-{index}",
+                                task=f"Investigate retrieval route {index}",
+                                expected_output="A rigorous partial result",
+                            )
+                            for index in range(4)
+                        ],
+                        rationale="Launch retrieval fixtures.",
+                    )
+                elif self.requested_id is None:
+                    assert payload["context_mode"] == "compact"
+                    assert payload["filesystem_retrieval"]["enabled"] is False
+                    included = {
+                        report["assignment_id"] for report in payload["visible_worker_reports"]
+                    }
+                    omitted = next(
+                        item
+                        for item in payload["artifact_catalog"]
+                        if item.get("assignment_id") not in included
+                    )
+                    self.requested_id = omitted["artifact_id"]
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="Retrieve one omitted proof before deciding.",
+                        requested_artifact_ids=[self.requested_id],
+                    )
+                else:
+                    self.request_payload = payload
+                    requested = payload["requested_artifacts"]
+                    assert requested
+                    requested_assignment = self.requested_id.removeprefix("worker-report:")
+                    assert requested[0]["assignment_id"] == requested_assignment
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="Requested evidence was supplied and remains partial.",
+                        stop_recommended=True,
+                        stop_reason="No complete proof remains.",
+                        stop_category="budget",
+                    )
+            elif output_type is ResearchWorkerReport:
+                assignment = payload["assignment"]
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment["id"],
+                    status=WorkerStatus.PROGRESS,
+                    formal_results=[f"Partial lemma from {assignment['id']}"],
+                    proof_content="Complete retained report prose. " * 8_000,
+                    exact_gap="One exact lemma remains open.",
+                    sources=[],
+                    mechanism=assignment["task"],
+                )
+            else:  # pragma: no cover - workers deliberately produce no candidate
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"retrieval-{self.calls}")
+
+    client = RetrievalClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        coordinator_can_read_files=False,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
+    assert client.requested_id is not None
+    assert client.request_payload is not None
+    assert len(result.coordinator_decisions) == 3
 
 
 @pytest.mark.asyncio
@@ -2507,11 +2978,13 @@ async def test_unverified_imported_theorem_blocks_research_acceptance(tmp_path: 
         client=SuccessfulResearchClient(imported_theorems=[theorem]),
         compiled_problem=compiled_problem(),
         research_dir=tmp_path,
-        workflow_settings=ResearchWorkflowSettings(maximum_coordinator_decisions=32),
+        workflow_settings=ResearchWorkflowSettings(
+            maximum_coordinator_decisions=32,
+        ),
         source_verifier=OfflineIdentifierVerifier(),
     )
 
-    assert result.outcome is ResearchOutcome.PARTIAL
+    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
     assert not result.accepted_for_manuscript
     assert "not independently verified" in result.unresolved_obligations[0]
     assert result.candidate is not None
@@ -2918,7 +3391,7 @@ class VerdictResearchClient(SuccessfulResearchClient):
     ("decision", "outcome"),
     [
         (FinalJudgeDecision.REJECTED, ResearchOutcome.REJECTED),
-        (FinalJudgeDecision.PARTIAL, ResearchOutcome.PARTIAL),
+        (FinalJudgeDecision.PARTIAL, ResearchOutcome.BUDGET_EXHAUSTED),
     ],
 )
 async def test_research_preserves_rejected_and_partial_candidates(
@@ -2930,6 +3403,7 @@ async def test_research_preserves_rejected_and_partial_candidates(
         client=VerdictResearchClient(decision),
         compiled_problem=compiled_problem(),
         research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(maximum_coordinator_decisions=2),
     )
     assert result.outcome == outcome
     assert not result.accepted_for_manuscript

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from .config import ModelSettings
 from .redaction import redact_data as _shared_redact_data
 from .redaction import redact_text as _shared_redact_text
-from .structured_schema import strict_schema_sha256
+from .structured_schema import strict_json_schema, strict_schema_sha256
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -237,6 +237,10 @@ class ModelTransportError(ModelAdapterError):
     pass
 
 
+class ModelInputTooLargeError(ModelAdapterError):
+    """Provider rejected the request before model execution because its input was too large."""
+
+
 class IncompleteResponseError(ModelAdapterError):
     def __init__(self, response_id: str, details: Mapping[str, Any]) -> None:
         self.response_id = response_id
@@ -332,6 +336,23 @@ class OpenAIResponsesClient:
             estimated_cost_usd=cost,
         )
 
+    def final_input_characters(
+        self,
+        request: ModelRequest,
+        output_type: type[BaseModel],
+    ) -> int:
+        """Conservatively measure the serialized API input plus schema/tool framing."""
+
+        kwargs = _request_kwargs(request, output_type)
+        kwargs["text_format"] = {
+            "name": output_schema_name(output_type),
+            "strict": True,
+            "schema": strict_json_schema(output_type),
+        }
+        serialized = json.dumps(kwargs, ensure_ascii=False, sort_keys=True, default=str)
+        # Reserve transport framing that the SDK/provider may add around this complete schema.
+        return len(serialized) + 8_192
+
     def backend_manifest(self) -> Mapping[str, Any]:
         """Return nonsecret provider provenance for run reports."""
 
@@ -358,6 +379,11 @@ class OpenAIResponsesClient:
                 response = await self._client.responses.parse(**kwargs)
                 break
             except Exception as exc:
+                if _is_input_too_large_error(exc):
+                    message = redact_sensitive(str(exc))[:500]
+                    raise ModelInputTooLargeError(
+                        f"Provider rejected oversized input: {message}"
+                    ) from exc
                 if not is_transient_error(exc) or attempt_index + 1 >= self._max_attempts:
                     message = redact_sensitive(str(exc))[:500]
                     raise ModelTransportError(
@@ -534,6 +560,23 @@ def is_transient_error(exc: BaseException) -> bool:
         "InternalServerError",
         "ServiceUnavailableError",
     } or isinstance(exc, (ConnectionError, TimeoutError))
+
+
+def _is_input_too_large_error(exc: BaseException) -> bool:
+    code = getattr(exc, "code", None)
+    body = getattr(exc, "body", None)
+    text = f"{code or ''} {body or ''} {exc}".casefold()
+    return any(
+        marker in text
+        for marker in (
+            "input_too_large",
+            "input too large",
+            "request too large",
+            "context_length_exceeded",
+            "maximum context length",
+            "prompt is too long",
+        )
+    )
 
 
 is_transient_exception = is_transient_error

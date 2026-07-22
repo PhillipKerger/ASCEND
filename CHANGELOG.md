@@ -2,6 +2,14 @@
 
 ## 0.3.0 — 2026-07-22
 
+- Added deterministic, resumable coordinator context budgeting with an 800,000-character default
+  measured on final provider input. Large histories compact into prioritized summaries and
+  hash-bound artifact/graph references; API coordinators can request omitted evidence on demand.
+  Provider size rejection rebuilds a smaller distinct request, while mandatory-state overflow
+  pauses as `CONTEXT_BUDGET_EXHAUSTED` without losing completed research.
+- Existing problem graphs now carry an explicit pre-delegation review requirement. The initial
+  coordinator receives a problem-scoped overview and frontier and must use prior results,
+  failures, gaps, audits, and tasks when shaping its assignment portfolio.
 - `matek run` now prints the important resolved configuration before the first model call,
   including backend-specific role models/reasoning, web access, effective research concurrency,
   limits, enabled downstream stages, sandbox, graph, and project-edit policy. Dry runs reuse the
@@ -29,6 +37,10 @@
 - Added a persisted resilience taxonomy (`integrity`, `execution`, `evidence`, `scientific`, and
   `resource`). Only security/state/artifact integrity failures hard-stop; recoverable provider,
   source, worker, graph-mutation, and audit failures now produce warnings or coordinator events.
+- Made the frozen user claim the only terminal scientific target. Reductions and weaker results
+  remain durable intermediate evidence, while scientific no-progress/reduction stop requests are
+  declined and research continues until exact acceptance, exact refutation, or an explicit
+  resource/provider boundary.
 - Literature-only source outages now quarantine and qualify dependent claims without blocking
   research, with an `arxiv.org/abs/` fallback; strict proof, citation, and bibliography gates are
   unchanged.

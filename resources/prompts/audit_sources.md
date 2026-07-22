@@ -9,6 +9,8 @@ When the target is reported as already solved, independently verify that the lit
 matches the exact claim contract rather than only a nearby statement. Record differences in
 hypotheses, quantifiers, domains, exceptional cases, and conclusion, and reject unsupported
 novelty claims.
+Do not accept a cited theorem that only reduces, weakens, or conditionally resolves the target;
+the exact downstream result and transfer must be verified.
 
 Return a concise source-audit rationale and a nonempty `checks_performed` list naming each
 imported theorem, identifier, hypothesis match, and novelty characterization actually checked.

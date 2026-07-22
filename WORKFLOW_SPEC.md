@@ -57,8 +57,11 @@ condition. The longer framework then expands each item into MATEK's auditable pr
 
 ## Stage 2 — Adaptive research
 
-Before every non-replayed coordinator request, query the graph frontier. Coordinator assignments
-name stable target IDs and are materialized as graph task nodes before worker reservations. Each
+Before every non-replayed coordinator request, query the graph frontier. Before initial
+delegation, an existing graph is explicitly marked as requiring review, and the coordinator uses
+its overview, prior results, failures, gaps, audits, and tasks to shape the portfolio. Coordinator
+assignments name stable target IDs and are materialized as graph task nodes before worker
+reservations. Each
 worker request freezes a bounded graph context and base revision. A worker may propose a typed
 patch but cannot write the vault. Once its raw report and independent source verification are
 durable, the deterministic graph service validates/merges the patch and distilled report, then
@@ -121,16 +124,30 @@ reassign or retire the route. Integrity failures still stop the scheduler.
 
 On every activation, the coordinator receives the original complete prompt and claim contract,
 all unacknowledged mailbox events, the current assignment lifecycle state, the approach registry,
-and all audit repair obligations. It also receives the complete raw reports relevant to those
-events and durable references to every earlier raw report. `research/continuity.json` remains a
-derived navigation view that explicitly classifies promising routes, partial results, refuted
-directions and counterexamples, blocked routes and exact gaps, dependencies, and prior
-directives; it is never a lossy replacement for the reports or immutable event ledger.
+and all audit repair obligations. `CoordinatorContextBuilder` measures the final serialized
+provider input against an 800,000-character default ceiling. It deterministically prioritizes new
+and candidate-producing reports, structured summaries, and complete requested evidence; repetitive
+issues are aggregated with counts, affected assignments, and paths. Omitted raw reports remain
+addressable by stable ID, validated relative path, and frozen SHA-256. Codex may inspect those
+paths, while API coordinators request a bounded set for the next activation.
+
+Every context has an immutable manifest recording its event cursor, mode, inclusion reasons,
+omissions, measured characters, token estimate, and hash. Provider `input_too_large` responses
+produce a distinct request under a smaller limit rather than an identical retry. If mandatory
+state alone cannot fit, research pauses as `CONTEXT_BUDGET_EXHAUSTED` while preserving partial
+scientific progress. `research/continuity.json` remains a derived navigation view, never a lossy
+replacement for reports or the immutable event ledger.
 
 Each decision may add assignments, retire or redirect work, request hostile checks or lemma
-completion, recommend candidate packaging, or recommend a budget-aware stop. Workers must return
-concrete formal content using `ResearchWorkerReport`. A blocked route must identify the exact
-missing statement and any counterexample found.
+completion, recommend candidate packaging, or report an actual budget/resource boundary. The
+exact frozen claim contract is the only terminal scientific target. Reductions, special cases,
+weaker variants, additional-hypothesis results, reformulations, and isolated lemmas are retained
+as intermediate evidence only. A scientific no-progress or reduction-based stop recommendation
+is declined, persisted as `coordinator_scientific_stop_declined`, and returned to the coordinator
+with an exact recovery obligation. Research continues until the exact claim is accepted, exactly
+refuted, or an explicit resource/provider boundary is reached. Workers must return concrete formal
+content using `ResearchWorkerReport`; a blocked route must identify the exact missing statement
+and any counterexample found.
 
 There is no cumulative research-worker ceiling. Total-open-assignment, active-concurrency,
 coordinator-decision, model-call, cost, token, and optional active-wall-clock limits remain
@@ -148,7 +165,9 @@ A candidate package includes theorem statement, definitions, lemma dependency gr
 proofs, imported theorems, exceptional cases, parameter bookkeeping, unresolved items, and an
 explicit required classification of whether the claim is quantitative or algorithmic. The
 foundational auditor independently checks that classification; falsely clearing it is blocking,
-so the packager cannot suppress an applicable complexity audit.
+so the packager cannot suppress an applicable complexity audit. The package and every audit are
+also bound to the exact-target policy: a proof of a reduced or weaker problem cannot pass even when
+that result is mathematically valid in its own right.
 
 Launch fresh agents for:
 

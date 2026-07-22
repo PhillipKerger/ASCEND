@@ -107,6 +107,29 @@ def test_persistent_markdown_vault_survives_two_runs_and_rebuilds_index(
     assert graph.validate().valid
 
 
+def test_existing_problem_graph_requires_coordinator_review_before_delegation(
+    tmp_path: Path,
+) -> None:
+    graph, problem, problem_id, _ = initialized_graph(tmp_path)
+    graph.initialize_problem(
+        source_path=problem,
+        problem_text=problem.read_text(encoding="utf-8"),
+        run_id="run-two",
+    )
+
+    memory = graph.coordinator_memory(problem_id, current_run_id="run-two")
+
+    assert memory["review_required_before_delegation"] is True
+    overview = memory["overview"]
+    assert isinstance(overview, dict)
+    assert overview["prior_node_count"] > 0
+    assert overview["node_type_counts"]["claim"] == 1
+    frontier = memory["frontier"]
+    assert isinstance(frontier, dict)
+    assert frontier["unresolved_claims"]
+    assert "Before creating initial assignments" in memory["instruction"]
+
+
 def test_obsidian_note_paths_use_titles_and_migrate_legacy_generated_names(
     tmp_path: Path,
 ) -> None:

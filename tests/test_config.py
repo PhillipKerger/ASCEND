@@ -125,6 +125,8 @@ def test_role_specific_research_defaults() -> None:
     assert config.codex.research_worker_effort == "xhigh"
     assert config.research.maximum_pending_assignments == 32
     assert config.research.maximum_coordinator_decisions == 256
+    assert config.research.maximum_coordinator_context_characters == 800_000
+    assert config.research.maximum_coordinator_requested_artifacts == 8
     assert config.codex.limits.max_research_coordinator_decisions == 256
 
 
@@ -474,6 +476,8 @@ def test_checked_in_example_config_loads() -> None:
     assert config.research.maximum_concurrent_agents == 32
     assert config.research.maximum_pending_assignments == 32
     assert config.research.maximum_coordinator_decisions == 256
+    assert config.research.maximum_coordinator_context_characters == 800_000
+    assert config.research.maximum_coordinator_requested_artifacts == 8
     assert config.research.maximum_assignments_per_round == 32
     assert config.research.maximum_rounds == 8
     assert config.models.research_coordinator.model == "gpt-5.6-sol"

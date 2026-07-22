@@ -129,6 +129,21 @@ class AccountingModelClient:
 
         return self._budget.remaining().calls
 
+    def final_input_characters(
+        self,
+        request: ModelRequest,
+        output_type: type[BaseModel],
+    ) -> int:
+        """Forward backend-specific final-input measurement through accounting."""
+
+        measure = getattr(self._delegate, "final_input_characters", None)
+        if callable(measure):
+            value = measure(request, output_type)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                return value
+            raise TypeError("model client's final_input_characters returned an invalid value")
+        return len(request.instructions) + len(request.input_text) + 32_768
+
     async def generate_structured(
         self,
         request: ModelRequest,

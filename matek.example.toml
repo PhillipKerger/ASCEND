@@ -72,6 +72,10 @@ minimum_initial_agents = 16
 maximum_concurrent_agents = 32
 maximum_pending_assignments = 32
 maximum_coordinator_decisions = 256
+# Hard ceiling on the final serialized coordinator provider input, including framing.
+maximum_coordinator_context_characters = 800000
+# Maximum omitted artifacts or graph nodes the coordinator may request per activation.
+maximum_coordinator_requested_artifacts = 8
 require_foundational_audit = true
 require_domain_audit = true
 require_hostile_audit = true

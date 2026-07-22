@@ -151,6 +151,8 @@ minimum_initial_agents = 16   # initial assignments; configurable down to the sa
 maximum_concurrent_agents = 32 # research-worker concurrency ceiling
 maximum_pending_assignments = 32 # total open (queued plus running) assignment ceiling
 maximum_coordinator_decisions = 256 # event-indexed coordinator-decision ceiling
+maximum_coordinator_context_characters = 800000 # final serialized provider input ceiling
+maximum_coordinator_requested_artifacts = 8 # bounded on-demand evidence retrieval
 ```
 
 Reasoning effort accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`, subject
@@ -186,6 +188,7 @@ These controls have different expected effects:
 | `minimum_initial_agents` | More independent starting approaches and better route diversity | More model calls and allowance usage at bootstrap; the default is 16 and the safety floor is 4 |
 | `maximum_pending_assignments` | Allows a larger total open set of queued plus running assignments | A large open set may become stale as new evidence arrives; default 32 |
 | `maximum_coordinator_decisions` | Allows more completion- and audit-driven redirects/refills | Potentially much more elapsed time and total usage; default 256 |
+| `maximum_coordinator_context_characters` | Bounds each final serialized coordinator input; default 800,000 | Lower values compact sooner and may require on-demand evidence retrieval |
 | `maximum_concurrent_agents` | Allows up to 32 research workers to run simultaneously by default when backend limits permit | Does not increase research breadth by itself; high concurrency can encounter provider rate limits |
 | `research_coordinator_effort` | Gives global synthesis, prioritization, repair planning, and the final research judgment more reasoning effort | `max` can be slower and more allowance-intensive; stronger results are not guaranteed |
 | `research_worker_effort` | Gives each independent proof-search call more reasoning effort | Higher effort is slower and more allowance-intensive; default `xhigh` |
@@ -227,8 +230,11 @@ The prompt flow is:
 1. The prompt compiler turns `problem.md` and the preserved framework into the complete compiled
    research prompt (the “big prompt”) and an exact machine-readable claim contract.
 2. The GPT 5.6 Sol max-effort coordinator receives that prompt unchanged, the claim contract, and
-   the scheduler constraints. The API adapter also requests pro mode. Its first decision creates
-   sixteen precise, materially different assignments by default.
+   the scheduler constraints. Before its first decision, it also reviews the selected knowledge
+   graph's problem-scoped overview and frontier when prior graph memory exists, then uses stable
+   node IDs and prior results, failures, gaps, audits, and tasks to shape delegation. The API
+   adapter also requests pro mode. Its first decision creates sixteen precise, materially
+   different assignments by default.
 3. Every independent GPT 5.6 Sol xhigh worker receives the complete big prompt, the exact
    claim contract, and one assignment containing its route, inputs, expected output, and stopping
    condition, plus a bounded graph slice containing its stable task/target IDs and relevant prior
@@ -243,9 +249,11 @@ The prompt flow is:
    If the optional graph proposal is malformed or stale, that mutation is recorded as a warning;
    the already validated scientific report remains available to the coordinator.
 5. The coordinator consumes newly useful events together with the unchanged big prompt and claim
-   contract, assignment lifecycle state, approach registry, audit obligations, and complete raw
-   reports. It can immediately redirect, retire, or add assignments, and the scheduler refills
-   available live-pool slots.
+   contract, assignment lifecycle state, approach registry, and audit obligations. A deterministic
+   builder measures the final provider input and, when needed, substitutes structured summaries
+   and authenticated references for older full reports. New, candidate-producing, redirected, and
+   explicitly requested reports have priority. It can immediately redirect, retire, or add
+   assignments, and the scheduler refills available live-pool slots.
 6. `research/continuity.json` remains a convenient index of promising, partial, ruled-out, and
    blocked routes, exact gaps, dependencies, prior directives, and audit repairs. The canonical
    scheduler checkpoint, immutable event evidence, and full reports remain available; the index
@@ -258,6 +266,23 @@ publication finishable on resume. Immutable event/decision files and hashed raw 
 that checkpoint. `research/coordinator/mailbox.json`, assignment files, the registry, and the
 continuity index are materialized views. MATEK does not claim it can reconstruct a deleted or
 invalid canonical scheduler checkpoint from evidence alone.
+
+The original claim contract remains the only terminal scientific target. A reduction, special
+case, weaker theorem, added-hypothesis theorem, reformulation, or isolated lemma is preserved as
+intermediate progress, but MATEK does not treat it as an allowed final answer. If the coordinator
+recommends stopping only because such progress has not yet closed the original problem, MATEK
+records and declines that recommendation, then asks for new or redirected work. Research ends
+scientifically only with acceptance of the exact claim or a verified exact refutation; configured
+resource/provider limits can still produce a truthful budget outcome or retriable pause.
+
+Coordinator transport defaults to a conservative 800,000-character ceiling measured after the
+backend has serialized its final input. Compaction never byte-truncates JSON or mathematics. Each
+activation persists a manifest with included and omitted artifact IDs, validated relative paths,
+hashes, graph revisions, character/token estimates, and the exact payload hash. Codex can inspect
+catalogued files when deeper evidence is needed; an API coordinator can request up to eight
+omitted artifacts or graph nodes for its next bounded activation. A provider size rejection
+creates a smaller, distinct request. If the unchanged prompt and other mandatory state alone do
+not fit, MATEK pauses with `CONTEXT_BUDGET_EXHAUSTED` and preserves all completed work.
 
 `--max-agents N` controls how many research workers may run concurrently. The initial portfolio
 contains 16 assignments by default; the coordinator may refill or expand the live pool to 32

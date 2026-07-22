@@ -167,6 +167,54 @@ def test_report_separates_retriable_workflow_from_candidate_scientific_state(
     assert "Recovery: Retry the missing hostile audit." in markdown
 
 
+def test_report_preserves_active_research_progress_during_context_pause(tmp_path: Path) -> None:
+    run_root = create_run_root(tmp_path, run_id="20260722T125000Z-context-paused-abcdef")
+    (run_root / "input" / "problem.md").write_text("Prove P.\n", encoding="utf-8")
+    coordinator = run_root / "research" / "coordinator"
+    coordinator.mkdir(parents=True)
+    (coordinator / "state.json").write_text(
+        json.dumps(
+            {
+                "phase": "running",
+                "next_event_sequence": 31,
+                "decisions": [{"decision": {}}, {"decision": {}}],
+                "assignments": [
+                    {"status": "completed"},
+                    {"status": "completed"},
+                    {"status": "completed"},
+                    {"status": "running"},
+                    {"status": "queued"},
+                ],
+                "failed_candidate_attempts": 2,
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = new_run_state("20260722T125000Z-context-paused-abcdef", tmp_path, run_root)
+    state.metadata.update(
+        {
+            "research_status": "RESEARCH_IN_PROGRESS",
+            "workflow_status": "PAUSED_RETRIABLE",
+            "strongest_result": "A durable partial theorem with one open lemma.",
+            "resume_action": "Resume the smaller pending coordinator request.",
+        }
+    )
+
+    result = write_final_report(state)
+
+    assert result.report.scientific_status == "RESEARCH_IN_PROGRESS"
+    assert result.report.workflow_status == "PAUSED_RETRIABLE"
+    assert result.report.strongest_result == "A durable partial theorem with one open lemma."
+    assert result.report.research_checkpoint["completed_reports"] == 3
+    assert result.report.research_checkpoint["open_assignments"] == 2
+    assert result.report.research_checkpoint["rejected_candidates"] == 2
+    markdown = result.report_markdown.read_text(encoding="utf-8")
+    assert "Research | `RESEARCH_IN_PROGRESS`" in markdown
+    assert "Open assignments: `2`" in markdown
+    assert "Rejected candidates: `2`" in markdown
+    assert "Resume the smaller pending coordinator request." in markdown
+
+
 def test_report_separates_research_manuscript_publication_and_lean_statuses(
     tmp_path: Path,
 ) -> None:

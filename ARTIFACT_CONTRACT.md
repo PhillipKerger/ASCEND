@@ -27,6 +27,7 @@ Every run must follow this layout:
 │   │   ├── state.json
 │   │   ├── mailbox.json
 │   │   ├── requests/<zero-padded-decision-id>.json
+│   │   ├── context-manifests/<decision-id>-<generation>.json
 │   │   └── decisions/<zero-padded-decision-id>.json
 │   ├── events/<zero-padded-sequence>.json
 │   ├── assignments/<assignment-id>.json
@@ -132,7 +133,12 @@ manuscript source, bibliography, and final verification outputs.
 Research worker, source-verification, coordinator-decision, candidate-attempt, and audit JSON
 artifacts are immutable evidence objects. Their hashes are recorded before a corresponding
 monotonically sequenced event becomes visible. Coordinator request payloads are also immutable and
-their paths and hashes are bound into the canonical pending-request state before a model call. Each
+their paths and hashes are bound into the canonical pending-request state before a model call.
+Every request is paired with an immutable context manifest recording its event cursor, normal or
+compact mode, final provider-input character count, token estimate, payload hash, inclusion
+reasons, aggregated events, omitted authenticated references, and effective limit. Rebuilt
+generations use distinct request and manifest paths, so a provider-rejected oversized payload is
+never silently replayed unchanged. Each
 event is created atomically as one immutable eight-digit file such as
 `research/events/00000001.json`; a partial append can therefore never corrupt the entire research
 evidence stream.

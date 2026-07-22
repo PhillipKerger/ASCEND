@@ -1867,6 +1867,12 @@ class WorkflowRunner:
                             if self.config.backend.provider == "codex"
                             else self.config.research.maximum_coordinator_decisions
                         ),
+                        maximum_coordinator_context_characters=(
+                            self.config.research.maximum_coordinator_context_characters
+                        ),
+                        maximum_coordinator_requested_artifacts=(
+                            self.config.research.maximum_coordinator_requested_artifacts
+                        ),
                     ),
                     coordinator_settings=self._model_settings("research_coordinator"),
                     worker_settings=self._model_settings("research_worker"),
@@ -1888,6 +1894,7 @@ class WorkflowRunner:
                     knowledge_graph=self._knowledge_graph_for_state(state),
                     graph_problem_id=self._graph_problem_id(state),
                     run_id=state.run_id,
+                    coordinator_can_read_files=(self.config.backend.provider == "codex"),
                     graph_replay_dir=graph_replay_dir,
                     progress=self.dependencies.progress,
                 )
@@ -1900,8 +1907,14 @@ class WorkflowRunner:
             ResearchOutcome.REJECTED: ScientificStatus.RESEARCH_REJECTED,
             ResearchOutcome.PARTIAL: ScientificStatus.RESEARCH_PARTIAL,
             ResearchOutcome.BUDGET_EXHAUSTED: ScientificStatus.RESEARCH_PARTIAL,
-            ResearchOutcome.PAUSED_RETRIABLE: ScientificStatus.CANDIDATE_AWAITING_AUDIT,
-        }[result.outcome]
+        }.get(result.outcome)
+        if result.outcome is ResearchOutcome.PAUSED_RETRIABLE:
+            status = (
+                ScientificStatus.CANDIDATE_AWAITING_AUDIT
+                if result.pause_reason == "MANDATORY_AUDIT_UNAVAILABLE"
+                else ScientificStatus.RESEARCH_IN_PROGRESS
+            )
+        assert status is not None
         graph = self._knowledge_graph_for_state(state)
         graph.record_research_result(
             problem_id=self._graph_problem_id(state),
@@ -1938,10 +1951,16 @@ class WorkflowRunner:
             interrupt_stage(
                 state,
                 StageName.RESEARCH,
-                "mandatory candidate audit is unavailable; resume retries only missing audits",
+                (
+                    "mandatory candidate audit is unavailable; resume retries only missing audits"
+                    if result.pause_reason == "MANDATORY_AUDIT_UNAVAILABLE"
+                    else "research coordinator context budget is exhausted; resume rebuilds "
+                    "the bounded activation"
+                ),
             )
             state.metadata["workflow_status"] = WorkflowExecutionStatus.PAUSED_RETRIABLE.value
-            state.metadata["research_status"] = ScientificStatus.CANDIDATE_AWAITING_AUDIT.value
+            state.metadata["research_status"] = status.value
+            state.metadata["research_pause_reason"] = result.pause_reason
             store.save(state)
             return result
         research_paths = dict(result.artifacts.paths)

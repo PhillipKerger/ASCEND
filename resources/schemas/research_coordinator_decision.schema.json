@@ -107,6 +107,22 @@
       "title": "Redirect Assignment Ids",
       "type": "array"
     },
+    "requested_artifact_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Requested Artifact Ids",
+      "type": "array"
+    },
+    "requested_graph_node_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 32,
+      "title": "Requested Graph Node Ids",
+      "type": "array"
+    },
     "retire_assignment_ids": {
       "items": {
         "type": "string"
@@ -152,7 +168,9 @@
     "candidate_report_ids",
     "stop_recommended",
     "stop_reason",
-    "stop_category"
+    "stop_category",
+    "requested_artifact_ids",
+    "requested_graph_node_ids"
   ],
   "title": "ResearchCoordinatorDecision",
   "type": "object"

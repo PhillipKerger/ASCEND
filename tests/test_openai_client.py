@@ -10,6 +10,7 @@ from matek_theorem_agent.config import ModelSettings
 from matek_theorem_agent.openai_client import (
     IncompleteResponseError,
     ModelAdapterError,
+    ModelInputTooLargeError,
     ModelRefusalError,
     ModelRequest,
     ModelTransportError,
@@ -310,6 +311,21 @@ async def test_nontransient_error_is_not_retried_and_is_redacted() -> None:
         await client.generate_structured(ModelRequest("d", "u", ModelSettings()), Answer)
     assert len(sdk.responses.calls) == 1
     assert "sk-secretsecret" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_input_too_large_is_classified_without_identical_transport_retry() -> None:
+    class TooLarge(Exception):
+        status_code = 400
+        code = "input_too_large"
+
+    sdk = FakeSDK([TooLarge("maximum context length exceeded")])
+    client = OpenAIResponsesClient(sdk, max_attempts=4)
+
+    with pytest.raises(ModelInputTooLargeError):
+        await client.generate_structured(ModelRequest("d", "oversized", ModelSettings()), Answer)
+
+    assert len(sdk.responses.calls) == 1
 
 
 @pytest.mark.asyncio

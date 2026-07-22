@@ -13,6 +13,11 @@ the field is mandatory and must not be omitted.
 Do not hide unresolved obligations. If the route is incomplete, return an incomplete package
 with a precise obligation list rather than presenting it as solved.
 
+There are no allowed terminal reductions. Reject any attempt to package a proper subclass,
+weaker conclusion, added hypothesis, equivalent restatement without proof, or unresolved reduced
+claim as the exact theorem. A reduction is usable only when the downstream result and complete
+transfer to the unchanged claim contract are both proved.
+
 When the package resolves the target by an existing theorem, identify that theorem and its exact
 hypotheses as imported material. Do not relabel a known result, its exposition, or its
 formalization as a new theorem.

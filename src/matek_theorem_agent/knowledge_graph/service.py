@@ -2925,19 +2925,44 @@ class KnowledgeGraph:
             }
             return assignment_to_task, contexts, state.revision
 
-    def coordinator_memory(self, problem_id: str) -> dict[str, object]:
+    def coordinator_memory(
+        self,
+        problem_id: str,
+        *,
+        current_run_id: str | None = None,
+    ) -> dict[str, object]:
         with self._locked():
             self._recover_pending_unlocked()
             state = self._load_state_unlocked()
             nodes = self._load_nodes_unlocked(include_human_notes=True)
             frontier = self._frontier_unlocked(state, nodes, problem_id)
+            problem_nodes = [node for node in nodes if node.problem_id == problem_id]
+            prior_nodes = [
+                node
+                for node in problem_nodes
+                if current_run_id is None or node.created_in_run != current_run_id
+            ]
+            node_type_counts = {
+                node_type.value: sum(node.node_type is node_type for node in problem_nodes)
+                for node_type in NodeType
+                if any(node.node_type is node_type for node in problem_nodes)
+            }
+            review_required = bool(prior_nodes)
             return {
                 "graph_revision": state.revision,
                 "problem_id": problem_id,
+                "review_required_before_delegation": review_required,
+                "overview": {
+                    "node_count": len(problem_nodes),
+                    "prior_node_count": len(prior_nodes),
+                    "node_type_counts": node_type_counts,
+                },
                 "frontier": frontier.model_dump(mode="json"),
                 "instruction": (
-                    "Use stable node IDs in target_node_ids. Do not reopen a blocked or "
-                    "refuted route unless new evidence is stated explicitly."
+                    "Before creating initial assignments, review this graph overview and "
+                    "frontier and use prior results, failures, gaps, audits, and tasks to shape "
+                    "the portfolio. Use stable node IDs in target_node_ids. Do not reopen a "
+                    "blocked or refuted route unless new evidence is stated explicitly."
                 ),
             }
 

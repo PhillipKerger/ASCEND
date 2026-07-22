@@ -19,10 +19,24 @@ from pydantic import (
 
 from ..budget import BudgetExceeded
 from ..config import ModelSettings
+from ..coordinator_context import (
+    CoordinatorArtifactReference,
+    CoordinatorContextBudgetExhausted,
+    CoordinatorContextBuilder,
+    CoordinatorContextManifest,
+    CoordinatorEvidenceItem,
+    serialize_coordinator_payload,
+)
 from ..failures import classify_failure, recovery_obligations
 from ..knowledge_graph import GraphPatch, KnowledgeGraph
 from ..models import FailureCategory
-from ..openai_client import ModelClient, ModelRequest, ModelResult, model_request_cache_key
+from ..openai_client import (
+    ModelClient,
+    ModelInputTooLargeError,
+    ModelRequest,
+    ModelResult,
+    model_request_cache_key,
+)
 from ..progress import Ascension, ProgressReporter, no_progress
 from ..redaction import redact_text
 from ..source_identifiers import tool_metadata_source_identifiers
@@ -76,6 +90,22 @@ class ResearchOutcome(StrEnum):
     PARTIAL = "partial"
     BUDGET_EXHAUSTED = "budget_exhausted"
     PAUSED_RETRIABLE = "paused_retriable"
+
+
+def exact_target_policy() -> dict[str, object]:
+    """Return the immutable-by-convention terminal trust policy sent to every research role."""
+
+    return {
+        "terminal_reductions_allowed": False,
+        "intermediate_reductions_may_be_recorded": True,
+        "acceptance_requires_exact_claim_contract": True,
+        "scientific_no_progress_stop_allowed": False,
+        "forced_stop_conditions": [
+            "configured resource or provider limit",
+            "verified exact counterexample or disproof",
+            "integrity or security failure",
+        ],
+    }
 
 
 class ResearchAssignment(BaseModel):
@@ -146,6 +176,18 @@ class ResearchCoordinatorDecision(BaseModel):
     stop_recommended: bool = False
     stop_reason: str | None = None
     stop_category: Literal["scientific", "refuted", "budget"] = "scientific"
+    requested_artifact_ids: list[str] = Field(default_factory=list, max_length=32)
+    requested_graph_node_ids: list[str] = Field(default_factory=list, max_length=32)
+
+    @field_validator("requested_artifact_ids", "requested_graph_node_ids")
+    @classmethod
+    def requested_evidence_ids_are_unique_and_nonblank(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("requested evidence IDs must not be blank")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("requested evidence IDs must be unique")
+        return normalized
 
 
 class AssignmentLifecycle(StrEnum):
@@ -163,6 +205,7 @@ class ResearchAssignmentState(BaseModel):
 
     assignment: ResearchAssignment
     admitted_by_decision: int
+    exact_target_policy_version: Literal[1] | None = None
     status: AssignmentLifecycle = AssignmentLifecycle.QUEUED
     launched: bool = False
     request_settings: ModelSettings | None = None
@@ -189,10 +232,14 @@ class ResearchCoordinatorDecisionRecord(BaseModel):
     request_path: str
     request_sha256: str
     request_key: str
+    context_manifest_path: str | None = None
+    context_manifest_sha256: str | None = None
 
-    @field_validator("request_sha256", "request_key")
+    @field_validator("request_sha256", "request_key", "context_manifest_sha256")
     @classmethod
-    def request_hashes_are_sha256(cls, value: str) -> str:
+    def request_hashes_are_sha256(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not re.fullmatch(r"[0-9a-f]{64}", value):
             raise ValueError("coordinator request identity must be a SHA-256 digest")
         return value
@@ -210,8 +257,19 @@ class PendingCoordinatorRequest(BaseModel):
     request_path: str
     request_sha256: str
     request_payload: dict[str, object]
+    context_generation: int = Field(default=1, ge=1)
+    context_character_limit: int = Field(default=800_000, gt=0)
+    context_manifest_path: str | None = None
+    context_manifest_sha256: str | None = None
     headroom_assignment_id: str | None = None
     headroom_worker_request_key: str | None = None
+
+    @field_validator("request_sha256", "context_manifest_sha256")
+    @classmethod
+    def persisted_hashes_are_sha256(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[0-9a-f]{64}", value):
+            raise ValueError("pending coordinator hashes must be SHA-256 digests")
+        return value
 
     @model_validator(mode="after")
     def validate_headroom_exchange(self) -> PendingCoordinatorRequest:
@@ -221,6 +279,8 @@ class PendingCoordinatorRequest(BaseModel):
             r"[0-9a-f]{64}", self.headroom_worker_request_key
         ):
             raise ValueError("coordinator headroom request identity is invalid")
+        if (self.context_manifest_path is None) != (self.context_manifest_sha256 is None):
+            raise ValueError("coordinator context manifest metadata must be complete")
         return self
 
 
@@ -258,6 +318,7 @@ class CandidateAttemptState(BaseModel):
     attempt_name: str
     report_ids: list[str]
     source: Literal["worker", "coordinator"]
+    exact_target_policy_version: Literal[1] | None = None
     packager_settings: ModelSettings
     audit_settings: ModelSettings
     judge_settings: ModelSettings
@@ -325,6 +386,8 @@ class ResearchSchedulerState(BaseModel):
     model_response_ids_by_call_key: dict[str, str] = Field(default_factory=dict)
     response_ids: list[str] = Field(default_factory=list)
     execution_issues: list[ExecutionIssue] = Field(default_factory=list)
+    requested_artifact_ids: list[str] = Field(default_factory=list)
+    requested_graph_node_ids: list[str] = Field(default_factory=list)
 
     def assignment_record(self, assignment_id: str) -> ResearchAssignmentState | None:
         return next(
@@ -676,6 +739,8 @@ class ResearchWorkflowSettings(BaseModel):
     maximum_concurrent_agents: int = Field(default=32, ge=1)
     maximum_pending_assignments: int = Field(default=32, ge=1)
     maximum_coordinator_decisions: int = Field(default=256, ge=1)
+    maximum_coordinator_context_characters: int = Field(default=800_000, ge=100_000)
+    maximum_coordinator_requested_artifacts: int = Field(default=8, ge=1, le=32)
     maximum_model_calls: int | None = Field(default=None, ge=0)
     run_complexity_audit: bool | None = None
 
@@ -742,6 +807,7 @@ class ResearchResult(BaseModel):
     continuity: ResearchContinuityState | None = None
     acceptance_gate: ResearchAcceptanceGate | None = None
     execution_issues: list[ExecutionIssue] = Field(default_factory=list)
+    pause_reason: str | None = None
     resume_action: str | None = None
     artifacts: ArtifactManifest = Field(default_factory=ArtifactManifest)
     calls: CallManifest
@@ -1284,6 +1350,7 @@ async def run_adaptive_research(
     knowledge_graph: KnowledgeGraph | None = None,
     graph_problem_id: str | None = None,
     run_id: str | None = None,
+    coordinator_can_read_files: bool = False,
     graph_replay_dir: Path | None = None,
     progress: ProgressReporter = no_progress,
 ) -> ResearchResult:
@@ -1317,6 +1384,7 @@ async def run_adaptive_research(
     coordinator_dir = ensure_stage_directory(destination / "coordinator")
     decisions_dir = ensure_stage_directory(coordinator_dir / "decisions")
     requests_dir = ensure_stage_directory(coordinator_dir / "requests")
+    context_manifests_dir = ensure_stage_directory(coordinator_dir / "context-manifests")
     events_dir = ensure_stage_directory(destination / "events")
     assignments_dir = ensure_stage_directory(destination / "assignments")
     workers_dir = ensure_stage_directory(destination / "workers")
@@ -1543,10 +1611,14 @@ async def run_adaptive_research(
     )
     pending_coordinator = scheduler.pending_coordinator_request
     if pending_coordinator is not None:
-        pending_input = json.dumps(
-            pending_coordinator.request_payload,
-            ensure_ascii=False,
-            sort_keys=True,
+        pending_input = (
+            serialize_coordinator_payload(pending_coordinator.request_payload)
+            if pending_coordinator.context_manifest_path is not None
+            else json.dumps(
+                pending_coordinator.request_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
         )
         frozen_request_key = tracker.request_key(
             instructions=coordinator_prompt,
@@ -1623,6 +1695,8 @@ async def run_adaptive_research(
             "admitted_by_coordinator_decision": record.admitted_by_decision,
             "repair_generation": record.repair_generation,
         }
+        if record.exact_target_policy_version == 1:
+            payload["exact_target_policy"] = exact_target_policy()
         if record.repair_generation:
             payload["recovery_instruction"] = (
                 "This is the one bounded schema/execution repair generation. Return a valid "
@@ -1641,6 +1715,13 @@ async def run_adaptive_research(
                 }
             )
         return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    def candidate_gate_policy_payload(attempt: CandidateAttemptState) -> dict[str, object]:
+        """Add the policy to new gates without changing identities of legacy resumptions."""
+
+        if attempt.exact_target_policy_version == 1:
+            return {"exact_target_policy": exact_target_policy()}
+        return {}
 
     pending_headroom_id = (
         scheduler.pending_coordinator_request.headroom_assignment_id
@@ -1795,8 +1876,11 @@ async def run_adaptive_research(
             raise StageValidationError(
                 f"Research coordinator decision {expected_id} changed after checkpoint."
             )
-        expected_request_relative = f"coordinator/requests/{expected_id:08d}.json"
-        if decision_record.request_path != expected_request_relative:
+        if not re.fullmatch(
+            rf"coordinator/requests/{expected_id:08d}"
+            r"(?:-(?:bounded|rebuild)-[0-9]{2})?\.json",
+            decision_record.request_path,
+        ):
             raise StageValidationError(
                 f"Research coordinator request {expected_id} has an invalid artifact path."
             )
@@ -1813,9 +1897,14 @@ async def run_adaptive_research(
             raise StageValidationError(
                 f"Research coordinator request {expected_id} is not a JSON object."
             )
+        serialized_request = (
+            serialize_coordinator_payload(request_payload)
+            if decision_record.context_manifest_path is not None
+            else json.dumps(request_payload, ensure_ascii=False, sort_keys=True)
+        )
         expected_request_key = tracker.request_key(
             instructions=coordinator_prompt,
-            input_text=json.dumps(request_payload, ensure_ascii=False, sort_keys=True),
+            input_text=serialized_request,
             settings=decision_record.request_settings,
             output_type=ResearchCoordinatorDecision,
         )
@@ -1828,6 +1917,32 @@ async def run_adaptive_research(
             raise StageValidationError(
                 f"Research coordinator decision {expected_id} is not bound to its request."
             )
+        if (decision_record.context_manifest_path is None) != (
+            decision_record.context_manifest_sha256 is None
+        ):
+            raise StageValidationError(
+                f"Research coordinator decision {expected_id} has partial context metadata."
+            )
+        if decision_record.context_manifest_path is not None:
+            manifest_path = resolved_artifact(decision_record.context_manifest_path)
+            if (
+                not manifest_path.is_file()
+                or sha256_file(manifest_path) != decision_record.context_manifest_sha256
+            ):
+                raise StageValidationError(
+                    f"Research coordinator context {expected_id} is missing or changed."
+                )
+            manifest = CoordinatorContextManifest.model_validate_json(
+                read_regular_text(manifest_path)
+            )
+            if (
+                manifest.decision_id != expected_id
+                or manifest.after_event_sequence != decision_record.decision.after_event_sequence
+                or manifest.payload_sha256 != sha256_text(serialized_request)
+            ):
+                raise StageValidationError(
+                    f"Research coordinator context {expected_id} is bound to other evidence."
+                )
         if not any(
             event.get("kind") == "coordinator_decision"
             and event.get("decision_id") == expected_id
@@ -2250,6 +2365,7 @@ async def run_adaptive_research(
                 {
                     "audit_role": name,
                     "claim_contract": compiled.claim_contract.as_dict(),
+                    **candidate_gate_policy_payload(attempt),
                     "candidate_package": current_candidate.model_dump(mode="json"),
                 },
                 ensure_ascii=False,
@@ -2274,6 +2390,7 @@ async def run_adaptive_research(
         judge_input = json.dumps(
             {
                 "claim_contract": compiled.claim_contract.as_dict(),
+                **candidate_gate_policy_payload(attempt),
                 "candidate_package": current_candidate.model_dump(mode="json"),
                 "independent_audits": {
                     name: current_audits[name].model_dump(mode="json") for name in expected_audits
@@ -2532,12 +2649,21 @@ async def run_adaptive_research(
         atomic_write_json(destination / "result.json", result)
         return result
 
-    async def pause_retriable(*, obligations: list[str]) -> ResearchResult:
+    async def pause_retriable(
+        *,
+        obligations: list[str],
+        phase: SchedulerPhase = SchedulerPhase.AWAITING_AUDITS,
+        pause_reason: str = "MANDATORY_AUDIT_UNAVAILABLE",
+        resume_action: str = (
+            "Run `matek resume` to retry only missing mandatory audits; completed audit "
+            "artifacts remain checkpointed."
+        ),
+    ) -> ResearchResult:
         """Return a durable nonterminal snapshot while preserving scheduler identity."""
 
         if active:
             await pause_active(requeue_cancelled=True)
-        scheduler.phase = SchedulerPhase.AWAITING_AUDITS
+        scheduler.phase = phase
         persist_research_index()
         strongest_result = (
             current_candidate.exact_theorem
@@ -2573,10 +2699,8 @@ async def run_adaptive_research(
             research_subagents_used=sum(record.launched for record in scheduler.assignments),
             continuity=latest_continuity,
             execution_issues=list(scheduler.execution_issues),
-            resume_action=(
-                "Run `matek resume` to retry only missing mandatory audits; completed audit "
-                "artifacts remain checkpointed."
-            ),
+            pause_reason=pause_reason,
+            resume_action=resume_action,
             calls=CallManifest(
                 model_calls=tracker.calls,
                 response_ids=list(dict.fromkeys(tracker.response_ids)),
@@ -2599,7 +2723,7 @@ async def run_adaptive_research(
         return events
 
     def coordinator_feedback_due() -> bool:
-        return any(
+        return bool(scheduler.requested_artifact_ids or scheduler.requested_graph_node_ids) or any(
             event.get("kind")
             in {
                 "worker_report_accepted",
@@ -2608,6 +2732,9 @@ async def run_adaptive_research(
                 "graph_mutation_rejected",
                 "candidate_audit_failed",
                 "candidate_audit_unavailable",
+                "coordinator_context_compacted",
+                "coordinator_input_too_large",
+                "coordinator_scientific_stop_declined",
             }
             for event in recent_events()
         )
@@ -2626,6 +2753,246 @@ async def run_adaptive_research(
             return settings.minimum_initial_assignments
         remaining_after_coordinator = max(tracker.maximum_calls - tracker.calls - 1, 0)
         return min(settings.minimum_initial_assignments, remaining_after_coordinator)
+
+    def compact_text(value: str | None, *, words: int = 48) -> str:
+        """Extract a deterministic word-boundary summary without slicing JSON or bytes."""
+
+        normalized = " ".join((value or "").split())
+        parts = normalized.split()
+        if len(parts) <= words:
+            return normalized
+        return " ".join(parts[:words]) + " […]"
+
+    def coordinator_assignment_table() -> list[dict[str, object]]:
+        return [
+            {
+                "assignment_id": record.assignment.id,
+                "status": record.status.value,
+                "approach_family": record.assignment.approach_family,
+                "objective": compact_text(record.assignment.task),
+                "artifact_id": (
+                    f"worker-report:{record.assignment.id}" if record.report_path else None
+                ),
+                "artifact_path": record.report_path,
+                "artifact_sha256": record.report_sha256,
+                "completed_event_sequence": record.completed_event_sequence,
+            }
+            for record in scheduler.assignments
+        ]
+
+    def coordinator_report_evidence() -> list[CoordinatorEvidenceItem]:
+        latest_redirects = (
+            set(scheduler.decisions[-1].decision.redirect_assignment_ids)
+            if scheduler.decisions
+            else set()
+        )
+        evidence: list[CoordinatorEvidenceItem] = []
+        for record in scheduler.assignments:
+            report = reports_by_id.get(record.assignment.id)
+            if report is None or record.report_path is None or record.report_sha256 is None:
+                continue
+            report_path = resolved_artifact(record.report_path)
+            if not report_path.is_file() or report_path.is_symlink():
+                raise StageValidationError(
+                    f"Coordinator report path is unavailable: {record.report_path}"
+                )
+            if sha256_file(report_path) != record.report_sha256:
+                raise StageValidationError(
+                    f"Coordinator report hash changed: {record.assignment.id}"
+                )
+            report_relative = report_path.relative_to(destination.parent).as_posix()
+            newly_completed = (
+                record.completed_event_sequence is not None
+                and record.completed_event_sequence > scheduler.coordinator_ack_event_sequence
+            )
+            requested = f"worker-report:{record.assignment.id}" in set(
+                scheduler.requested_artifact_ids
+            )
+            candidate = report.status is WorkerStatus.CANDIDATE_COMPLETE
+            redirected = record.assignment.id in latest_redirects
+            if requested:
+                priority, reason = 0, "explicitly requested by the coordinator"
+            elif newly_completed and candidate:
+                priority, reason = 1, "newly completed candidate-producing report"
+            elif candidate:
+                priority, reason = 2, "candidate-producing report"
+            elif newly_completed:
+                priority, reason = 3, "newly completed report"
+            elif redirected:
+                priority, reason = 4, "explicitly redirected assignment"
+            else:
+                priority, reason = 10, "older completed report fitting remaining context"
+            evidence.append(
+                CoordinatorEvidenceItem(
+                    reference=CoordinatorArtifactReference(
+                        artifact_id=f"worker-report:{record.assignment.id}",
+                        kind="worker_report",
+                        relative_path=report_relative,
+                        sha256=record.report_sha256,
+                        assignment_id=record.assignment.id,
+                    ),
+                    summary={
+                        "assignment_id": report.assignment_id,
+                        "status": report.status.value,
+                        "approach_family": record.assignment.approach_family,
+                        "mechanism": compact_text(report.mechanism or record.assignment.task),
+                        "formal_results": [
+                            compact_text(item, words=64) for item in report.formal_results
+                        ],
+                        "counterexamples": [
+                            compact_text(item, words=64) for item in report.counterexamples
+                        ],
+                        "exact_gap": compact_text(report.exact_gap, words=64),
+                        "dependencies": [
+                            compact_text(item, words=32) for item in report.dependencies
+                        ],
+                        "path": report_relative,
+                        "sha256": record.report_sha256,
+                        "completed_event_sequence": record.completed_event_sequence,
+                    },
+                    full_content=report.model_dump(mode="json"),
+                    priority=priority,
+                    inclusion_reason=reason,
+                )
+            )
+        return evidence
+
+    def coordinator_graph_evidence(
+        graph_memory: dict[str, object] | None,
+        replay_payload: dict[str, object] | None = None,
+    ) -> list[CoordinatorEvidenceItem]:
+        if knowledge_graph is None or graph_memory is None:
+            return []
+        if replay_payload is not None:
+            raw_catalog = replay_payload.get("artifact_catalog", [])
+            raw_summaries = replay_payload.get("graph_node_summaries", [])
+            raw_full_nodes = replay_payload.get("full_graph_nodes", [])
+            if (
+                not isinstance(raw_catalog, list)
+                or not isinstance(raw_summaries, list)
+                or not isinstance(raw_full_nodes, list)
+            ):
+                raise StageValidationError("Archived coordinator graph evidence is malformed.")
+            summaries = {
+                item["matek_id"]: item
+                for item in raw_summaries
+                if isinstance(item, dict) and isinstance(item.get("matek_id"), str)
+            }
+            full_nodes = {
+                node["matek_id"]: item
+                for item in raw_full_nodes
+                if isinstance(item, dict)
+                and isinstance((node := item.get("node")), dict)
+                and isinstance(node.get("matek_id"), str)
+            }
+            replayed: list[CoordinatorEvidenceItem] = []
+            for raw_reference in raw_catalog:
+                if not isinstance(raw_reference, dict) or raw_reference.get("kind") != "graph_node":
+                    continue
+                reference = CoordinatorArtifactReference.model_validate(raw_reference)
+                node_id = reference.graph_node_id
+                if node_id is None or node_id not in summaries or node_id not in full_nodes:
+                    raise StageValidationError(
+                        "Archived coordinator graph catalog lacks its frozen node evidence."
+                    )
+                replayed.append(
+                    CoordinatorEvidenceItem(
+                        reference=reference,
+                        summary=dict(summaries[node_id]),
+                        full_content=dict(full_nodes[node_id]),
+                        priority=8,
+                        inclusion_reason="frozen graph evidence replay",
+                    )
+                )
+            return replayed
+        revision = graph_memory.get("graph_revision")
+        if not isinstance(revision, str):
+            raise StageValidationError("Coordinator graph memory has no frozen revision.")
+        frontier = graph_memory.get("frontier", {})
+        node_ids: set[str] = set(scheduler.requested_graph_node_ids)
+        if isinstance(frontier, dict):
+            for value in frontier.values():
+                if not isinstance(value, list):
+                    continue
+                for summary in value:
+                    if isinstance(summary, dict) and isinstance(summary.get("matek_id"), str):
+                        node_ids.add(str(summary["matek_id"]))
+        result: list[CoordinatorEvidenceItem] = []
+        for node_id in sorted(node_ids):
+            node = knowledge_graph.show(node_id)
+            if not node.path:
+                raise StageValidationError(f"Graph node {node_id!r} has no validated path.")
+            unresolved_node_path = knowledge_graph.vault_root / node.path
+            if unresolved_node_path.is_symlink():
+                raise StageValidationError(f"Graph node path is a symlink: {node.path}")
+            node_path = unresolved_node_path.resolve()
+            vault_root = knowledge_graph.vault_root.resolve()
+            try:
+                node_path.relative_to(vault_root)
+            except ValueError as exc:
+                raise StageValidationError(
+                    f"Graph node path escapes the frozen vault: {node.path}"
+                ) from exc
+            if not node_path.is_file():
+                raise StageValidationError(f"Graph node path is unavailable: {node.path}")
+            digest = sha256_file(node_path)
+            requested = node_id in scheduler.requested_graph_node_ids
+            result.append(
+                CoordinatorEvidenceItem(
+                    reference=CoordinatorArtifactReference(
+                        artifact_id=f"graph-node:{node_id}",
+                        kind="graph_node",
+                        relative_path=node_path.relative_to(
+                            knowledge_graph.project_root
+                        ).as_posix(),
+                        sha256=digest,
+                        graph_node_id=node_id,
+                        graph_revision=revision,
+                    ),
+                    summary={
+                        "matek_id": node.matek_id,
+                        "node_type": node.node_type.value,
+                        "title": node.title,
+                        "epistemic_status": node.epistemic_status.value,
+                        "workflow_status": node.workflow_status.value,
+                        "path": node_path.relative_to(knowledge_graph.project_root).as_posix(),
+                        "sha256": digest,
+                        "graph_revision": revision,
+                    },
+                    full_content={
+                        "reference": {
+                            "path": node_path.relative_to(knowledge_graph.project_root).as_posix(),
+                            "sha256": digest,
+                            "graph_revision": revision,
+                        },
+                        "node": node.model_dump(mode="json"),
+                    },
+                    priority=0 if requested else 8,
+                    inclusion_reason=(
+                        "explicitly requested graph node"
+                        if requested
+                        else "bounded graph frontier node fitting remaining context"
+                    ),
+                )
+            )
+        return result
+
+    def provider_input_character_measure(
+        serialized_payload: str,
+        model_settings: ModelSettings,
+    ) -> int:
+        request = ModelRequest(
+            instructions=coordinator_prompt,
+            input_text=serialized_payload,
+            settings=model_settings,
+        )
+        measure = getattr(coordinator_client, "final_input_characters", None)
+        if callable(measure):
+            value = measure(request, ResearchCoordinatorDecision)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                return value
+            raise StageValidationError("Coordinator backend returned an invalid input measure.")
+        return len(coordinator_prompt) + len(serialized_payload) + 32_768
 
     async def request_coordinator_decision(*, initial: bool) -> ResearchCoordinatorDecision:
         if len(scheduler.decisions) >= settings.maximum_coordinator_decisions:
@@ -2679,6 +3046,7 @@ async def run_adaptive_research(
             "coordinator_mode": "continuous_event_driven",
             "compiled_prompt": compiled.compiled_prompt,
             "claim_contract": compiled.claim_contract.as_dict(),
+            "exact_target_policy": exact_target_policy(),
             "decision_id": decision_id,
             "after_event_sequence": event_sequence,
             "initial_portfolio": initial,
@@ -2761,6 +3129,8 @@ async def run_adaptive_research(
                 None if tracker.maximum_calls is None else tracker.maximum_calls - tracker.calls
             ),
         }
+        graph_memory: dict[str, object] | None = None
+        replayed_graph_payload: dict[str, object] | None = None
         if knowledge_graph is not None:
             assert graph_problem_id is not None
             replay_request = (
@@ -2779,12 +3149,155 @@ async def run_adaptive_research(
                     raise StageValidationError(
                         "Archived graph-integrated coordinator request is malformed."
                     )
-                payload["knowledge_graph_memory"] = replay_memory
+                graph_memory = replay_memory
+                replayed_graph_payload = replay_payload
             else:
-                payload["knowledge_graph_memory"] = knowledge_graph.coordinator_memory(
-                    graph_problem_id
+                graph_memory = knowledge_graph.coordinator_memory(
+                    graph_problem_id,
+                    current_run_id=run_id,
                 )
+            payload["knowledge_graph_memory"] = graph_memory
         decision_model_settings = coordinator_model
+        control_keys = {
+            "coordinator_mode",
+            "compiled_prompt",
+            "claim_contract",
+            "decision_id",
+            "after_event_sequence",
+            "initial_portfolio",
+            "minimum_materially_diverse_initial_assignments",
+            "maximum_open_assignments",
+            "available_new_assignment_slots",
+            "available_new_assignments_without_replacement",
+            "refundable_unlaunched_assignment_count",
+            "coordinator_headroom_borrowed_assignment_id",
+            "maximum_new_assignments_this_decision",
+            "replacement_rule",
+            "maximum_concurrent_workers",
+            "worker_web_search_enabled",
+            "open_assignment_count",
+            "audit_repair_obligations",
+            "exact_target_policy",
+            "latest_independent_audits",
+            "latest_final_judge_verdict",
+            "remaining_coordinator_decisions_after_this_call",
+            "remaining_model_calls_before_this_call",
+        }
+
+        def compact_base_payload(source_payload: dict[str, object]) -> dict[str, object]:
+            base = {key: source_payload[key] for key in control_keys}
+            base["filesystem_retrieval"] = (
+                {
+                    "enabled": True,
+                    "instruction": (
+                        "You may read referenced run artifacts and graph nodes from the "
+                        "workspace. Validate the relative path and SHA-256 in the catalog "
+                        "before relying on deeper evidence."
+                    ),
+                }
+                if coordinator_can_read_files
+                else {
+                    "enabled": False,
+                    "instruction": (
+                        "Request omitted evidence by stable ID. MATEK will inline a bounded "
+                        "authenticated artifact set on the next activation."
+                    ),
+                }
+            )
+            base["approach_registry"] = {
+                "approaches": [
+                    {
+                        "approach_family": approach.family,
+                        "status": approach.status,
+                        "mechanism": compact_text(approach.mechanism),
+                        "exact_gap": compact_text(approach.exact_gap, words=64),
+                        "assignment_ids": approach.assignment_ids,
+                    }
+                    for approach in registry.approaches
+                ]
+            }
+            continuity = latest_continuity or build_continuity()
+            base["research_continuity"] = {
+                "after_event_sequence": continuity.after_event_sequence,
+                "open_gaps": [compact_text(item, words=64) for item in continuity.open_gaps],
+                "counterexamples": [
+                    compact_text(item, words=64) for item in continuity.counterexamples
+                ],
+                "dependencies": [compact_text(item, words=48) for item in continuity.dependencies],
+                "retired_assignment_ids": continuity.retired_assignment_ids,
+                "redirected_assignment_ids": continuity.redirected_assignment_ids,
+                "completed_assignment_ids": continuity.completed_assignment_ids,
+            }
+            if current_candidate is not None:
+                candidate_path = candidate_dir / "package.json"
+                base["latest_candidate_state"] = {
+                    "exact_theorem": current_candidate.exact_theorem,
+                    "unresolved_items": current_candidate.unresolved_items,
+                    "imported_theorems": [
+                        {
+                            "name": theorem.name,
+                            "verified": theorem.verified,
+                            "source_id": theorem.source_id,
+                        }
+                        for theorem in current_candidate.imported_theorems
+                    ],
+                    "path": (
+                        candidate_path.relative_to(destination.parent).as_posix()
+                        if candidate_path.is_file()
+                        else None
+                    ),
+                    "sha256": sha256_file(candidate_path) if candidate_path.is_file() else None,
+                }
+            else:
+                base["latest_candidate_state"] = None
+            return base
+
+        def build_context(
+            source_payload: dict[str, object],
+            *,
+            character_limit: int,
+            force_compact: bool,
+        ) -> tuple[dict[str, object], CoordinatorContextManifest]:
+            source_payload["after_event_sequence"] = event_sequence
+            source_payload["unacknowledged_events"] = recent_events()
+            report_evidence = coordinator_report_evidence()
+            graph_evidence = coordinator_graph_evidence(graph_memory, replayed_graph_payload)
+            builder = CoordinatorContextBuilder(
+                configured_character_limit=settings.maximum_coordinator_context_characters,
+                effective_character_limit=character_limit,
+                provider_input_characters=lambda serialized: provider_input_character_measure(
+                    serialized, decision_model_settings
+                ),
+            )
+            built = builder.build(
+                decision_id=decision_id,
+                after_event_sequence=event_sequence,
+                normal_payload=source_payload,
+                compact_base=compact_base_payload(source_payload),
+                events=recent_events(),
+                assignment_table=coordinator_assignment_table(),
+                report_evidence=report_evidence,
+                graph_memory=graph_memory,
+                graph_evidence=graph_evidence,
+                requested_artifact_ids=scheduler.requested_artifact_ids,
+                requested_graph_node_ids=scheduler.requested_graph_node_ids,
+                force_compact=(
+                    force_compact
+                    or bool(graph_evidence)
+                    or bool(scheduler.requested_artifact_ids)
+                    or bool(scheduler.requested_graph_node_ids)
+                ),
+            )
+            return built.payload, built.manifest
+
+        legacy_unbounded_request: PendingCoordinatorRequest | None = None
+        if pending_request is not None and pending_request.context_manifest_path is None:
+            # Pre-context-budget checkpoints may contain a provider-rejected oversized
+            # request. Preserve its immutable artifact, but never replay it unchanged.
+            legacy_unbounded_request = pending_request
+            decision_model_settings = pending_request.request_settings
+            scheduler.pending_coordinator_request = None
+            pending_request = None
         if pending_request is not None:
             if pending_request.decision_id != decision_id:
                 raise StageValidationError(
@@ -2803,16 +3316,78 @@ async def run_adaptive_research(
             _atomic_write_immutable_json(request_path, payload)
             if sha256_file(request_path) != pending_request.request_sha256:
                 raise StageValidationError("Frozen coordinator request is missing or changed.")
+            if pending_request.context_manifest_path is None:
+                raise StageValidationError("Frozen coordinator request has no context manifest.")
+            context_manifest_path = resolved_artifact(pending_request.context_manifest_path)
+            if (
+                not context_manifest_path.is_file()
+                or pending_request.context_manifest_sha256 is None
+                or sha256_file(context_manifest_path) != pending_request.context_manifest_sha256
+            ):
+                raise StageValidationError(
+                    "Frozen coordinator context manifest is missing or changed."
+                )
+            context_manifest = CoordinatorContextManifest.model_validate_json(
+                read_regular_text(context_manifest_path)
+            )
+            serialized_pending = serialize_coordinator_payload(payload)
+            if (
+                context_manifest.decision_id != decision_id
+                or context_manifest.after_event_sequence != event_sequence
+                or context_manifest.effective_character_limit
+                != pending_request.context_character_limit
+                or context_manifest.payload_sha256 != sha256_text(serialized_pending)
+            ):
+                raise StageValidationError(
+                    "Frozen coordinator context manifest is bound to other state."
+                )
         else:
-            request_path = requests_dir / f"{decision_id:08d}.json"
+            payload, context_manifest = build_context(
+                payload,
+                character_limit=settings.maximum_coordinator_context_characters,
+                force_compact=False,
+            )
+            if context_manifest.mode == "compact":
+                append_event(
+                    "coordinator_context_compacted",
+                    decision_id=decision_id,
+                    detail=[
+                        f"Omitted {len(context_manifest.omitted_artifacts)} full artifacts; "
+                        "authenticated references remain available.",
+                        f"Effective provider-input limit: "
+                        f"{context_manifest.effective_character_limit} characters.",
+                    ],
+                )
+                event_sequence = scheduler.next_event_sequence - 1
+                payload["after_event_sequence"] = event_sequence
+                payload, context_manifest = build_context(
+                    payload,
+                    character_limit=settings.maximum_coordinator_context_characters,
+                    force_compact=True,
+                )
+            context_manifest_path = _atomic_write_immutable_json(
+                context_manifests_dir / f"{decision_id:08d}-01.json",
+                context_manifest,
+            )
+            artifact_paths[f"coordinator_context_manifest_{decision_id}_1"] = context_manifest_path
+            request_path = requests_dir / (
+                f"{decision_id:08d}-bounded-01.json"
+                if legacy_unbounded_request is not None
+                else f"{decision_id:08d}.json"
+            )
             headroom_worker_request_key: str | None = None
             if headroom_record is not None:
-                headroom_worker_request_key = headroom_record.request_key
+                headroom_worker_request_key = (
+                    legacy_unbounded_request.headroom_worker_request_key
+                    if legacy_unbounded_request is not None
+                    else headroom_record.request_key
+                )
                 if headroom_worker_request_key is None:
                     raise StageValidationError(
                         "Coordinator headroom assignment has no refundable request."
                     )
-                release_unlaunched_worker_request(headroom_record)
+                if legacy_unbounded_request is None:
+                    release_unlaunched_worker_request(headroom_record)
             scheduler.pending_coordinator_request = PendingCoordinatorRequest(
                 decision_id=decision_id,
                 after_event_sequence=event_sequence,
@@ -2821,6 +3396,10 @@ async def run_adaptive_research(
                 request_path=request_path.relative_to(destination).as_posix(),
                 request_sha256=sha256_json(payload),
                 request_payload=payload,
+                context_generation=1,
+                context_character_limit=context_manifest.effective_character_limit,
+                context_manifest_path=context_manifest_path.relative_to(destination).as_posix(),
+                context_manifest_sha256=sha256_file(context_manifest_path),
                 headroom_assignment_id=(
                     headroom_record.assignment.id if headroom_record is not None else None
                 ),
@@ -2846,16 +3425,129 @@ async def run_adaptive_research(
             raise StageValidationError(
                 "Frozen coordinator request has an invalid initial-portfolio target."
             )
-        result = await generate_model(
-            instructions=coordinator_prompt,
-            input_text=json.dumps(payload, ensure_ascii=False, sort_keys=True),
-            model_settings=decision_model_settings,
-            output_type=ResearchCoordinatorDecision,
-            selected_client=coordinator_client,
+        coordinator_input = serialize_coordinator_payload(payload)
+        provider_characters = provider_input_character_measure(
+            coordinator_input, decision_model_settings
         )
+        frozen_context_limit = (
+            scheduler.pending_coordinator_request.context_character_limit
+            if scheduler.pending_coordinator_request is not None
+            else settings.maximum_coordinator_context_characters
+        )
+        if provider_characters > frozen_context_limit:
+            raise CoordinatorContextBudgetExhausted(
+                limit=frozen_context_limit,
+                required=provider_characters,
+            )
+        context_rebuilds = 0
+        while True:
+            try:
+                result = await generate_model(
+                    instructions=coordinator_prompt,
+                    input_text=coordinator_input,
+                    model_settings=decision_model_settings,
+                    output_type=ResearchCoordinatorDecision,
+                    selected_client=coordinator_client,
+                )
+                break
+            except ModelInputTooLargeError as exc:
+                context_rebuilds += 1
+                record_execution_issue(
+                    event_kind="coordinator_input_too_large",
+                    exc=exc,
+                    category=FailureCategory.RESOURCE,
+                    extra_obligations=[
+                        "Rebuild the same coordinator activation under a smaller measured "
+                        "context limit; never resend the identical payload."
+                    ],
+                )
+                current_pending = scheduler.pending_coordinator_request
+                if current_pending is None:
+                    raise CoordinatorContextBudgetExhausted(
+                        limit=frozen_context_limit,
+                        required=provider_characters,
+                    ) from exc
+                reduced_limit = max(
+                    100_000,
+                    min(
+                        frozen_context_limit - 65_536,
+                        frozen_context_limit * 3 // 4,
+                        provider_characters - 65_536,
+                    ),
+                )
+                if reduced_limit >= frozen_context_limit:
+                    raise CoordinatorContextBudgetExhausted(
+                        limit=frozen_context_limit,
+                        required=provider_characters,
+                    ) from exc
+                frozen_context_limit = reduced_limit
+                event_sequence = scheduler.next_event_sequence - 1
+                payload["after_event_sequence"] = event_sequence
+                payload, context_manifest = build_context(
+                    payload,
+                    character_limit=frozen_context_limit,
+                    force_compact=True,
+                )
+                append_event(
+                    "coordinator_context_compacted",
+                    decision_id=decision_id,
+                    detail=[
+                        "Provider rejected the preceding serialized input as too large.",
+                        f"Rebuilt generation {current_pending.context_generation + 1} "
+                        f"under a {frozen_context_limit}-character limit.",
+                        f"Omitted {len(context_manifest.omitted_artifacts)} full artifacts; "
+                        "authenticated references remain available.",
+                    ],
+                )
+                event_sequence = scheduler.next_event_sequence - 1
+                payload, context_manifest = build_context(
+                    payload,
+                    character_limit=frozen_context_limit,
+                    force_compact=True,
+                )
+                generation = current_pending.context_generation + 1
+                context_manifest_path = _atomic_write_immutable_json(
+                    context_manifests_dir / f"{decision_id:08d}-{generation:02d}.json",
+                    context_manifest,
+                )
+                request_path = requests_dir / f"{decision_id:08d}-rebuild-{generation:02d}.json"
+                current_pending.after_event_sequence = event_sequence
+                current_pending.request_path = request_path.relative_to(destination).as_posix()
+                current_pending.request_payload = payload
+                current_pending.request_sha256 = sha256_json(payload)
+                current_pending.context_generation = generation
+                current_pending.context_character_limit = frozen_context_limit
+                current_pending.context_manifest_path = context_manifest_path.relative_to(
+                    destination
+                ).as_posix()
+                current_pending.context_manifest_sha256 = sha256_file(context_manifest_path)
+                persist_scheduler()
+                _atomic_write_immutable_json(request_path, payload)
+                artifact_paths[f"coordinator_request_{decision_id}_rebuild_{generation}"] = (
+                    request_path
+                )
+                artifact_paths[f"coordinator_context_manifest_{decision_id}_{generation}"] = (
+                    context_manifest_path
+                )
+                coordinator_input = serialize_coordinator_payload(payload)
+                provider_characters = provider_input_character_measure(
+                    coordinator_input, decision_model_settings
+                )
+                if provider_characters > frozen_context_limit:
+                    raise CoordinatorContextBudgetExhausted(
+                        limit=frozen_context_limit,
+                        required=provider_characters,
+                    ) from exc
+                if context_rebuilds >= 3:
+                    # The smaller generation is durable and has not been submitted. A
+                    # resume can retry it without ever replaying the rejected payload.
+                    raise CoordinatorContextBudgetExhausted(
+                        limit=frozen_context_limit,
+                        required=provider_characters,
+                    ) from exc
         coordinator_request_key = tracker.request_key(
             instructions=coordinator_prompt,
-            input_text=json.dumps(payload, ensure_ascii=False, sort_keys=True),
+            input_text=coordinator_input,
             settings=decision_model_settings,
             output_type=ResearchCoordinatorDecision,
         )
@@ -2868,6 +3560,9 @@ async def run_adaptive_research(
             initial=initial,
             known_assignment_ids={record.assignment.id for record in scheduler.assignments},
             completed_assignment_ids=completed_ids,
+        )
+        scientific_stop_declined = bool(
+            decision.stop_recommended and decision.stop_category == "scientific"
         )
         directives = set(decision.retire_assignment_ids) | set(decision.redirect_assignment_ids)
         open_assignment_ids = {
@@ -2918,6 +3613,29 @@ async def run_adaptive_research(
                     "Coordinator requested already-audited unchanged reports: "
                     + ", ".join(canonical_candidate_report_set(decision.candidate_report_ids))
                 )
+        if (
+            len(decision.requested_artifact_ids) > settings.maximum_coordinator_requested_artifacts
+            or len(decision.requested_graph_node_ids)
+            > settings.maximum_coordinator_requested_artifacts
+        ):
+            raise StageValidationError(
+                "Coordinator requested more omitted evidence than the bounded retrieval limit."
+            )
+        known_artifact_ids = {
+            f"worker-report:{record.assignment.id}"
+            for record in scheduler.assignments
+            if record.report_path is not None
+        }
+        unknown_artifacts = sorted(set(decision.requested_artifact_ids) - known_artifact_ids)
+        if unknown_artifacts:
+            raise StageValidationError(
+                "Coordinator requested unknown artifact IDs: " + ", ".join(unknown_artifacts)
+            )
+        if knowledge_graph is None and decision.requested_graph_node_ids:
+            raise StageValidationError("Coordinator requested graph nodes without an active graph.")
+        if knowledge_graph is not None:
+            for node_id in decision.requested_graph_node_ids:
+                knowledge_graph.show(node_id)
 
         # Freeze the exact provider decision before mutating canonical assignment state.
         # A crash may leave this immutable file orphaned, but replay can only produce the
@@ -2983,6 +3701,7 @@ async def run_adaptive_research(
             record = ResearchAssignmentState(
                 assignment=assignment,
                 admitted_by_decision=decision.decision_id,
+                exact_target_policy_version=1,
                 graph_task_id=graph_tasks.get(assignment.id),
                 graph_revision=graph_revision,
                 graph_context=cast(
@@ -3000,8 +3719,12 @@ async def run_adaptive_research(
                 request_path=request_path.relative_to(destination).as_posix(),
                 request_sha256=sha256_file(request_path),
                 request_key=coordinator_request_key,
+                context_manifest_path=context_manifest_path.relative_to(destination).as_posix(),
+                context_manifest_sha256=sha256_file(context_manifest_path),
             )
         )
+        scheduler.requested_artifact_ids = list(dict.fromkeys(decision.requested_artifact_ids))
+        scheduler.requested_graph_node_ids = list(dict.fromkeys(decision.requested_graph_node_ids))
         scheduler.coordinator_ack_event_sequence = event_sequence
         if decision.candidate_packaging_recommended:
             scheduler.pending_candidate_report_ids = list(
@@ -3009,8 +3732,16 @@ async def run_adaptive_research(
             )
             scheduler.pending_candidate_source = "coordinator"
             scheduler.phase = SchedulerPhase.AUDITING
-        scheduler.stop_reason = decision.stop_reason if decision.stop_recommended else None
-        scheduler.stop_category = decision.stop_category if decision.stop_recommended else None
+        scheduler.stop_reason = (
+            decision.stop_reason
+            if decision.stop_recommended and not scientific_stop_declined
+            else None
+        )
+        scheduler.stop_category = (
+            decision.stop_category
+            if decision.stop_recommended and not scientific_stop_declined
+            else None
+        )
         if scheduler.deferred_candidate_report_ids and not scheduler.pending_candidate_report_ids:
             next_candidate = next(
                 (
@@ -3032,6 +3763,23 @@ async def run_adaptive_research(
             artifact=decision_path,
             detail=[decision.rationale],
         )
+        if scientific_stop_declined:
+            obligation = (
+                "A scientific no-progress stop cannot replace the exact target. Continue with "
+                "new or redirected assignments until exact acceptance or a real resource, "
+                "verified-disproof, integrity, or security boundary is reached."
+            )
+            scheduler.repair_obligations = list(
+                dict.fromkeys([*scheduler.repair_obligations, obligation])
+            )
+            append_event(
+                "coordinator_scientific_stop_declined",
+                decision_id=decision.decision_id,
+                detail=[
+                    decision.stop_reason or "Unspecified scientific no-progress stop.",
+                    obligation,
+                ],
+            )
         persist_research_index()
         return decision
 
@@ -3468,6 +4216,7 @@ async def run_adaptive_research(
                 {
                     "audit_role": name,
                     "claim_contract": compiled.claim_contract.as_dict(),
+                    **candidate_gate_policy_payload(attempt),
                     "candidate_package": current_candidate.model_dump(mode="json"),
                 },
                 ensure_ascii=False,
@@ -3571,6 +4320,7 @@ async def run_adaptive_research(
             provisional_judge_input = json.dumps(
                 {
                     "claim_contract": compiled.claim_contract.as_dict(),
+                    **candidate_gate_policy_payload(attempt),
                     "candidate_package": current_candidate.model_dump(mode="json"),
                     "independent_audits": {
                         name: current_audits[name].model_dump(mode="json")
@@ -3756,6 +4506,7 @@ async def run_adaptive_research(
         judge_input = json.dumps(
             {
                 "claim_contract": compiled.claim_contract.as_dict(),
+                **candidate_gate_policy_payload(attempt),
                 "candidate_package": current_candidate.model_dump(mode="json"),
                 "independent_audits": {
                     name: audit.model_dump(mode="json") for name, audit in current_audits.items()
@@ -4080,6 +4831,7 @@ async def run_adaptive_research(
             attempt_dir = ensure_stage_directory(candidate_dir / "attempts" / attempt_name)
             package_payload: dict[str, object] = {
                 "claim_contract": compiled.claim_contract.as_dict(),
+                "exact_target_policy": exact_target_policy(),
                 "approach_registry": registry.model_dump(mode="json"),
                 "visible_worker_reports": [
                     reports_by_id[assignment_id].model_dump(mode="json")
@@ -4099,6 +4851,7 @@ async def run_adaptive_research(
                 attempt_name=attempt_name,
                 report_ids=report_ids,
                 source=source,
+                exact_target_policy_version=1,
                 packager_settings=worker_model.model_copy(deep=True),
                 audit_settings=auditor_model.model_copy(deep=True),
                 judge_settings=judge_model.model_copy(deep=True),
@@ -4489,6 +5242,33 @@ async def run_adaptive_research(
                 scheduler.pending_candidate_source = "worker"
                 scheduler.phase = SchedulerPhase.AUDITING
                 persist_scheduler()
+    except CoordinatorContextBudgetExhausted as exc:
+        if not any(
+            issue.event_kind == "coordinator_context_budget_exhausted"
+            and issue.message == f"{type(exc).__name__}: {redact_text(str(exc))[:1000]}"
+            for issue in scheduler.execution_issues
+        ):
+            record_execution_issue(
+                event_kind="coordinator_context_budget_exhausted",
+                exc=exc,
+                category=FailureCategory.RESOURCE,
+                extra_obligations=[
+                    "Increase research.maximum_coordinator_context_characters only if the "
+                    "selected provider supports it, or resume after reducing mandatory state."
+                ],
+            )
+        return await pause_retriable(
+            obligations=[
+                str(exc),
+                "The complete research record remains durable; no acceptance gate was weakened.",
+            ],
+            phase=SchedulerPhase.RUNNING,
+            pause_reason="CONTEXT_BUDGET_EXHAUSTED",
+            resume_action=(
+                "Run `matek resume` to rebuild the pending coordinator activation from the "
+                "same event cursor under its persisted reduced context budget."
+            ),
+        )
     except (_ResearchBudgetExhausted, BudgetExceeded):
         try:
             # A depleted new-call allowance must not erase work whose worker calls

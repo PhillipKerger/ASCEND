@@ -142,6 +142,12 @@ concurrency limit controls the active subset of that open set. None of these set
 separate cumulative logical-worker limit. Codex global call-count limits remain configurable in
 TOML but are unset by default.
 
+`research.maximum_coordinator_context_characters` defaults to 800,000 and applies to the final
+serialized provider input rather than raw report text alone. `matek run` displays this ceiling and
+the bounded on-demand evidence-request limit. Oversized histories are compacted into prioritized
+working sets with hash-bound references; mandatory-state exhaustion pauses retriably rather than
+appearing as a Codex process crash.
+
 Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
 optional run name are normalized to portable, lowercase filesystem-safe components.

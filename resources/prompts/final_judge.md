@@ -13,6 +13,10 @@ Allowed verdicts:
 Acceptance requires no unresolved theorem-strength obligation and a proof that withstands all
 mandatory audits. State exact reasons and obligations in structured form.
 
+There are no allowed terminal reductions. A proper subclass, weaker result, added hypothesis,
+equivalent reformulation, or reduction with any downstream or transfer obligation is not the exact
+target and must not be accepted.
+
 Acceptance may rest on a verified existing theorem that exactly matches the target. In that
 case, explicitly characterize the resolution as known literature and reject any unsupported
 novelty claim.
