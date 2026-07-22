@@ -2,6 +2,13 @@
 
 ## 0.3.0 — 2026-07-22
 
+- `matek run` now prints the important resolved configuration before the first model call,
+  including backend-specific role models/reasoning, web access, effective research concurrency,
+  limits, enabled downstream stages, sandbox, graph, and project-edit policy. Dry runs reuse the
+  same summary so their reported plan cannot drift from ordinary execution.
+- Made the default 32-worker research capacity explicit for both initial assignments and later
+  refills. The coordinator now receives the worker search policy, and regression coverage verifies
+  that 32 web-enabled initial workers can occupy the pool concurrently.
 - Aligned the public specifications, example reports, and Lean confirmation wording with the
   independent scientific, manuscript, publication, workflow, and Lean statuses. Added a
   contributor guide and included the complete public specification set in source distributions.

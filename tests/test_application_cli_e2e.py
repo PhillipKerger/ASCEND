@@ -889,6 +889,14 @@ def test_ambiguous_problem_stops_before_research_and_asks_for_clarification(
     invocation = CliRunner().invoke(app, ["run", str(problem)])
 
     assert invocation.exit_code == 0, invocation.output
+    assert "Resolved MATEK run configuration" in invocation.output
+    assert "research coordinator" in invocation.output
+    assert "max effort" in invocation.output
+    assert "research agents" in invocation.output
+    assert "xhigh effort" in invocation.output
+    assert "web access" in invocation.output
+    assert "up to 32 effective" in invocation.output
+    assert "no automatic API fallback" in invocation.output
     assert "stopped before research" in invocation.output
     assert "What mathematical objects are being extended?" in invocation.output
     [run_root] = (project / ".matek" / "runs").iterdir()
@@ -2014,8 +2022,13 @@ def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
     assert "initial research agents" in result.output
     assert "16" in result.output
     assert "maximum pending assignments" in result.output
-    assert "coordinator decisions" in result.output
-    assert "concurrent agents" in result.output
+    assert "coordinator decision limit" in result.output
+    assert "concurrent research agents" in result.output
+    assert "up to 32 effective" in result.output
+    assert "research coordinator" in result.output
+    assert "max effort" in result.output
+    assert "research agents" in result.output
+    assert "xhigh effort" in result.output
     assert result.output.count("32") >= 2
     assert "total research-subagent limit" not in result.output
     assert not (tmp_path / ".matek").exists()

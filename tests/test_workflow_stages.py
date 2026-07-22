@@ -2293,6 +2293,90 @@ def test_research_workflow_defaults_use_a_large_continuous_pending_window() -> N
 
 
 @pytest.mark.asyncio
+async def test_default_pool_runs_32_web_enabled_initial_research_workers(
+    tmp_path: Path,
+) -> None:
+    class ThirtyTwoWorkerClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.active_workers = 0
+            self.maximum_active_workers = 0
+            self.all_workers_started = asyncio.Event()
+            self.worker_ids: set[str] = set()
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            assert request.settings.web_search is True
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                assert payload["maximum_concurrent_workers"] == 32
+                assert payload["worker_web_search_enabled"] is True
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"initial-worker-{index:02d}",
+                                approach_family=f"family-{index % 8}",
+                                task=f"Investigate independent route {index}",
+                                expected_output="A rigorous partial result or exact obstruction",
+                            )
+                            for index in range(32)
+                        ],
+                        rationale="Fill the available initial research pool.",
+                    )
+                else:
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="All bounded initial routes have reported.",
+                        stop_recommended=True,
+                        stop_reason="No complete proof was found in the initial portfolio.",
+                    )
+            elif output_type is ResearchWorkerReport:
+                assignment = payload["assignment"]
+                assignment_id = assignment["id"]
+                self.worker_ids.add(assignment_id)
+                self.active_workers += 1
+                self.maximum_active_workers = max(
+                    self.maximum_active_workers, self.active_workers
+                )
+                if self.active_workers == 32:
+                    self.all_workers_started.set()
+                try:
+                    await asyncio.wait_for(self.all_workers_started.wait(), timeout=2)
+                finally:
+                    self.active_workers -= 1
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment_id,
+                    status=WorkerStatus.PROGRESS,
+                    formal_results=[f"Partial result from {assignment_id}"],
+                    proof_content="A rigorous partial argument was obtained.",
+                    exact_gap="A complete proof of the target remains open.",
+                    sources=[],
+                    mechanism=assignment["task"],
+                )
+            else:  # pragma: no cover - this scenario deliberately creates no candidate
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"pool-{self.calls}")
+
+    client = ThirtyTwoWorkerClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+    )
+
+    assert result.outcome is ResearchOutcome.PARTIAL
+    assert client.maximum_active_workers == 32
+    assert len(client.worker_ids) == 32
+
+
+@pytest.mark.asyncio
 async def test_research_coordinator_receives_durable_full_fidelity_continuity(
     tmp_path: Path,
 ) -> None:

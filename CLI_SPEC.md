@@ -103,6 +103,13 @@ Supplying both the legacy and current decision options is an error.
 `--backend api` is explicit consent to use separately billed Platform API access. `--dry-run`
 validates and prints the resolved backend and stage plan without a model call.
 
+Before an ordinary `matek run` makes its first model call, it prints a concise resolved
+configuration table. The table identifies the backend and no-fallback boundary, backend-aware
+models and reasoning settings for the compiler, coordinator, research workers, and audits, the
+per-role web policy, effective worker concurrency after backend ceilings, initial and pending pool
+sizes, coordinator/time/usage limits, graph, downstream stages, execution sandbox, and project-edit
+policy. `--dry-run` prints the same values together with validated input paths and creates no run.
+
 The research defaults use `gpt-5.6-sol`, max coordinator effort, and xhigh worker effort. The
 Responses API adapter sends `reasoning.mode = "pro"` for those roles; the Codex adapter uses the
 Codex CLI model and reasoning-effort controls and has no separate MATEK `pro` switch. No
@@ -111,7 +118,8 @@ coordinator and live pool, not a provider parameter.
 
 `--no-web-search` disables web search in every model stage and disables MATEK's deterministic
 public-identifier HTTP resolver. Search remains enabled by default. The resolved setting is
-saved with the run; the same flag on `matek resume` disables it for all remaining stages.
+saved with the run; initial research workers and later refills share the default 32-slot worker
+pool and the same search policy. The same flag on `matek resume` disables it for all remaining stages.
 Unverifiable citations remain unverified, so this option never weakens the bibliography gate and
 a fully offline run should normally also use `--research-only`.
 

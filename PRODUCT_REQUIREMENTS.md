@@ -92,7 +92,9 @@ formalization, and generates a reproducible final report.
   truncate the underlying reports.
 - Refill useful work dynamically after completions instead of waiting for a batch barrier. Permit
   up to 32 total open assignments (queued plus running) by default. Permit up to 32 of that open
-  set to be active research workers, subject to backend and budget limits.
+  set to be active research workers, subject to backend and budget limits. Initial workers and
+  later refills share that pool and use web search by default; only the explicit global
+  `--no-web-search` policy disables search for them.
 - Maintain an approach registry containing mechanism, result, assumptions, bottleneck,
   counterexamples, dependencies, and status.
 - Support cost, token, active wall-clock, total-open-assignment, concurrency,

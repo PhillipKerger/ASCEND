@@ -167,9 +167,17 @@ has no global call-count ceiling by default, but users may set
 The effective research concurrency is the lowest applicable ceiling. With the defaults and web
 search enabled, that is `min(32, 32, 32) = 32` simultaneous research workers. Raising only
 `research.maximum_concurrent_agents` therefore has no effect until the corresponding Codex
-backend ceilings are also high enough. With `--no-web-search`, the web-agent ceiling no longer
+backend ceilings are also high enough. Initial workers and later coordinator refills draw from
+this same pool and use web search by default. With `--no-web-search`, the web-agent ceiling no longer
 constrains calls at the backend; the current orchestration nevertheless includes that configured
 ceiling when it computes its conservative worker-admission window.
+
+At the start of `matek run`, MATEK prints the resolved configuration before any model call. This
+includes the selected backend and no-fallback boundary, the actual coordinator and research-worker
+models and reasoning efforts, web access, effective concurrency after backend limits, research and
+usage limits, graph selection, downstream stages, sandbox, and project-edit policy. Use `--dry-run`
+to inspect the same settings plus validated input paths without creating a workspace or making a
+model call.
 
 These controls have different expected effects:
 

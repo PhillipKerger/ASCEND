@@ -20,7 +20,8 @@ Do not wait for unrelated assignments, invent fixed rounds, or restart a ruled-o
 unless you identify the new evidence that changes its status.
 
 The request states the current open-assignment count, available new-assignment slots, worker
-concurrency, decision ID, and mailbox cut-off. New work may fill the available slots and may
+concurrency, worker web-search availability, decision ID, and mailbox cut-off. Initial workers
+and later refills draw from the same bounded pool. New work may fill the available slots and may
 replace known open assignments that this same decision retires or redirects; the resulting open
 total must stay within the stated ceiling, and the number of new assignments must never exceed
 `maximum_new_assignments_this_decision`. A retirement or redirect directive applies only to a

@@ -322,6 +322,118 @@ def _time_limit_display(config: AppConfig) -> str:
     return "unlimited" if hours is None else f"{hours * 60:g} minutes"
 
 
+def _model_role_display(config: AppConfig, role: str) -> str:
+    """Describe the model settings actually used by the selected backend."""
+
+    settings = getattr(config.models, role)
+    if config.backend.provider == "api":
+        return (
+            f"{settings.model} · {settings.reasoning_mode} mode · "
+            f"{settings.reasoning_effort} effort"
+        )
+    efforts = {
+        "prompt_compiler": config.codex.research_worker_effort,
+        "research_coordinator": config.codex.research_coordinator_effort,
+        "research_worker": config.codex.research_worker_effort,
+        "audit": config.codex.audit_effort,
+        "manuscript": config.codex.manuscript_effort,
+    }
+    return f"{config.codex.model} · {efforts[role]} effort"
+
+
+def _effective_research_concurrency(config: AppConfig) -> tuple[int, str]:
+    configured = config.research.maximum_concurrent_agents
+    if config.backend.provider == "codex":
+        effective = min(
+            configured,
+            config.codex.max_parallel_agents,
+            config.codex.max_parallel_web_agents,
+        )
+        ceilings = (
+            f"research {configured}, Codex {config.codex.max_parallel_agents}, "
+            f"web {config.codex.max_parallel_web_agents}"
+        )
+    else:
+        effective = min(configured, config.api.max_parallel_agents)
+        ceilings = f"research {configured}, API {config.api.max_parallel_agents}"
+    return effective, ceilings
+
+
+def _resolved_run_summary(
+    config: AppConfig,
+    *,
+    graph_name: str,
+    research_only: bool,
+    no_lean: bool,
+    allow_project_edits: bool,
+) -> Mapping[str, object]:
+    """Return the important effective settings shown before a run starts."""
+
+    concurrency, concurrency_ceilings = _effective_research_concurrency(config)
+    coordinator_decisions = config.research.maximum_coordinator_decisions
+    if config.backend.provider == "codex":
+        coordinator_decisions = min(
+            coordinator_decisions,
+            config.codex.limits.max_research_coordinator_decisions,
+        )
+    web_state = "enabled per stage" if config.web_search_enabled else "disabled globally"
+    coordinator_web = "on" if config.models.research_coordinator.web_search else "off"
+    worker_web = "on" if config.models.research_worker.web_search else "off"
+    source_web = "on" if config.web_search_enabled else "off"
+    usage_limit = (
+        (
+            f"{config.codex.limits.max_agent_calls} Codex agent calls"
+            if config.codex.limits.max_agent_calls is not None
+            else "no configured Codex call-count limit"
+        )
+        if config.backend.provider == "codex"
+        else f"${config.limits.maximum_cost_usd:g} API spend"
+    )
+    return {
+        "model backend": (
+            "codex — Codex CLI (no automatic API fallback)"
+            if config.backend.provider == "codex"
+            else "api — OpenAI Responses API (explicit selection)"
+        ),
+        "prompt compiler": _model_role_display(config, "prompt_compiler"),
+        "research coordinator": _model_role_display(config, "research_coordinator"),
+        "research agents": _model_role_display(config, "research_worker"),
+        "independent audits": _model_role_display(config, "audit"),
+        "web access": (
+            f"{web_state} · coordinator {coordinator_web} · research agents {worker_web} · "
+            f"source lookup {source_web}"
+        ),
+        "initial research agents": (
+            f"minimum {config.research.minimum_initial_agents}; may fill available pool"
+        ),
+        "concurrent research agents": (
+            f"up to {concurrency} effective ({concurrency_ceilings})"
+        ),
+        "maximum pending assignments": config.research.maximum_pending_assignments,
+        "coordinator decision limit": coordinator_decisions,
+        "total active time limit": _time_limit_display(config),
+        "usage limit": usage_limit,
+        "knowledge graph": graph_name,
+        "manuscript stage": (
+            "enabled" if config.manuscript.enabled and not research_only else "off"
+        ),
+        "Lean stage": (
+            "enabled" if config.lean.enabled and not no_lean and not research_only else "off"
+        ),
+        "execution backend": config.lean.execution_backend,
+        "project source edits": "allowed" if allow_project_edits else "blocked",
+    }
+
+
+def _print_settings_table(title: str, settings: Mapping[str, object]) -> None:
+    table = Table(title=title)
+    table.add_column("Setting")
+    table.add_column("Resolved value")
+    for key, value in settings.items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+
 def _show_migration_notice(config: AppConfig) -> None:
     notice = consume_config_migration_notice(config)
     if notice is not None:
@@ -829,30 +941,21 @@ def run(
         except UnicodeDecodeError as exc:
             raise IntakeError("prompt framework must be valid UTF-8") from exc
 
+        summary = _resolved_run_summary(
+            config,
+            graph_name=selected_graph_name,
+            research_only=research_only,
+            no_lean=no_lean,
+            allow_project_edits=allow_project_edits,
+        )
         if dry_run:
-            table = Table(title="Resolved MATEK plan")
-            table.add_column("Setting")
-            table.add_column("Value")
-            plan: Mapping[str, object] = {
-                "model backend": config.backend.provider,
-                "automatic fallback": config.backend.allow_automatic_fallback,
+            plan: dict[str, object] = {
+                **summary,
                 "project root": root,
                 "problem": problem_file.resolve(),
                 "problem characters": len(problem),
                 "framework": framework_path,
                 "framework SHA-256": framework_hash,
-                "model": config.models.prompt_compiler.model,
-                "reasoning": (
-                    f"{config.models.prompt_compiler.reasoning_mode}/"
-                    f"{config.models.prompt_compiler.reasoning_effort}"
-                ),
-                "web search": (
-                    "enabled per stage" if config.web_search_enabled else "disabled globally"
-                ),
-                "initial research agents": config.research.minimum_initial_agents,
-                "maximum pending assignments": (config.research.maximum_pending_assignments),
-                "coordinator decisions": (config.research.maximum_coordinator_decisions),
-                "concurrent agents": config.research.maximum_concurrent_agents,
                 "knowledge graph name": selected_graph_name,
                 "knowledge graph selection": graph_selection,
                 "persistent knowledge graph": (root / ".matek" / "knowledge" / selected_graph_name),
@@ -860,30 +963,15 @@ def run(
                     f"{config.graph.maximum_context_nodes} nodes / "
                     f"{config.graph.maximum_context_characters} characters"
                 ),
-                "total active time limit": _time_limit_display(config),
-                "usage limit": (
-                    (
-                        f"{config.codex.limits.max_agent_calls} Codex agent calls"
-                        if config.codex.limits.max_agent_calls is not None
-                        else "no configured Codex call-count limit"
-                    )
-                    if config.backend.provider == "codex"
-                    else f"${config.limits.maximum_cost_usd:g} API spend"
-                ),
-                "manuscript": config.manuscript.enabled and not research_only,
-                "Lean": config.lean.enabled and not no_lean and not research_only,
-                "execution backend": config.lean.execution_backend,
-                "project edits": allow_project_edits,
             }
-            for key, value in plan.items():
-                table.add_row(key, str(value))
-            console.print(table)
+            _print_settings_table("Resolved MATEK plan", plan)
             console.print(
                 "[green]Dry run complete; no run workspace or model call was made.[/green]"
             )
             return
 
         _show_migration_notice(config)
+        _print_settings_table("Resolved MATEK run configuration", summary)
         if allow_project_edits and not yes:
             typer.confirm(
                 "Allow Codex to edit files outside .matek/ in this project?",

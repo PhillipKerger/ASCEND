@@ -1843,6 +1843,8 @@ class WorkflowRunner:
                             4, self.config.research.minimum_initial_agents
                         ),
                         maximum_concurrent_agents=(
+                            # Initial workers and later refills share this effective pool.
+                            # Search-enabled Codex calls must satisfy both backend ceilings.
                             min(
                                 self.config.research.maximum_concurrent_agents,
                                 self.config.codex.max_parallel_agents,

@@ -34,6 +34,7 @@ build/
 /README_HANDOFF.md
 /matek-coding-handoff/
 placeholder-resilience-fix.txt
+RELEASE-CHECKLIST.md
 
 # Local technical-report build tree; not part of the published source distribution.
 /technical-report/

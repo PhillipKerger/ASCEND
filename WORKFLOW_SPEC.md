@@ -138,7 +138,9 @@ independent controls. None introduces a wait-for-all barrier. Explicit Codex cal
 remain available but are unset by default. Public scheduler controls are
 `research.maximum_pending_assignments` (default 32 total open assignments) and
 `research.maximum_coordinator_decisions` (default 256). Legacy round controls are converted to a
-scaled decision budget only; they do not change event-driven execution.
+scaled decision budget only; they do not change event-driven execution. Initial workers and later
+refills use the same worker settings and 32-slot default pool. Web search is enabled for both by
+default and disabled only by the frozen global `--no-web-search` policy.
 
 ## Stage 3 — Candidate proof and audits
 

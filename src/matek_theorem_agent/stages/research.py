@@ -2709,6 +2709,10 @@ async def run_adaptive_research(
                 "open count must not exceed maximum_open_assignments."
             ),
             "maximum_concurrent_workers": settings.maximum_concurrent_agents,
+            # Bootstrap assignments and later refills use the same worker model and
+            # admission pool. Expose the search policy so the logical coordinator can
+            # plan literature-facing work without guessing worker capabilities.
+            "worker_web_search_enabled": worker_model.web_search,
             "open_assignment_count": len(open_records),
             "assignment_lifecycle": [
                 {
