@@ -165,6 +165,9 @@ The event loop is:
    event file, clear the pending record, and refresh the mailbox view. The ordering ensures every
    visible completion points to durable evidence and an interrupted event publication can finish
    idempotently.
+   Validate an optional graph proposal only after this scientific transaction. Stale or malformed
+   mutations are quarantined as issue events; graph precondition hashes come from the frozen
+   revision, never the worker.
 4. Wake the coordinator on useful new events. Each activation receives the original main prompt,
    claim contract, unacknowledged events, lifecycle state, registry, audit obligations, and the
    corresponding full raw reports. It may add, retire, redirect, package, or stop work without
@@ -176,6 +179,12 @@ The event loop is:
    final judge immediately. In-flight completions still enter the mailbox. Acceptance terminates
    research; failure appends full audit reports and repair obligations as high-priority events,
    wakes the coordinator, and resumes/refills the pool.
+
+Recoverable provider/schema failures are assignment or audit events, not scheduler-wide
+exceptions. Workers receive one bounded repair generation. Audits checkpoint independently, so a
+candidate with missing checks remains `AWAITING_AUDITS` and resume reuses every committed audit.
+Only security, state-corruption, path-confinement, unauthorized-write, and immutable-artifact
+integrity failures cross the orchestration boundary as hard stops.
 
 `ResearchContinuityState` is a derived navigation index separating promising, partial, refuted,
 and blocked routes with their mathematical evidence. It may help fit a fresh model context, but it
@@ -251,7 +260,8 @@ Domain models do not import the SDK, CLI presentation, or subprocess implementat
 ## Resumption semantics
 
 - A stage completes only after its artifacts and integrity hashes are durable.
-- Successfully returned provider work is checkpointed before the stage checkpoint whenever the
+- Every terminal provider attempt is usage-journaled, including schema-invalid and repair
+  attempts; successfully parsed work is then checkpointed before the stage boundary whenever the
   backend supports call/session recovery.
 - An interrupted stage preserves completed outputs and diagnostics.
 - An interrupted research stage loads the canonical coordinator checkpoint, completes any event in
@@ -263,6 +273,7 @@ Domain models do not import the SDK, CLI presentation, or subprocess implementat
 - `resume` starts at the first incomplete stage with the frozen backend.
 - `--force-stage NAME` invalidates that boundary and downstream stages while preserving prior
   provider records as audit history.
-- A Codex error checkpoints and stops; it never falls through to API billing.
+- A recoverable Codex error checkpoints and pauses with exact resume obligations; an integrity
+  error hard-stops. Neither path ever falls through to API billing.
 - Completed paid/allowance-consuming stages are not repeated merely because report generation
   failed.

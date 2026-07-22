@@ -291,7 +291,11 @@ def _resolver_urls(identifier: str) -> tuple[str, ...]:
             f"https://doi.org/{value}",
         )
     if kind == "arxiv":
-        return (f"https://export.arxiv.org/api/query?id_list={quote(value, safe='/.')}",)
+        quoted = quote(value, safe="/.")
+        return (
+            f"https://export.arxiv.org/api/query?id_list={quoted}",
+            f"https://arxiv.org/abs/{quoted}",
+        )
     if kind == "isbn":
         return (f"https://openlibrary.org/isbn/{quote(value, safe='')}.json",)
     if kind == "mr":

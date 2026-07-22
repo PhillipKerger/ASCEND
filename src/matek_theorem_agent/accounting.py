@@ -14,6 +14,7 @@ from .openai_client import (
     ModelClient,
     ModelRequest,
     ModelResult,
+    ProviderAttempt,
     RequestEstimate,
     UsageMetadata,
     normalized_model_request,
@@ -158,12 +159,34 @@ class AccountingModelClient:
             reservation = self._reserve(request)
             try:
                 result = await self._generate_with_time_limit(request, output_type)
-            except BaseException:
+            except BaseException as exc:
+                attempts = getattr(exc, "completed_provider_attempts", ())
+                if isinstance(attempts, tuple) and all(
+                    isinstance(item, ProviderAttempt) for item in attempts
+                ):
+                    reservation = self._account_provider_attempts(
+                        attempts,
+                        request=request,
+                        reservation=reservation,
+                    )
                 if reservation is not None:
                     self._budget.release(reservation)
                 raise
 
             usage = self._usage_record(result, request)
+            attempts = result.provider_attempts or (
+                ProviderAttempt(
+                    response_id=result.response_id,
+                    status=result.status,
+                    usage=self._provider_usage(result),
+                    schema_valid=True,
+                ),
+            )
+            reservation = self._account_provider_attempts(
+                attempts,
+                request=request,
+                reservation=reservation,
+            )
             try:
                 record = self._logger.model_calls.persist(
                     identity,
@@ -175,12 +198,10 @@ class AccountingModelClient:
                     parsed=result.parsed,
                 )
             except BaseException:
-                # The response is already billable. Account it even if durable result
-                # checkpointing fails, then surface the persistence failure.
-                self._account_if_missing(usage, reservation=reservation)
+                # Every terminal attempt is already in the durable usage journal.
                 raise
 
-            self._account_if_missing(record.usage, reservation=reservation)
+            # ``record.usage`` is the successful attempt already accounted above.
             return self._result_from_record(record, output_type)
 
     async def _generate_with_time_limit(
@@ -258,6 +279,78 @@ class AccountingModelClient:
                 else result.usage.estimated_cost_usd
             ),
         )
+
+    def _attempt_usage_record(
+        self,
+        attempt: ProviderAttempt,
+        request: ModelRequest,
+    ) -> UsageRecord:
+        usage = attempt.usage
+        return UsageRecord(
+            response_id=attempt.response_id or None,
+            stage=self._stage,
+            provider=self._provider,
+            model=request.settings.model,
+            input_tokens=usage.input_tokens or 0,
+            output_tokens=usage.output_tokens or 0,
+            cached_input_tokens=usage.cached_input_tokens or 0,
+            cache_write_tokens=usage.cache_write_tokens or 0,
+            reasoning_tokens=usage.reasoning_tokens or 0,
+            web_search_calls=usage.web_search_calls,
+            cost_usd=usage.estimated_cost_usd,
+        )
+
+    @staticmethod
+    def _provider_usage(result: ModelResult[Any]) -> UsageMetadata:
+        """Normalize legacy adapter fields into one terminal-attempt usage record."""
+
+        usage = result.usage
+        return UsageMetadata(
+            input_tokens=(
+                result.input_tokens if result.input_tokens is not None else usage.input_tokens
+            ),
+            output_tokens=(
+                result.output_tokens if result.output_tokens is not None else usage.output_tokens
+            ),
+            total_tokens=(
+                result.total_tokens if result.total_tokens is not None else usage.total_tokens
+            ),
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_tokens=usage.cache_write_tokens,
+            reasoning_tokens=usage.reasoning_tokens,
+            web_search_calls=usage.web_search_calls,
+            estimated_cost_usd=(
+                result.estimated_cost_usd
+                if result.estimated_cost_usd is not None
+                else usage.estimated_cost_usd
+            ),
+        )
+
+    def _account_provider_attempts(
+        self,
+        attempts: Collection[ProviderAttempt],
+        *,
+        request: ModelRequest,
+        reservation: BudgetReservation | None,
+    ) -> BudgetReservation | None:
+        """Journal every completed provider attempt before accepting parsed output."""
+
+        remaining_reservation = reservation
+        for attempt in attempts:
+            usage = self._attempt_usage_record(attempt, request)
+            self._account_if_missing(usage, reservation=remaining_reservation)
+            remaining_reservation = None
+            self._logger.event(
+                "model.provider_attempt.completed",
+                stage=self._stage,
+                data={
+                    "response_id": attempt.response_id,
+                    "status": attempt.status,
+                    "schema_valid": attempt.schema_valid,
+                    "attempt": attempt.attempt,
+                },
+            )
+        return remaining_reservation
 
     def _account_if_missing(
         self,

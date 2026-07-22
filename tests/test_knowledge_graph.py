@@ -155,7 +155,6 @@ def test_patch_merge_validates_relations_duplicates_and_lean_promotion(tmp_path:
         proposed_status_changes=[
             GraphStatusChange(
                 matek_id=claim_id,
-                expected_content_hash=claim.content_hash,
                 epistemic_status=EpistemicStatus.LEAN_VERIFIED,
                 reason="The worker says Lean succeeded.",
             )
@@ -221,7 +220,6 @@ def test_optimistic_conflict_detection_and_dependency_invalidation(tmp_path: Pat
         update_nodes=[
             GraphNodeUpdate(
                 matek_id=dependency_id,
-                expected_content_hash=dependency.content_hash,
                 body="## Exact statement\n\nVersion two.",
                 reason="Strengthen the exact dependency statement.",
             )

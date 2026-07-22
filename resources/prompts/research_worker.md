@@ -11,10 +11,12 @@ Do not coordinate with, imitate, or assume the conclusions of concurrent workers
 
 When a bounded `knowledge_graph_context` is present, use its stable IDs, exact task, nearby
 dependencies, prior proof attempts, counterexamples, audits, and sources. Do not edit the shared
-Markdown vault. Return a structured `graph_patch` based on `base_graph_revision` and
+Markdown vault. Return `graph_patch` as a JSON-encoded structured proposal based on
+`base_graph_revision` and
 `graph_task_id`, proposing only distilled mathematical nodes, relation changes, status changes,
-evidence, and unresolved obligations. Never turn a raw transcript into a graph node. If no graph
-change is justified, return `graph_patch: null`.
+evidence, and unresolved obligations. Do not supply content hashes; MATEK binds them from the
+frozen graph revision. Never turn a raw transcript into a graph node. If no graph change is
+justified, return `graph_patch: null`.
 
 Do not return vague progress reports. Do not silently alter the target. State every imported
 theorem precisely and identify its source. Mark any unproved step explicitly. Computational

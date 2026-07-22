@@ -20,6 +20,7 @@ from .budget import BudgetExceeded, BudgetTracker, UsageRecord
 from .codex_client import CodexClient
 from .config import AppConfig, ModelSettings, config_as_toml, load_config, merge_config
 from .execution.base import ExecutionBackend
+from .failures import classify_failure, recovery_obligations
 from .intake import ingest_problem
 from .knowledge_graph import (
     GraphNotInitializedError,
@@ -29,7 +30,14 @@ from .knowledge_graph import (
     problem_graph_name,
 )
 from .logging import RunLogger, load_usage_journal_strict
-from .models import RunState, ScientificStatus, StageName, StageStatus
+from .models import (
+    FailureCategory,
+    RunState,
+    ScientificStatus,
+    StageName,
+    StageStatus,
+    WorkflowExecutionStatus,
+)
 from .openai_client import ModelClient, ModelRequest
 from .progress import Ascension, ProgressReporter, no_progress
 from .redaction import redact_data, redact_text
@@ -1013,6 +1021,7 @@ class WorkflowRunner:
             include_unscoped_usage=not bool(state.metadata.get("backend_history")),
         )
         logger.event("workflow.resumed", data={"run_id": state.run_id})
+        state.metadata["workflow_status"] = WorkflowExecutionStatus.RUNNING.value
         workflow_task = asyncio.current_task()
         if workflow_task is None:  # pragma: no cover - _execute always runs in an event loop
             raise WorkflowError("workflow execution has no owning asyncio task")
@@ -1054,6 +1063,9 @@ class WorkflowRunner:
                 next_step=StageName.RESEARCH.value,
             )
             research = await self._research_stage(state, store, logger, budget, compiled)
+            if research.outcome is ResearchOutcome.PAUSED_RETRIABLE:
+                store.save(state)
+                return WorkflowResult(state=state, report=self._report_stage(state, store, logger))
             if not research.accepted_for_manuscript:
                 self._skip_manuscript_and_lean(state, "research acceptance gate did not pass")
                 store.save(state)
@@ -1131,16 +1143,69 @@ class WorkflowRunner:
                     snapshot,
                 ) from None
             raise
-        except Exception:
+        except Exception as exc:
             # Stage methods checkpoint their own failures. Always leave a factual report,
-            # then preserve the exception for CLI exit-code classification.
+            # but only integrity/security failures terminate the invocation.
             _sync_paid_calls_from_usage(state, _usage_records(run_root))
             state.metadata["usage"] = budget.snapshot().model_dump(mode="json")
+            category = classify_failure(exc)
+            state.metadata["workflow_status"] = (
+                WorkflowExecutionStatus.HARD_STOPPED.value
+                if category is FailureCategory.INTEGRITY
+                else WorkflowExecutionStatus.PAUSED_RETRIABLE.value
+            )
+            if category is not FailureCategory.INTEGRITY:
+                state.metadata["resume_action"] = (
+                    "Run `matek resume` after satisfying the recorded recovery obligations."
+                )
+                raw_issues = state.metadata.get("execution_issues", [])
+                issues = list(raw_issues) if isinstance(raw_issues, list) else []
+                safe_message = redact_text(str(exc))[:1000]
+                issue = {
+                    "category": category.value,
+                    "stage": next(
+                        (
+                            stage.value
+                            for stage, record in state.stages.items()
+                            if record.status is StageStatus.RUNNING
+                        ),
+                        None,
+                    ),
+                    "kind": type(exc).__name__,
+                    "message": safe_message,
+                    "trace_paths": [
+                        str(path)
+                        for path in (getattr(exc, "checkpoint_path", None),)
+                        if path is not None
+                    ],
+                    "recovery_obligations": recovery_obligations(exc, category),
+                }
+                if not any(
+                    isinstance(existing, dict)
+                    and existing.get("kind") == issue["kind"]
+                    and existing.get("message") == issue["message"]
+                    for existing in issues
+                ):
+                    issues.append(issue)
+                state.metadata["execution_issues"] = issues
+                obligations = state.metadata.get("unresolved_obligations", [])
+                state.metadata["unresolved_obligations"] = list(
+                    dict.fromkeys(
+                        [
+                            *(obligations if isinstance(obligations, list) else []),
+                            *recovery_obligations(exc, category),
+                        ]
+                    )
+                )
             self._sync_backend_metadata(state)
             store.save(state)
             if state.stages[StageName.REPORT].status is not StageStatus.SUCCEEDED:
-                self._report_stage(state, store, logger)
-            raise
+                report = self._report_stage(state, store, logger)
+            else:
+                report = load_final_report(run_root)
+            if category is FailureCategory.INTEGRITY:
+                raise
+            return WorkflowResult(state=state, report=report)
         finally:
             if deadline_handle is not None:
                 deadline_handle.cancel()
@@ -1267,7 +1332,7 @@ class WorkflowRunner:
         ):
             record_artifact_file(state, StageName.REPORT, path)
         succeed_stage(state, StageName.REPORT)
-        state.metadata["workflow_status"] = ScientificStatus.REPORT_COMPLETE.value
+        state.metadata["workflow_status"] = WorkflowExecutionStatus.COMPLETE.value
         store.save(state)
         budget.ensure_available()
         return WorkflowResult(state=state, report=report)
@@ -1331,18 +1396,41 @@ class WorkflowRunner:
         exc: Exception,
     ) -> None:
         safe_message = redact_text(str(exc))
+        category = classify_failure(exc)
         fail_stage(
             state,
             stage,
             safe_message,
             kind=type(exc).__name__,
-            retriable=True,
+            category=category,
+            retriable=category is not FailureCategory.INTEGRITY,
+            details={"recovery_obligations": recovery_obligations(exc, category)},
         )
+        raw_issues = state.metadata.get("execution_issues", [])
+        issues = list(raw_issues) if isinstance(raw_issues, list) else []
+        trace_paths = [
+            str(path) for path in (getattr(exc, "checkpoint_path", None),) if path is not None
+        ]
+        issues.append(
+            {
+                "category": category.value,
+                "stage": stage.value,
+                "kind": type(exc).__name__,
+                "message": safe_message,
+                "trace_paths": trace_paths,
+                "recovery_obligations": recovery_obligations(exc, category),
+            }
+        )
+        state.metadata["execution_issues"] = issues
         logger.event(
             "stage.failed",
             level="ERROR",
             stage=stage,
-            data={"error_type": type(exc).__name__, "message": safe_message},
+            data={
+                "error_type": type(exc).__name__,
+                "category": category.value,
+                "message": safe_message,
+            },
         )
         self._sync_backend_metadata(state)
         store.save(state)
@@ -1813,6 +1901,7 @@ class WorkflowRunner:
             ResearchOutcome.REJECTED: ScientificStatus.RESEARCH_REJECTED,
             ResearchOutcome.PARTIAL: ScientificStatus.RESEARCH_PARTIAL,
             ResearchOutcome.BUDGET_EXHAUSTED: ScientificStatus.RESEARCH_PARTIAL,
+            ResearchOutcome.PAUSED_RETRIABLE: ScientificStatus.CANDIDATE_AWAITING_AUDIT,
         }[result.outcome]
         graph = self._knowledge_graph_for_state(state)
         graph.record_research_result(
@@ -1840,8 +1929,22 @@ class WorkflowRunner:
                 "configuration_summary": configuration_summary,
                 "strongest_result": result.strongest_result,
                 "unresolved_obligations": result.unresolved_obligations,
+                "execution_issues": [
+                    issue.model_dump(mode="json") for issue in result.execution_issues
+                ],
+                "resume_action": result.resume_action,
             }
         )
+        if result.outcome is ResearchOutcome.PAUSED_RETRIABLE:
+            interrupt_stage(
+                state,
+                StageName.RESEARCH,
+                "mandatory candidate audit is unavailable; resume retries only missing audits",
+            )
+            state.metadata["workflow_status"] = WorkflowExecutionStatus.PAUSED_RETRIABLE.value
+            state.metadata["research_status"] = ScientificStatus.CANDIDATE_AWAITING_AUDIT.value
+            store.save(state)
+            return result
         research_paths = dict(result.artifacts.paths)
         if result_path.is_file():
             research_paths["result"] = result_path
@@ -2208,6 +2311,22 @@ class WorkflowRunner:
         self._begin(state, store, logger, StageName.REPORT)
         logger.event("report.generating", stage=StageName.REPORT)
         self._sync_backend_metadata(state)
+        retriable_stage = any(
+            record.status in {StageStatus.FAILED, StageStatus.INTERRUPTED}
+            and (record.failure is None or record.failure.retriable)
+            for stage, record in state.stages.items()
+            if stage is not StageName.REPORT
+        )
+        existing_workflow_status = state.metadata.get("workflow_status")
+        if existing_workflow_status == WorkflowExecutionStatus.HARD_STOPPED.value:
+            state.metadata["workflow_status"] = WorkflowExecutionStatus.HARD_STOPPED.value
+        elif (
+            retriable_stage
+            or existing_workflow_status == WorkflowExecutionStatus.PAUSED_RETRIABLE.value
+        ):
+            state.metadata["workflow_status"] = WorkflowExecutionStatus.PAUSED_RETRIABLE.value
+        else:
+            state.metadata["workflow_status"] = WorkflowExecutionStatus.COMPLETE.value
         report = write_final_report(state)
         for path in (
             report.report_json,
@@ -2216,7 +2335,6 @@ class WorkflowRunner:
         ):
             record_artifact_file(state, StageName.REPORT, path)
         succeed_stage(state, StageName.REPORT)
-        state.metadata["workflow_status"] = ScientificStatus.REPORT_COMPLETE.value
         store.save(state)
         return report
 

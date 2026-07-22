@@ -253,7 +253,6 @@ class GraphNodeCreate(_GraphModel):
 
 class GraphNodeUpdate(_GraphModel):
     matek_id: str
-    expected_content_hash: str
     title: str | None = None
     body: str | None = None
     tags: list[str] | None = None
@@ -265,13 +264,6 @@ class GraphNodeUpdate(_GraphModel):
     @classmethod
     def node_id_is_valid(cls, value: str) -> str:
         return validate_node_id(value)
-
-    @field_validator("expected_content_hash")
-    @classmethod
-    def expected_hash_is_valid(cls, value: str) -> str:
-        if not _SHA256.fullmatch(value):
-            raise ValueError("expected_content_hash must be a lowercase SHA-256 digest")
-        return value
 
     @model_validator(mode="after")
     def update_changes_something(self) -> GraphNodeUpdate:
@@ -289,7 +281,6 @@ class GraphNodeUpdate(_GraphModel):
 
 class GraphStatusChange(_GraphModel):
     matek_id: str
-    expected_content_hash: str
     epistemic_status: EpistemicStatus | None = None
     workflow_status: WorkflowStatus | None = None
     reason: str
@@ -298,13 +289,6 @@ class GraphStatusChange(_GraphModel):
     @classmethod
     def node_id_is_valid(cls, value: str) -> str:
         return validate_node_id(value)
-
-    @field_validator("expected_content_hash")
-    @classmethod
-    def expected_hash_is_valid(cls, value: str) -> str:
-        if not _SHA256.fullmatch(value):
-            raise ValueError("expected_content_hash must be a lowercase SHA-256 digest")
-        return value
 
     @model_validator(mode="after")
     def status_change_is_complete(self) -> GraphStatusChange:

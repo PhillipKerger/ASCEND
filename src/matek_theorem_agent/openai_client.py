@@ -93,6 +93,17 @@ class UsageMetadata:
 
 
 @dataclass(frozen=True)
+class ProviderAttempt:
+    """One terminal, billable provider attempt, valid schema or not."""
+
+    response_id: str
+    status: str
+    usage: UsageMetadata
+    schema_valid: bool
+    attempt: int = 1
+
+
+@dataclass(frozen=True)
 class RequestEstimate:
     """Conservative pre-call reservation for hard-budget enforcement."""
 
@@ -118,6 +129,7 @@ class ModelResult(Generic[T]):
     usage: UsageMetadata = field(default_factory=UsageMetadata)
     request_metadata: Mapping[str, Any] = field(default_factory=dict)
     tool_metadata: tuple[Mapping[str, Any], ...] = ()
+    provider_attempts: tuple[ProviderAttempt, ...] = ()
 
 
 def _normalized_text(value: str) -> str:
@@ -213,6 +225,12 @@ class AsyncResponsesClient(Protocol):
 
 class ModelAdapterError(RuntimeError):
     """Base class for safe, redacted adapter failures."""
+
+    completed_provider_attempts: tuple[ProviderAttempt, ...] = ()
+
+    def attach_completed_attempts(self, attempts: Sequence[ProviderAttempt]) -> ModelAdapterError:
+        self.completed_provider_attempts = tuple(attempts)
+        return self
 
 
 class ModelTransportError(ModelAdapterError):
@@ -335,26 +353,63 @@ class OpenAIResponsesClient:
     ) -> ModelResult[T]:
         kwargs = _request_kwargs(request, output_type)
         response: Any | None = None
-        for attempt in range(self._max_attempts):
+        for attempt_index in range(self._max_attempts):
             try:
                 response = await self._client.responses.parse(**kwargs)
                 break
             except Exception as exc:
-                if not is_transient_error(exc) or attempt + 1 >= self._max_attempts:
+                if not is_transient_error(exc) or attempt_index + 1 >= self._max_attempts:
                     message = redact_sensitive(str(exc))[:500]
                     raise ModelTransportError(
-                        f"Responses API request failed after {attempt + 1} attempt(s): "
+                        f"Responses API request failed after {attempt_index + 1} attempt(s): "
                         f"{type(exc).__name__}: {message}"
                     ) from exc
                 delay = min(
                     self._maximum_backoff_seconds,
-                    self._initial_backoff_seconds * (2**attempt),
+                    self._initial_backoff_seconds * (2**attempt_index),
                 )
                 await self._sleep(delay)
 
         if response is None:  # defensive; the loop either sets response or raises
             raise ModelTransportError("Responses API returned no response")
-        return self._parse_response(response, request, output_type)
+        response_id = str(_field(response, "id", ""))
+        status = str(_field(response, "status", "completed") or "completed")
+        tool_metadata = _extract_tool_metadata(response)
+        usage = _usage_metadata(
+            _field(response, "usage", None),
+            self._pricing.get(str(getattr(request.settings, "model", ""))),
+            web_search_calls=sum(item.get("type") == "web_search_call" for item in tool_metadata),
+        )
+        provider_attempt = ProviderAttempt(
+            response_id=response_id,
+            status=status,
+            usage=usage,
+            schema_valid=False,
+        )
+        try:
+            result = self._parse_response(response, request, output_type)
+        except ModelAdapterError as exc:
+            exc.attach_completed_attempts((provider_attempt,))
+            raise
+        valid_attempt = ProviderAttempt(
+            response_id=response_id,
+            status=status,
+            usage=usage,
+            schema_valid=True,
+        )
+        return ModelResult(
+            parsed=result.parsed,
+            response_id=result.response_id,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            total_tokens=result.total_tokens,
+            estimated_cost_usd=result.estimated_cost_usd,
+            status=result.status,
+            usage=result.usage,
+            request_metadata=result.request_metadata,
+            tool_metadata=result.tool_metadata,
+            provider_attempts=(valid_attempt,),
+        )
 
     def _parse_response(
         self,
@@ -745,6 +800,7 @@ __all__ = [
     "ModelTransportError",
     "OpenAIResponsesBackend",
     "OpenAIResponsesClient",
+    "ProviderAttempt",
     "RequestEstimate",
     "ResponsesParser",
     "StructuredOutputError",

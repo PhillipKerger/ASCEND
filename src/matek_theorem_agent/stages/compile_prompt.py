@@ -127,6 +127,17 @@ class LiteratureStatus(StrEnum):
     FULLY_RESOLVED = "fully_resolved"
 
 
+class SourcePurpose(StrEnum):
+    """Why prompt compilation needs a source.
+
+    Literature support may be quarantined without making the mathematical target
+    ambiguous. Target-identification evidence cannot be discarded safely.
+    """
+
+    LITERATURE_SUPPORT = "literature_support"
+    TARGET_IDENTIFICATION = "target_identification"
+
+
 class SourceLedgerEntry(BaseModel):
     """A traceable source record returned by the compiler."""
 
@@ -136,6 +147,7 @@ class SourceLedgerEntry(BaseModel):
     title: str
     identifiers: list[str]
     evidence_claims: list[SourceEvidenceClaim]
+    purpose: SourcePurpose = SourcePurpose.LITERATURE_SUPPORT
     required_for_claim: bool = False
     verified: bool = False
     verification_detail: str | None = None
@@ -160,6 +172,7 @@ class SourceLedgerEntry(BaseModel):
             "evidence_claims": (
                 [{"claim": evidence, "source_ids": [source_id]}] if evidence else []
             ),
+            "purpose": SourcePurpose.LITERATURE_SUPPORT.value,
             "required_for_claim": bool(value.get("required_for_claim", False)),
             "verified": False,
             "verification_detail": None,
@@ -821,6 +834,39 @@ def _invalid_source_ids(entries: Sequence[SourceLedgerEntry]) -> set[str]:
     }
 
 
+def _qualify_unverified_literature_claims(
+    compiled: CompiledProblem,
+    entries: Sequence[SourceLedgerEntry],
+) -> None:
+    """Make quarantined literature claims visibly inadmissible in the worker prompt."""
+
+    qualified: list[str] = []
+    prompt = compiled.compiled_prompt
+    for entry in entries:
+        for evidence_claim in entry.evidence_claims:
+            claim = evidence_claim.claim.strip()
+            if not claim:
+                continue
+            replacement = "Unverified literature lead (not admissible evidence): " + claim
+            if claim in prompt:
+                prompt = prompt.replace(claim, replacement)
+            qualified.append(f"{entry.source_id}: {claim}")
+    if entries and compiled.status is PromptCompilationStatus.COMPILED:
+        if not qualified:
+            qualified = [
+                f"{entry.source_id}: all literature claims associated with this source"
+                for entry in entries
+            ]
+        prompt = (
+            prompt.rstrip()
+            + "\n\nSource provenance notice\n"
+            + "The following literature leads are quarantined and must not be used as "
+            "proof premises, novelty evidence, or accepted bibliography entries unless a "
+            "later source audit verifies them:\n" + "\n".join(f"- {item}" for item in qualified)
+        )
+    compiled.compiled_prompt = prompt
+
+
 async def verify_source_ledger(
     source_ledger: Sequence[SourceLedgerEntry],
     *,
@@ -1022,18 +1068,26 @@ async def compile_prompt(
             model_calls += 1
 
     invalid_source_ids = _invalid_source_ids(compiled.source_ledger)
-    invalid_required = [
+    invalid_target_identification = [
+        entry.source_id
+        for entry in compiled.source_ledger
+        if entry.purpose is SourcePurpose.TARGET_IDENTIFICATION
+        and entry.source_id in invalid_source_ids
+    ]
+    if invalid_target_identification:
+        raise StageValidationError(
+            "Source ledger repair failed for target-identification source(s): "
+            + ", ".join(invalid_target_identification)
+        )
+    quarantined_malformed = [
         entry.source_id
         for entry in compiled.source_ledger
         if entry.required_for_claim and entry.source_id in invalid_source_ids
     ]
-    if invalid_required:
-        raise StageValidationError(
-            "Source ledger repair failed for logically required source(s): "
-            + ", ".join(invalid_required)
-        )
     removed_optional = [
-        entry.source_id for entry in compiled.source_ledger if entry.source_id in invalid_source_ids
+        entry.source_id
+        for entry in compiled.source_ledger
+        if entry.source_id in invalid_source_ids and not entry.required_for_claim
     ]
     if removed_optional:
         compiled.source_ledger = [
@@ -1048,7 +1102,8 @@ async def compile_prompt(
         verifier=source_verifier,
     )
     verified_identifiers = verification.verified_identifiers
-    unverified_required: list[str] = []
+    unverified_target_identification: list[str] = []
+    unverified_required_literature: list[str] = []
     unverified_optional: list[str] = []
     for entry in compiled.source_ledger:
         matched = sorted(set(entry.identifiers).intersection(verified_identifiers))
@@ -1059,10 +1114,16 @@ async def compile_prompt(
             else "No identifier could be independently verified."
         )
         if not entry.verified:
-            target = unverified_required if entry.required_for_claim else unverified_optional
+            target = (
+                unverified_target_identification
+                if entry.purpose is SourcePurpose.TARGET_IDENTIFICATION
+                else unverified_required_literature
+                if entry.required_for_claim
+                else unverified_optional
+            )
             target.append(entry.source_id)
     ledger_issues = validate_source_ledger(
-        compiled.source_ledger,
+        [entry for entry in compiled.source_ledger if entry.source_id not in invalid_source_ids],
         verified_identifiers=verified_identifiers,
     )
     structural_issues = [
@@ -1070,24 +1131,35 @@ async def compile_prompt(
     ]
     if structural_issues:
         raise StageValidationError("Source ledger verification failed: " + " ".join(ledger_issues))
-    if unverified_required:
+    if unverified_target_identification:
         raise StageValidationError(
-            "Source verification failed for logically required source(s): "
-            + ", ".join(unverified_required)
+            "Source verification failed for target-identification source(s): "
+            + ", ".join(unverified_target_identification)
         )
-    if unverified_optional:
+    quarantined_literature = list(
+        dict.fromkeys(
+            [*quarantined_malformed, *unverified_required_literature, *unverified_optional]
+        )
+    )
+    if quarantined_literature:
         warning = (
-            "Independent source verification was unavailable for optional source(s): "
-            + ", ".join(unverified_optional)
-            + ". Literature claims were downgraded to unknown."
+            "Independent source verification was unavailable for literature-support "
+            "source(s): "
+            + ", ".join(quarantined_literature)
+            + ". Dependent literature claims were quarantined and the literature "
+            "classification was downgraded to unknown."
         )
         verification.warnings.append(warning)
         compiled.literature_status = LiteratureStatus.UNKNOWN
         compiled.literature_resolution_summary = None
-        if compiled.status is PromptCompilationStatus.COMPILED:
-            compiled.compiled_prompt = (
-                compiled.compiled_prompt.rstrip() + "\n\nSource provenance notice\n" + warning
-            )
+        _qualify_unverified_literature_claims(
+            compiled,
+            [
+                entry
+                for entry in compiled.source_ledger
+                if entry.source_id in quarantined_literature
+            ],
+        )
     if removed_optional:
         warning = (
             "Optional malformed source(s) were removed after one bounded repair attempt: "

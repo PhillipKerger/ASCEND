@@ -491,6 +491,9 @@ async def test_invalid_pydantic_output_gets_one_targeted_repair(tmp_path: Path) 
     assert backend.exec_requests[1].stdin is not None
     assert "<repair>" in str(backend.exec_requests[1].stdin)
     assert "failed independent validation" in str(backend.exec_requests[1].stdin)
+    assert len(result.provider_attempts) == 2
+    assert result.provider_attempts[0].schema_valid is False
+    assert result.provider_attempts[1].schema_valid is True
 
 
 @pytest.mark.asyncio
@@ -510,6 +513,8 @@ async def test_schema_failure_is_typed_and_bounded(tmp_path: Path) -> None:
     assert caught.value.role == "hostile"
     assert caught.value.attempts == 1
     assert caught.value.checkpoint_path.is_dir()
+    assert len(caught.value.completed_provider_attempts) == 1
+    assert caught.value.completed_provider_attempts[0].schema_valid is False
 
 
 @pytest.mark.asyncio

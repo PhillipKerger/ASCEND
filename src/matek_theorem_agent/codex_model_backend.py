@@ -35,6 +35,7 @@ from .openai_client import (
     ModelAdapterError,
     ModelRequest,
     ModelResult,
+    ProviderAttempt,
     UsageMetadata,
     output_schema_name,
 )
@@ -106,6 +107,7 @@ class CodexBackendError(ModelAdapterError):
         events_path: Path | None = None,
         stderr_path: Path | None = None,
         attempts: int = 1,
+        completed_provider_attempts: Sequence[ProviderAttempt] = (),
     ) -> None:
         self.kind = kind
         self.stage = stage
@@ -117,6 +119,7 @@ class CodexBackendError(ModelAdapterError):
         self.events_path = events_path
         self.stderr_path = stderr_path
         self.attempts = attempts
+        self.completed_provider_attempts = tuple(completed_provider_attempts)
         logs = [str(path) for path in (events_path, stderr_path) if path is not None]
         log_suffix = f" Logs: {', '.join(logs)}." if logs else ""
         super().__init__(
@@ -929,6 +932,7 @@ class CodexCliModelClient:
         repair_instruction: str | None = None
         last_failure: _AttemptFailure | None = None
         last_artifacts: CodexCallArtifacts | None = None
+        completed_provider_attempts: list[ProviderAttempt] = []
 
         for attempt_index in range(self._max_attempts):
             artifacts = self._new_call_artifacts(run_root, attempt_index + 1)
@@ -1038,10 +1042,31 @@ class CodexCliModelClient:
                         )
 
                 summary = self._validate_result(result, artifacts, run_root)
-                parsed = self._parse_final_output(artifacts, output_type, run_root)
                 usage = summary.usage
                 call_id = artifacts.call_root.name
                 response_id = f"codex-{summary.session_id or 'unknown'}-{call_id}"
+                try:
+                    parsed = self._parse_final_output(artifacts, output_type, run_root)
+                except _AttemptException as exc:
+                    completed_provider_attempts.append(
+                        ProviderAttempt(
+                            response_id=response_id,
+                            status=exc.failure.classification.kind.value,
+                            usage=usage,
+                            schema_valid=False,
+                            attempt=attempt_index + 1,
+                        )
+                    )
+                    raise
+                completed_provider_attempts.append(
+                    ProviderAttempt(
+                        response_id=response_id,
+                        status=summary.terminal_status,
+                        usage=usage,
+                        schema_valid=True,
+                        attempt=attempt_index + 1,
+                    )
+                )
                 request_metadata: Mapping[str, Any] = {
                     "backend": "codex",
                     "backend_version": version,
@@ -1084,6 +1109,7 @@ class CodexCliModelClient:
                     usage=usage,
                     request_metadata=request_metadata,
                     tool_metadata=summary.tool_metadata,
+                    provider_attempts=tuple(completed_provider_attempts),
                 )
             except asyncio.CancelledError:
                 # NativeBackend terminates the process group before cancellation reaches us.
@@ -1150,7 +1176,12 @@ class CodexCliModelClient:
                 remedy="Inspect the MATEK run checkpoint.",
                 checkpoint_path=run_root,
             )
-        self._raise_failure(last_failure, last_artifacts, attempt_index + 1)
+        self._raise_failure(
+            last_failure,
+            last_artifacts,
+            attempt_index + 1,
+            completed_provider_attempts=completed_provider_attempts,
+        )
         raise AssertionError("unreachable")
 
     async def _ensure_capabilities(self) -> tuple[CodexCapabilities, str]:
@@ -1571,6 +1602,8 @@ class CodexCliModelClient:
         failure: _AttemptFailure,
         artifacts: CodexCallArtifacts,
         attempts: int,
+        *,
+        completed_provider_attempts: Sequence[ProviderAttempt] = (),
     ) -> None:
         error_type = _ERROR_CLASSES[failure.classification.kind]
         raise error_type(
@@ -1584,6 +1617,7 @@ class CodexCliModelClient:
             events_path=(artifacts.events_path if artifacts.events_path.exists() else None),
             stderr_path=(artifacts.stderr_path if artifacts.stderr_path.exists() else None),
             attempts=attempts,
+            completed_provider_attempts=completed_provider_attempts,
         )
 
 

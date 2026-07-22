@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from .models import (
     STAGE_ORDER,
+    FailureCategory,
     FailureInfo,
     RunState,
     StageName,
@@ -128,6 +129,7 @@ def fail_stage(
     message: str,
     *,
     kind: str = "stage_failure",
+    category: FailureCategory = FailureCategory.EXECUTION,
     retriable: bool = False,
     details: dict[str, Any] | None = None,
     now: datetime | None = None,
@@ -141,6 +143,7 @@ def fail_stage(
     failure = FailureInfo(
         kind=kind,
         message=safe_message,
+        category=category,
         occurred_at=timestamp,
         retriable=retriable,
         details=safe_details,
@@ -171,7 +174,11 @@ def interrupt_stage(
     record = transition_stage(state, stage, StageStatus.INTERRUPTED, now=timestamp)
     safe_message = redact_text(message)
     record.failure = FailureInfo(
-        kind="interrupted", message=safe_message, occurred_at=timestamp, retriable=True
+        kind="interrupted",
+        message=safe_message,
+        category=FailureCategory.EXECUTION,
+        occurred_at=timestamp,
+        retriable=True,
     )
     record.error = safe_message
     return record

@@ -1031,8 +1031,12 @@ async def test_force_prompt_stage_reuses_compiler_and_retries_only_bounded_repai
     )
     runner = placeholder_recovery_runner(project, model)
 
-    with pytest.raises(ValueError, match=r"\[INSERT TARGET HERE\]"):
-        await runner.run_new(make_problem(project), project)
+    paused = await runner.run_new(make_problem(project), project)
+    assert paused.report.report.workflow_status == "PAUSED_RETRIABLE"
+    assert any(
+        "[INSERT TARGET HERE]" in issue.get("message", "")
+        for issue in paused.report.report.execution_issues
+    )
 
     [run_root] = (project / ".matek" / "runs").iterdir()
     failed = StateStore(run_root).load()
@@ -1289,8 +1293,12 @@ async def test_saved_lean_consent_is_reused_after_boundary_failure(
         raise RuntimeError("fixture failure after durable consent")
 
     monkeypatch.setattr(runner, "_lean_stage", fail_at_boundary)
-    with pytest.raises(RuntimeError, match="after durable consent"):
-        await runner.run_new(make_problem(project), project)
+    paused = await runner.run_new(make_problem(project), project)
+    assert paused.report.report.workflow_status == "PAUSED_RETRIABLE"
+    assert any(
+        "after durable consent" in issue.get("message", "")
+        for issue in paused.report.report.execution_issues
+    )
 
     [run_root] = (project / ".matek" / "runs").iterdir()
     interrupted = StateStore(run_root).load()
@@ -1302,6 +1310,28 @@ async def test_saved_lean_consent_is_reused_after_boundary_failure(
 
     assert consent_calls == 1
     assert resumed.state.scientific_status is ScientificStatus.LEAN_VERIFIED
+
+
+@pytest.mark.asyncio
+async def test_integrity_failure_still_hard_stops_and_reports_that_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    runner, _, _, _ = workflow_runner(project, accepted=False)
+
+    async def unsafe_prompt_stage(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise RuntimeError("unsafe path traversal in immutable prompt artifact")
+
+    monkeypatch.setattr(runner, "_prompt_stage", unsafe_prompt_stage)
+    with pytest.raises(RuntimeError, match="unsafe path traversal"):
+        await runner.run_new(make_problem(project), project)
+
+    [run_root] = (project / ".matek" / "runs").iterdir()
+    report = json.loads((run_root / "report" / "report.json").read_text(encoding="utf-8"))
+    assert report["workflow_status"] == "HARD_STOPPED"
 
 
 @pytest.mark.asyncio

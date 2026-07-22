@@ -59,6 +59,11 @@ formalization, and generates a reproducible final report.
   request and focused questions, report the outcome to the user, and require a new run from a
   clarified problem file.
 - Save source citations and search evidence separately from the prompt text.
+- Classify sources as target-identification or literature-support evidence. Unavailable
+  literature-only evidence must be preserved and quarantined while research continues; it may not
+  support acceptance or the final bibliography. Unavailable target-identification evidence must
+  not be guessed around.
+- Resolve arXiv identifiers through both `export.arxiv.org` and `arxiv.org/abs/<id>`.
 
 ### FR-3 Adaptive research
 
@@ -110,6 +115,10 @@ formalization, and generates a reproducible final report.
   obligations. Ordinary resume must fail truthfully if the canonical scheduler checkpoint is
   missing or invalid rather than claiming it can be reconstructed from evidence alone.
 - Launch targeted counterexample and lemma-audit tasks when promising claims arise.
+- Persist categorized `integrity`, `execution`, `evidence`, `scientific`, and `resource` issues
+  with trace paths and recovery obligations. Only integrity/security/state-corruption and
+  immutable-artifact failures hard-stop; recoverable worker failures receive one bounded repair
+  generation before coordinator reassignment or retirement.
 - Produce a candidate proof package when the coordinator recommends it or a worker explicitly
   reports a full proof of the exact success criterion.
 - When a candidate is triggered, pause admission of new research workers and run the full
@@ -164,6 +173,11 @@ formalization, and generates a reproducible final report.
 - Run a final judge that sees the problem contract, candidate package, and audit reports.
 - Accept only if the exact target is established, all mandatory audits pass, and unresolved
   theorem-strength obligations are empty.
+- Checkpoint each completed audit immediately with its response ID and hash. An unavailable audit
+  leaves the candidate awaiting audits and resume retries only missing checks; it is neither a
+  candidate rejection nor permission to run the final judge.
+- Validate and persist scientific worker output before independently validating an optional graph
+  proposal. MATEK, not the model, binds graph content hashes from the frozen revision.
 - Preserve valuable partial results under truthful statuses.
 
 ### FR-5 Manuscript
@@ -235,6 +249,8 @@ Generate machine-readable and human-readable reports with:
 - research configuration and usage;
 - strongest proved result;
 - exact status and unresolved obligations;
+- separate scientific and workflow-execution statuses, retriable issue records, audit progress,
+  and an exact resume action;
 - audit summaries;
 - manuscript build and bibliography status;
 - Lean alignment and verification status;
@@ -251,6 +267,7 @@ At minimum:
 RECEIVED
 PROMPT_COMPILED
 RESEARCH_RUNNING
+CANDIDATE_AWAITING_AUDIT
 RESEARCH_PARTIAL
 RESEARCH_REJECTED
 RESEARCH_ACCEPTED_FOR_MANUSCRIPT
@@ -277,5 +294,7 @@ REPORT_COMPLETE
 - Secret redaction.
 - Clear terminal progress without exposing private chain-of-thought.
 - Structured logs and optional verbose diagnostics.
+- Every terminal provider attempt is usage-accounted before output admission, including
+  schema-invalid and schema-repair attempts.
 - Configurable budgets and concurrency.
 - Graceful interruption on Ctrl-C.

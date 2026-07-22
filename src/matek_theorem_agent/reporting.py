@@ -46,6 +46,7 @@ class FinalReport(BaseModel):
 
     run_id: str
     scientific_status: str
+    workflow_status: str = "COMPLETE"
     manuscript_status: str
     lean_status: str
     strongest_result: str
@@ -60,6 +61,10 @@ class FinalReport(BaseModel):
     literature_status: str = "unknown"
     literature_resolution_summary: str | None = None
     prompt_validation_warnings: list[str] = Field(default_factory=list)
+    source_provenance_warnings: list[str] = Field(default_factory=list)
+    execution_issues: list[dict[str, Any]] = Field(default_factory=list)
+    research_checkpoint: dict[str, Any] = Field(default_factory=dict)
+    resume_action: str | None = None
     lean_consent: dict[str, Any] = Field(default_factory=dict)
     knowledge_graph: dict[str, Any] = Field(default_factory=dict)
     reproducibility: list[str] = Field(default_factory=list)
@@ -138,6 +143,55 @@ def _safe_text(path: Path) -> str:
         return ""
 
 
+def _research_checkpoint_summary(run_root: Path) -> dict[str, Any]:
+    """Derive live scientific/execution progress from the canonical scheduler."""
+
+    checkpoint_path = run_root / "research" / "coordinator" / "state.json"
+    if not checkpoint_path.is_file():
+        return {}
+    try:
+        checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {"checkpoint": "unreadable"}
+    if not isinstance(checkpoint, dict):
+        return {"checkpoint": "invalid"}
+    raw_assignments = checkpoint.get("assignments", [])
+    assignments = raw_assignments if isinstance(raw_assignments, list) else []
+    counts = {
+        status: sum(isinstance(item, dict) and item.get("status") == status for item in assignments)
+        for status in ("queued", "running", "completed", "retired", "cancelled")
+    }
+    raw_attempt = checkpoint.get("active_candidate_attempt")
+    if not isinstance(raw_attempt, dict):
+        raw_attempt = checkpoint.get("latest_candidate_attempt")
+    attempt = raw_attempt if isinstance(raw_attempt, dict) else {}
+    raw_audits = attempt.get("audit_sha256", {})
+    completed_audits = sorted(raw_audits) if isinstance(raw_audits, dict) else []
+    raw_mandatory = attempt.get("mandatory_audits", [])
+    mandatory_audits = (
+        [str(item) for item in raw_mandatory] if isinstance(raw_mandatory, list) else []
+    )
+    missing_audits = [name for name in mandatory_audits if name not in completed_audits]
+    next_event_sequence = checkpoint.get("next_event_sequence", 1)
+    event_sequence = (
+        max(0, next_event_sequence - 1)
+        if isinstance(next_event_sequence, int) and not isinstance(next_event_sequence, bool)
+        else 0
+    )
+    return {
+        "phase": checkpoint.get("phase", "unknown"),
+        "event_sequence": event_sequence,
+        "coordinator_decisions": len(checkpoint.get("decisions", []))
+        if isinstance(checkpoint.get("decisions"), list)
+        else 0,
+        "assignments": counts,
+        "candidate_attempt": attempt.get("attempt_name"),
+        "completed_audits": completed_audits,
+        "mandatory_audits": mandatory_audits,
+        "missing_audits": missing_audits,
+    }
+
+
 def build_final_report(
     state: RunState,
     *,
@@ -148,6 +202,7 @@ def build_final_report(
     run_root = state.run_root.resolve()
     metadata = state.metadata
     scientific = str(metadata.get("research_status", state.scientific_status.value))
+    workflow = str(metadata.get("workflow_status", "COMPLETE"))
     manuscript = str(metadata.get("manuscript_status", "NOT_STARTED"))
     lean = str(metadata.get("lean_status", "NOT_STARTED"))
     strongest = str(metadata.get("strongest_result", "No complete result was established."))
@@ -167,6 +222,15 @@ def build_final_report(
     clarification = metadata.get("problem_clarification", {})
     raw_knowledge_graph = metadata.get("knowledge_graph", {})
     knowledge_graph = dict(raw_knowledge_graph) if isinstance(raw_knowledge_graph, dict) else {}
+    checkpoint = _research_checkpoint_summary(run_root)
+    if scientific == "CANDIDATE_AWAITING_AUDIT":
+        candidate_path = run_root / "research" / "candidate" / "package.json"
+        try:
+            raw_candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            raw_candidate = None
+        if isinstance(raw_candidate, dict) and isinstance(raw_candidate.get("exact_theorem"), str):
+            strongest = str(raw_candidate["exact_theorem"])
     graph_name = knowledge_graph.get("name")
     graph_commands = (
         [
@@ -179,6 +243,7 @@ def build_final_report(
     return FinalReport(
         run_id=state.run_id,
         scientific_status=scientific,
+        workflow_status=workflow,
         manuscript_status=manuscript,
         lean_status=lean,
         strongest_result=strongest,
@@ -201,6 +266,18 @@ def build_final_report(
             if isinstance(metadata.get("prompt_validation_warnings", []), list)
             else []
         ),
+        source_provenance_warnings=(
+            [str(item) for item in metadata.get("source_provenance_warnings", [])]
+            if isinstance(metadata.get("source_provenance_warnings", []), list)
+            else []
+        ),
+        execution_issues=(
+            [dict(item) for item in metadata.get("execution_issues", []) if isinstance(item, dict)]
+            if isinstance(metadata.get("execution_issues", []), list)
+            else []
+        ),
+        research_checkpoint=checkpoint,
+        resume_action=(str(metadata["resume_action"]) if metadata.get("resume_action") else None),
         lean_consent=(
             dict(metadata["lean_consent"]) if isinstance(metadata.get("lean_consent"), dict) else {}
         ),
@@ -229,10 +306,53 @@ def render_report_markdown(report: FinalReport) -> str:
         "| Gate | Status |",
         "| --- | --- |",
         f"| Research | `{report.scientific_status}` |",
+        f"| Workflow | `{report.workflow_status}` |",
         f"| Manuscript | `{report.manuscript_status}` |",
         f"| Lean | `{report.lean_status}` |",
         "",
     ]
+    if report.workflow_status == "PAUSED_RETRIABLE":
+        lines.extend(
+            [
+                "## Retriable workflow pause",
+                "",
+                report.resume_action or "Resume from the saved scheduler checkpoint.",
+                "",
+            ]
+        )
+        if report.research_checkpoint:
+            assignments = report.research_checkpoint.get("assignments", {})
+            lines.extend(
+                [
+                    f"- Scheduler phase: `{report.research_checkpoint.get('phase', 'unknown')}`",
+                    f"- Completed workers: `{assignments.get('completed', 0)}`"
+                    if isinstance(assignments, dict)
+                    else "- Completed workers: `unknown`",
+                    "- Completed audits: "
+                    + ", ".join(report.research_checkpoint.get("completed_audits", []))
+                    if report.research_checkpoint.get("completed_audits")
+                    else "- Completed audits: none",
+                    "- Missing mandatory audits: "
+                    + ", ".join(report.research_checkpoint.get("missing_audits", []))
+                    if report.research_checkpoint.get("missing_audits")
+                    else "- Missing mandatory audits: none",
+                    "",
+                ]
+            )
+        if report.execution_issues:
+            lines.extend(["### Execution issues", ""])
+            for issue in report.execution_issues:
+                lines.append(
+                    f"- `{issue.get('category', 'execution')}`: "
+                    f"{issue.get('message', 'Unavailable operation')}"
+                )
+                trace_paths = issue.get("trace_paths", [])
+                if isinstance(trace_paths, list) and trace_paths:
+                    lines.append("  - Trace: " + ", ".join(str(path) for path in trace_paths))
+                issue_obligations = issue.get("recovery_obligations", [])
+                if isinstance(issue_obligations, list):
+                    lines.extend(f"  - Recovery: {obligation}" for obligation in issue_obligations)
+            lines.append("")
     if report.problem_clarification.get("required") is True:
         lines.extend(
             [
@@ -313,6 +433,9 @@ def render_report_markdown(report: FinalReport) -> str:
     if report.prompt_validation_warnings:
         lines.extend(["", "## Prompt validation warnings", ""])
         lines.extend(f"- {warning}" for warning in report.prompt_validation_warnings)
+    if report.source_provenance_warnings:
+        lines.extend(["", "## Source provenance warnings", ""])
+        lines.extend(f"- {warning}" for warning in report.source_provenance_warnings)
     lines.extend(
         [
             "",

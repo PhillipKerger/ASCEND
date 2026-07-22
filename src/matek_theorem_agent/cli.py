@@ -938,7 +938,13 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
 
     try:
         state = _load_state(_project_root(), run_id)
-        console.print(f"Run [bold]{state.run_id}[/bold] — {state.scientific_status.value}")
+        scientific_status = str(
+            state.metadata.get("research_status", state.scientific_status.value)
+        )
+        workflow_status = str(state.metadata.get("workflow_status", "RUNNING"))
+        console.print(f"Run [bold]{state.run_id}[/bold]")
+        console.print(f"Scientific: {scientific_status}")
+        console.print(f"Workflow: {workflow_status}")
         clarification = state.metadata.get("problem_clarification", {})
         if isinstance(clarification, dict) and clarification.get("required") is True:
             console.print(
@@ -1014,6 +1020,17 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
                 f"queued {counts['queued']}; active {counts['running']}; "
                 f"completed {counts['completed']}"
             )
+            candidate_attempt = scheduler.get("active_candidate_attempt")
+            if isinstance(candidate_attempt, dict):
+                mandatory = candidate_attempt.get("mandatory_audits", [])
+                completed = candidate_attempt.get("audit_sha256", {})
+                if isinstance(mandatory, list) and isinstance(completed, dict):
+                    missing = [str(name) for name in mandatory if name not in completed]
+                    console.print(
+                        "Candidate audits: "
+                        f"completed {', '.join(sorted(completed)) or 'none'}; "
+                        f"missing {', '.join(missing) or 'none'}"
+                    )
         lean_consent = state.metadata.get("lean_consent")
         if isinstance(lean_consent, dict):
             console.print(

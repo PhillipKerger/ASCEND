@@ -14,7 +14,8 @@ from matek_theorem_agent.budget import BudgetExceeded, BudgetSnapshot
 from matek_theorem_agent.codex_client import CodexRequest, CodexResult
 from matek_theorem_agent.config import ModelSettings
 from matek_theorem_agent.execution.base import CommandRequest, CommandResult
-from matek_theorem_agent.openai_client import ModelRequest, ModelResult
+from matek_theorem_agent.knowledge_graph import KnowledgeGraph
+from matek_theorem_agent.openai_client import ModelRequest, ModelResult, StructuredOutputError
 from matek_theorem_agent.source_provenance import (
     SourceVerificationRecord,
     SourceVerificationReport,
@@ -36,6 +37,7 @@ from matek_theorem_agent.stages.compile_prompt import (
     PromptPlaceholderRepair,
     SourceLedgerEntry,
     SourceLedgerRepair,
+    SourcePurpose,
     compile_prompt,
     find_unresolved_placeholders,
 )
@@ -593,6 +595,126 @@ async def test_prompt_compiler_allows_a_verified_empty_source_ledger(tmp_path: P
             framework_path=FRAMEWORK,
             prompts_dir=tmp_path / "unledgered",
         )
+
+
+@pytest.mark.asyncio
+async def test_unavailable_required_literature_source_is_quarantined_not_aborted(
+    tmp_path: Path,
+) -> None:
+    compiled = compiled_problem()
+    compiled.literature_status = LiteratureStatus.PARTIALLY_RESOLVED
+    compiled.literature_resolution_summary = "The cited preprint claims one special case."
+    claim = "The cited preprint proves the special case."
+    compiled.compiled_prompt = covered_compiled_prompt(claim)
+    compiled.source_ledger = [
+        SourceLedgerEntry(
+            source_id="literature-lead",
+            title="Unavailable preprint",
+            identifiers=["arxiv:2401.01234"],
+            evidence_claims=[{"claim": claim, "source_ids": ["literature-lead"]}],
+            purpose=SourcePurpose.LITERATURE_SUPPORT,
+            required_for_claim=True,
+        )
+    ]
+
+    result = await compile_prompt(
+        client=StaticClient([compiled]),
+        problem_text="Prove the independently specified fixture theorem.",
+        framework_path=FRAMEWORK,
+        prompts_dir=tmp_path,
+        source_verifier=OfflineIdentifierVerifier(),
+    )
+
+    assert result.compiled_problem.literature_status is LiteratureStatus.UNKNOWN
+    assert result.compiled_problem.source_ledger[0].verified is False
+    assert "Unverified literature lead" in result.compiled_prompt
+    assert result.source_verification.warnings
+
+
+@pytest.mark.asyncio
+async def test_malformed_required_literature_source_is_quarantined_not_aborted(
+    tmp_path: Path,
+) -> None:
+    compiled = compiled_problem()
+    compiled.literature_status = LiteratureStatus.PARTIALLY_RESOLVED
+    compiled.literature_resolution_summary = "An incomplete source record claims a special case."
+    compiled.source_ledger = [
+        SourceLedgerEntry(
+            source_id="malformed-literature-lead",
+            title="Incomplete literature lead",
+            identifiers=[],
+            evidence_claims=[],
+            purpose=SourcePurpose.LITERATURE_SUPPORT,
+            required_for_claim=True,
+        )
+    ]
+
+    result = await compile_prompt(
+        client=StaticClient([compiled]),
+        problem_text="Prove the independently specified fixture theorem.",
+        framework_path=FRAMEWORK,
+        prompts_dir=tmp_path,
+    )
+
+    assert result.compiled_problem.literature_status is LiteratureStatus.UNKNOWN
+    assert result.compiled_problem.source_ledger[0].verified is False
+    assert "all literature claims associated" in result.compiled_prompt
+    assert result.source_verification.warnings
+
+
+@pytest.mark.asyncio
+async def test_invalid_optional_graph_proposal_does_not_discard_scientific_report(
+    tmp_path: Path,
+) -> None:
+    problem = tmp_path / "problem.md"
+    problem.write_text("Prove the fixture theorem.", encoding="utf-8")
+    graph = KnowledgeGraph(tmp_path, "resilience")
+    problem_id, _ = graph.initialize_problem(
+        source_path=problem,
+        problem_text=problem.read_text(encoding="utf-8"),
+        run_id="run-graph-warning",
+    )
+
+    class InvalidGraphProposalClient(SuccessfulResearchClient):
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            result = await super().generate_structured(request, output_type)
+            if output_type is ResearchWorkerReport:
+                payload = json.loads(request.input_text)
+                task_id = payload["graph_task_id"]
+                result.parsed.graph_patch = json.dumps(
+                    {
+                        "base_graph_revision": payload["base_graph_revision"],
+                        "run_id": "run-graph-warning",
+                        "task_id": task_id,
+                        "update_nodes": [
+                            {
+                                "matek_id": problem_id,
+                                "expected_content_hash": "not-a-server-bound-hash",
+                                "body": "Invalid optional mutation.",
+                                "reason": "Exercise graph quarantine.",
+                            }
+                        ],
+                    }
+                )
+            return result
+
+    result = await run_adaptive_research(
+        client=InvalidGraphProposalClient(),
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path / "research",
+        knowledge_graph=graph,
+        graph_problem_id=problem_id,
+        run_id="run-graph-warning",
+    )
+
+    assert result.worker_reports
+    assert result.accepted_for_manuscript
+    assert any(issue.event_kind == "graph_mutation_rejected" for issue in result.execution_issues)
+    patch_records = list((tmp_path / "research" / "graph-patches").glob("*.json"))
+    assert patch_records
+    assert any(json.loads(path.read_text(encoding="utf-8"))["warning"] for path in patch_records)
 
 
 class SuccessfulResearchClient:
@@ -1638,10 +1760,10 @@ async def test_interrupted_research_resume_freezes_old_requests_and_rekeys_unlau
                     ),
                     response_id="interrupting-coordinator",
                 )
-            raise RuntimeError("simulated worker interruption")
+            raise RuntimeError("unsafe path integrity interruption")
 
     web_enabled = ModelSettings(web_search=True)
-    with pytest.raises(RuntimeError, match="simulated worker interruption"):
+    with pytest.raises(RuntimeError, match="unsafe path integrity interruption"):
         await run_adaptive_research(
             client=InterruptingClient(),  # type: ignore[arg-type]
             compiled_problem=compiled_problem(),
@@ -2299,6 +2421,167 @@ async def test_unverified_imported_theorem_blocks_research_acceptance(tmp_path: 
     assert list(
         (tmp_path / "candidate" / "attempts").glob("event-*-attempt-1/source_verification.json")
     )
+
+
+@pytest.mark.asyncio
+async def test_completed_audits_survive_one_crash_and_resume_retries_only_missing(
+    tmp_path: Path,
+) -> None:
+    class OneAuditCrashClient(SuccessfulResearchClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.audit_calls: dict[str, int] = {}
+            self.hostile_crashed = False
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            if output_type is AuditVerdict:
+                audit_name = str(json.loads(request.input_text)["audit_role"])
+                self.audit_calls[audit_name] = self.audit_calls.get(audit_name, 0) + 1
+                if audit_name == "hostile" and not self.hostile_crashed:
+                    self.hostile_crashed = True
+                    self.calls += 1
+                    raise RuntimeError("hostile audit provider crashed")
+            return await super().generate_structured(request, output_type)
+
+    client = OneAuditCrashClient()
+    paused = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+    )
+
+    assert paused.outcome is ResearchOutcome.PAUSED_RETRIABLE
+    assert paused.candidate is not None
+    assert "hostile" not in paused.audits
+    assert set(paused.audits) == {"foundational", "domain", "sources"}
+    assert any(
+        issue.event_kind == "candidate_audit_unavailable" for issue in paused.execution_issues
+    )
+    attempt_dirs = list((tmp_path / "audits" / "attempts").iterdir())
+    assert len(attempt_dirs) == 1
+    attempt_dir = attempt_dirs[0]
+    completed_hashes = {name: (attempt_dir / f"{name}.json").read_bytes() for name in paused.audits}
+    calls_before_resume = dict(client.audit_calls)
+
+    resumed = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+    )
+
+    assert resumed.accepted_for_manuscript
+    assert client.audit_calls["hostile"] == calls_before_resume["hostile"] + 1
+    for name in ("foundational", "domain", "sources"):
+        assert client.audit_calls[name] == calls_before_resume[name]
+    for name, contents in completed_hashes.items():
+        path = next((tmp_path / "audits" / "attempts").glob(f"*/{name}.json"))
+        assert path.read_bytes() == contents
+
+
+@pytest.mark.asyncio
+async def test_worker_schema_failure_during_candidate_audit_does_not_cancel_audits(
+    tmp_path: Path,
+) -> None:
+    class WorkerFailureDuringAuditClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.audit_calls = 0
+
+        def result(self, parsed: BaseModel) -> ModelResult[Any]:
+            self.calls += 1
+            return ModelResult(parsed=parsed, response_id=f"audit-race-{self.calls}")
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                return self.result(
+                    ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=assignment_id,
+                                approach_family=family,
+                                task=f"Investigate {family}",
+                                expected_output="Proof or exact obstruction",
+                            )
+                            for assignment_id, family in (
+                                ("candidate-fast", "direct"),
+                                ("schema-failure", "structural"),
+                                ("slow-counterexample", "counterexample"),
+                                ("slow-literature", "literature"),
+                            )
+                        ],
+                        rationale="Exercise worker/audit isolation.",
+                    )
+                )
+            if output_type is ResearchWorkerReport:
+                assignment_id = payload["assignment"]["id"]
+                if assignment_id == "candidate-fast":
+                    await asyncio.sleep(0)
+                    return self.result(
+                        ResearchWorkerReport(
+                            assignment_id=assignment_id,
+                            status=WorkerStatus.CANDIDATE_COMPLETE,
+                            formal_results=["Fixture theorem"],
+                            proof_content="Complete fixture proof.",
+                            exact_gap=None,
+                            sources=[],
+                        )
+                    )
+                if assignment_id == "schema-failure":
+                    await asyncio.sleep(0.02)
+                    raise StructuredOutputError("worker report failed schema validation")
+                await asyncio.sleep(0.08)
+                return self.result(
+                    ResearchWorkerReport(
+                        assignment_id=assignment_id,
+                        status=WorkerStatus.PROGRESS,
+                        formal_results=["Slow partial result"],
+                        proof_content="Partial proof.",
+                        exact_gap="Complete the route.",
+                        sources=[],
+                    )
+                )
+            if output_type is CandidateProofPackage:
+                return self.result(candidate_package())
+            if output_type is AuditVerdict:
+                self.audit_calls += 1
+                await asyncio.sleep(0.05)
+                return self.result(passing_audit())
+            if output_type is FinalJudgeVerdict:
+                return self.result(
+                    FinalJudgeVerdict(
+                        verdict=FinalJudgeDecision.ACCEPTED,
+                        reasons=["All audits passed despite the unrelated worker failure."],
+                        strongest_result="Fixture theorem",
+                    )
+                )
+            raise AssertionError(output_type)
+
+    client = WorkerFailureDuringAuditClient()
+    result = await run_adaptive_research(
+        client=client,  # type: ignore[arg-type]
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+        ),
+    )
+
+    assert result.accepted_for_manuscript
+    assert client.audit_calls == 4
+    events = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in sorted((tmp_path / "events").glob("*.json"))
+    ]
+    assert any(event["kind"] == "worker_execution_failed" for event in events)
+    assert any(issue.assignment_id == "schema-failure" for issue in result.execution_issues)
 
 
 @pytest.mark.asyncio

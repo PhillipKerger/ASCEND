@@ -99,6 +99,9 @@
           "title": "Identifiers",
           "type": "array"
         },
+        "purpose": {
+          "$ref": "#/$defs/SourcePurpose"
+        },
         "required_for_claim": {
           "title": "Required For Claim",
           "type": "boolean"
@@ -132,12 +135,22 @@
         "title",
         "identifiers",
         "evidence_claims",
+        "purpose",
         "required_for_claim",
         "verified",
         "verification_detail"
       ],
       "title": "SourceLedgerEntry",
       "type": "object"
+    },
+    "SourcePurpose": {
+      "description": "Why prompt compilation needs a source.\n\nLiterature support may be quarantined without making the mathematical target\nambiguous. Target-identification evidence cannot be discarded safely.",
+      "enum": [
+        "literature_support",
+        "target_identification"
+      ],
+      "title": "SourcePurpose",
+      "type": "string"
     }
   },
   "additionalProperties": false,

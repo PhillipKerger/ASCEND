@@ -1,7 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-07-22
 
+- Added a persisted resilience taxonomy (`integrity`, `execution`, `evidence`, `scientific`, and
+  `resource`). Only security/state/artifact integrity failures hard-stop; recoverable provider,
+  source, worker, graph-mutation, and audit failures now produce warnings or coordinator events.
+- Literature-only source outages now quarantine and qualify dependent claims without blocking
+  research, with an `arxiv.org/abs/` fallback; strict proof, citation, and bibliography gates are
+  unchanged.
+- Scientific worker reports are committed before optional graph proposals, workers no longer
+  supply trusted graph hashes, and invalid/stale graph mutations cannot discard valid results.
+- Candidate audits checkpoint independently and resume retries only missing checks. Reports and
+  `matek status` now separate scientific from workflow state and expose audit progress and resume
+  obligations.
+- Usage accounting now records every terminal provider attempt, including schema-invalid output
+  and successful bounded repair generations.
 - Renamed the pre-release project to MATEK (Multi-Agent Theorem Exploration through Knowledge-Graph
   Memory). The distribution is now `matek-theorem-agent`, the Python package is
   `matek_theorem_agent`, the CLI is `matek`, configuration is `matek.toml`, environment variables

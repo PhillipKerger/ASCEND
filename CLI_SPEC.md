@@ -179,6 +179,10 @@ count, the acknowledged-through event cursor, and queued, active, and completed 
 API runs may show calculated dollar cost; Codex runs must not invent a dollar cost for subscription
 allowance. If the run ID is omitted, use the latest run in the current project.
 
+The status header prints `Scientific:` and `Workflow:` separately. For a paused candidate attempt
+it also shows completed and missing mandatory audits, so `CANDIDATE_AWAITING_AUDIT` is not confused
+with scientific rejection and `PAUSED_RETRIABLE` has a concrete resume target.
+
 ## `matek resume [RUN_ID]`
 
 Resumes the first incomplete stage with the provider stored in run state. Options include
@@ -252,6 +256,9 @@ The vault lives beneath `.matek/` so these commands do not imply consent to edit
 ```
 
 Scientific failure is represented in the report/status, not necessarily as a process crash.
+Recoverable provider, schema, evidence, scientific, and resource failures likewise return a
+truthful paused or partial status after checkpointing. Artifact/state corruption, unsafe paths,
+security failures, and unauthorized writes retain hard-failure exit semantics.
 An input that does not uniquely identify a mathematical target similarly completes with
 `NEEDS_PROBLEM_CLARIFICATION`: research is not launched, and the terminal output and report ask
 the user to revise the problem file and start a new run.

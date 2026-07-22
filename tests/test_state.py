@@ -4,10 +4,18 @@ from pathlib import Path
 
 import pytest
 
-from matek_theorem_agent.models import RunState, StageName, StageStatus, new_run_state
+from matek_theorem_agent.failures import classify_failure
+from matek_theorem_agent.models import (
+    FailureCategory,
+    RunState,
+    StageName,
+    StageStatus,
+    new_run_state,
+)
 from matek_theorem_agent.state import (
     ArtifactIntegrityError,
     IllegalStageTransition,
+    StateCorruptionError,
     fail_stage,
     first_incomplete_stage,
     invalidate_from,
@@ -38,8 +46,36 @@ def test_legal_transitions_increment_attempts_and_allow_retry(tmp_path: Path) ->
     assert start_stage(state, StageName.INTAKE).attempts == 1
     failed = fail_stage(state, StageName.INTAKE, "temporary", retriable=True)
     assert failed.failure is not None and failed.failure.retriable
+    assert failed.failure.category is FailureCategory.EXECUTION
     assert start_stage(state, StageName.INTAKE).attempts == 2
     assert succeed_stage(state, StageName.INTAKE).status is StageStatus.SUCCEEDED
+
+
+def test_failure_taxonomy_hard_stops_only_integrity_and_security_conditions() -> None:
+    integrity_failures = (
+        StateCorruptionError("invalid state snapshot"),
+        ArtifactIntegrityError("immutable artifact changed"),
+        RuntimeError("artifact hash mismatch"),
+        RuntimeError("unsafe path traversal"),
+        RuntimeError("unauthorized write detected"),
+    )
+    assert all(classify_failure(exc) is FailureCategory.INTEGRITY for exc in integrity_failures)
+
+    class SourceUnavailableError(RuntimeError):
+        pass
+
+    class ScientificGateError(RuntimeError):
+        pass
+
+    class RateLimitedError(RuntimeError):
+        pass
+
+    assert (
+        classify_failure(RuntimeError("provider schema unavailable")) is FailureCategory.EXECUTION
+    )
+    assert classify_failure(SourceUnavailableError()) is FailureCategory.EVIDENCE
+    assert classify_failure(ScientificGateError()) is FailureCategory.SCIENTIFIC
+    assert classify_failure(RateLimitedError()) is FailureCategory.RESOURCE
 
 
 def test_illegal_transition_is_rejected(tmp_path: Path) -> None:

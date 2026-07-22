@@ -19,9 +19,12 @@ from pydantic import (
 
 from ..budget import BudgetExceeded
 from ..config import ModelSettings
+from ..failures import classify_failure, recovery_obligations
 from ..knowledge_graph import GraphPatch, KnowledgeGraph
+from ..models import FailureCategory
 from ..openai_client import ModelClient, ModelRequest, ModelResult, model_request_cache_key
 from ..progress import Ascension, ProgressReporter, no_progress
+from ..redaction import redact_text
 from ..source_identifiers import tool_metadata_source_identifiers
 from ..source_provenance import IdentifierVerifier, SourceEvidenceClaim, SourceVerificationReport
 from .common import (
@@ -72,6 +75,7 @@ class ResearchOutcome(StrEnum):
     REJECTED = "rejected"
     PARTIAL = "partial"
     BUDGET_EXHAUSTED = "budget_exhausted"
+    PAUSED_RETRIABLE = "paused_retriable"
 
 
 class ResearchAssignment(BaseModel):
@@ -172,6 +176,8 @@ class ResearchAssignmentState(BaseModel):
     graph_context: dict[str, object] | None = None
     graph_patch_path: str | None = None
     graph_patch_sha256: str | None = None
+    repair_generation: int = Field(default=0, ge=0, le=1)
+    execution_attempts: int = Field(default=0, ge=0)
 
 
 class ResearchCoordinatorDecisionRecord(BaseModel):
@@ -218,6 +224,32 @@ class PendingCoordinatorRequest(BaseModel):
         return self
 
 
+class ExecutionIssue(BaseModel):
+    """Durable recoverable failure surfaced to the research coordinator."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str
+    category: FailureCategory
+    event_kind: str
+    message: str
+    retryable: bool = True
+    assignment_id: str | None = None
+    candidate_attempt: str | None = None
+    audit_name: str | None = None
+    repair_generation: int = Field(default=0, ge=0)
+    trace_paths: list[str] = Field(default_factory=list)
+    recovery_obligations: list[str] = Field(default_factory=list)
+
+    @field_validator("issue_id", "event_kind", "message")
+    @classmethod
+    def issue_text_is_not_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("execution issue identity and message must not be blank")
+        return normalized
+
+
 class CandidateAttemptState(BaseModel):
     """Frozen candidate-gate transaction and its durable outcome."""
 
@@ -237,6 +269,8 @@ class CandidateAttemptState(BaseModel):
     packager_response_id: str | None = None
     audit_sha256: dict[str, str] = Field(default_factory=dict)
     audit_response_ids: dict[str, str] = Field(default_factory=dict)
+    mandatory_audits: list[str] = Field(default_factory=list)
+    audit_execution_issues: list[ExecutionIssue] = Field(default_factory=list)
     verdict_sha256: str | None = None
     final_judge_response_id: str | None = None
     judge_call_reservation_key: str | None = None
@@ -244,7 +278,7 @@ class CandidateAttemptState(BaseModel):
     outcome_gate: dict[str, object] | None = None
     outcome_obligations: list[str] = Field(default_factory=list)
     outcome_decision: FinalJudgeDecision | None = None
-    outcome_failure_kind: Literal["scientific", "budget"] | None = None
+    outcome_failure_kind: Literal["scientific", "budget", "execution", "evidence"] | None = None
     raced_candidate_report_ids: list[str] = Field(default_factory=list)
 
 
@@ -252,6 +286,7 @@ class SchedulerPhase(StrEnum):
     INITIALIZING = "initializing"
     RUNNING = "running"
     AUDITING = "auditing"
+    AWAITING_AUDITS = "awaiting_audits"
     COMPLETE = "complete"
 
 
@@ -289,6 +324,7 @@ class ResearchSchedulerState(BaseModel):
     model_call_keys: list[str] = Field(default_factory=list)
     model_response_ids_by_call_key: dict[str, str] = Field(default_factory=dict)
     response_ids: list[str] = Field(default_factory=list)
+    execution_issues: list[ExecutionIssue] = Field(default_factory=list)
 
     def assignment_record(self, assignment_id: str) -> ResearchAssignmentState | None:
         return next(
@@ -310,7 +346,21 @@ class ResearchWorkerReport(BaseModel):
     counterexamples: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
     mechanism: str | None = None
-    graph_patch: GraphPatch | None = None
+    # A graph proposal is intentionally an independently parsed JSON document. Keeping
+    # it as an encoded string prevents an optional malformed mutation from invalidating
+    # the scientific report's structured-output contract.
+    graph_patch: str | None = None
+
+    @field_validator("graph_patch", mode="before")
+    @classmethod
+    def encode_graph_patch(cls, value: object) -> object:
+        if value is None or isinstance(value, str):
+            return value
+        if isinstance(value, BaseModel):
+            value = value.model_dump(mode="json")
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        return value
 
     @model_validator(mode="after")
     def blocked_work_has_an_exact_gap(self) -> ResearchWorkerReport:
@@ -328,6 +378,16 @@ class ResearchWorkerEvidence(BaseModel):
     response_id: str
     report: ResearchWorkerReport
     source_verification: SourceVerificationReport
+
+
+class WorkerCollectionResult(BaseModel):
+    """One completion-drain result without exception fan-out."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    accepted_reports: list[ResearchWorkerReport] = Field(default_factory=list)
+    candidate_ids: list[str] = Field(default_factory=list)
+    execution_issues: list[ExecutionIssue] = Field(default_factory=list)
 
 
 class ApproachRecord(BaseModel):
@@ -658,6 +718,8 @@ class ResearchResult(BaseModel):
     research_subagents_used: int = 0
     continuity: ResearchContinuityState | None = None
     acceptance_gate: ResearchAcceptanceGate | None = None
+    execution_issues: list[ExecutionIssue] = Field(default_factory=list)
+    resume_action: str | None = None
     artifacts: ArtifactManifest = Field(default_factory=ArtifactManifest)
     calls: CallManifest
 
@@ -1238,6 +1300,7 @@ async def run_adaptive_research(
     worker_evidence_dir = ensure_stage_directory(destination / "worker-evidence")
     worker_sources_dir = ensure_stage_directory(destination / "source-verification")
     graph_patches_dir = ensure_stage_directory(destination / "graph-patches")
+    issues_dir = ensure_stage_directory(destination / "issues")
     candidate_dir = ensure_stage_directory(destination / "candidate")
     audits_dir = ensure_stage_directory(destination / "audits")
     scheduler_path = coordinator_dir / "state.json"
@@ -1535,7 +1598,13 @@ async def run_adaptive_research(
             "claim_contract": compiled.claim_contract.as_dict(),
             "assignment": record.assignment.model_dump(mode="json"),
             "admitted_by_coordinator_decision": record.admitted_by_decision,
+            "repair_generation": record.repair_generation,
         }
+        if record.repair_generation:
+            payload["recovery_instruction"] = (
+                "This is the one bounded schema/execution repair generation. Return a valid "
+                "scientific report for the same assignment. Keep any graph proposal optional."
+            )
         if record.graph_context is not None:
             payload.update(
                 {
@@ -1869,6 +1938,54 @@ async def run_adaptive_research(
         scheduler.pending_event = None
         persist_scheduler()
         return sequence
+
+    def record_execution_issue(
+        *,
+        event_kind: str,
+        exc: BaseException,
+        category: FailureCategory | None = None,
+        assignment_id: str | None = None,
+        candidate_attempt: str | None = None,
+        audit_name: str | None = None,
+        repair_generation: int = 0,
+        extra_obligations: list[str] | None = None,
+    ) -> ExecutionIssue:
+        resolved_category = category or classify_failure(exc)
+        issue_number = len(scheduler.execution_issues) + 1
+        issue = ExecutionIssue(
+            issue_id=f"issue-{issue_number:08d}",
+            category=resolved_category,
+            event_kind=event_kind,
+            message=f"{type(exc).__name__}: {redact_text(str(exc))[:1000]}",
+            assignment_id=assignment_id,
+            candidate_attempt=candidate_attempt,
+            audit_name=audit_name,
+            repair_generation=repair_generation,
+            trace_paths=[
+                str(path) for path in (getattr(exc, "checkpoint_path", None),) if path is not None
+            ],
+            recovery_obligations=list(
+                dict.fromkeys(
+                    [
+                        *recovery_obligations(exc, resolved_category),
+                        *(extra_obligations or []),
+                    ]
+                )
+            ),
+        )
+        issue_path = _atomic_write_immutable_json(
+            issues_dir / f"{issue.issue_id}.json",
+            issue,
+        )
+        artifact_paths[f"execution_{issue.issue_id}"] = issue_path
+        scheduler.execution_issues.append(issue)
+        append_event(
+            event_kind,
+            assignment_id=assignment_id,
+            artifact=issue_path,
+            detail=issue.recovery_obligations,
+        )
+        return issue
 
     def assignment_records(
         *statuses: AssignmentLifecycle,
@@ -2376,7 +2493,62 @@ async def run_adaptive_research(
             research_subagents_used=sum(record.launched for record in scheduler.assignments),
             continuity=latest_continuity,
             acceptance_gate=acceptance_gate,
+            execution_issues=list(scheduler.execution_issues),
             artifacts=ArtifactManifest(),
+            calls=CallManifest(
+                model_calls=tracker.calls,
+                response_ids=list(dict.fromkeys(tracker.response_ids)),
+            ),
+        )
+        result.artifacts = build_artifact_manifest(artifact_paths)
+        atomic_write_json(destination / "result.json", result)
+        return result
+
+    async def pause_retriable(*, obligations: list[str]) -> ResearchResult:
+        """Return a durable nonterminal snapshot while preserving scheduler identity."""
+
+        if active:
+            await pause_active(requeue_cancelled=True)
+        scheduler.phase = SchedulerPhase.AWAITING_AUDITS
+        persist_research_index()
+        strongest_result = (
+            current_candidate.exact_theorem
+            if current_candidate is not None
+            else next(
+                (
+                    result
+                    for approach in registry.approaches
+                    for result in [approach.strongest_result]
+                    if result.strip()
+                ),
+                "No complete result was established.",
+            )
+        )
+        register_existing_artifacts()
+        result = ResearchResult(
+            outcome=ResearchOutcome.PAUSED_RETRIABLE,
+            coordinator_decisions=[item.decision for item in scheduler.decisions],
+            research_events=scheduler.next_event_sequence - 1,
+            worker_reports=[
+                reports_by_id[record.assignment.id]
+                for record in scheduler.assignments
+                if record.assignment.id in reports_by_id
+            ],
+            registry=registry,
+            candidate=current_candidate,
+            audits=current_audits,
+            final_verdict=current_verdict,
+            unresolved_obligations=list(dict.fromkeys(obligations)),
+            strongest_result=strongest_result,
+            repair_rounds=repair_rounds,
+            research_subagents_assigned=len(scheduler.assignments),
+            research_subagents_used=sum(record.launched for record in scheduler.assignments),
+            continuity=latest_continuity,
+            execution_issues=list(scheduler.execution_issues),
+            resume_action=(
+                "Run `matek resume` to retry only missing mandatory audits; completed audit "
+                "artifacts remain checkpointed."
+            ),
             calls=CallManifest(
                 model_calls=tracker.calls,
                 response_ids=list(dict.fromkeys(tracker.response_ids)),
@@ -2400,7 +2572,15 @@ async def run_adaptive_research(
 
     def coordinator_feedback_due() -> bool:
         return any(
-            event.get("kind") in {"worker_report_accepted", "candidate_audit_failed"}
+            event.get("kind")
+            in {
+                "worker_report_accepted",
+                "worker_execution_failed",
+                "worker_repair_unavailable",
+                "graph_mutation_rejected",
+                "candidate_audit_failed",
+                "candidate_audit_unavailable",
+            }
             for event in recent_events()
         )
 
@@ -2917,7 +3097,11 @@ async def run_adaptive_research(
             raise StageValidationError(
                 f"Worker response for {record.assignment.id!r} is not bound to its request."
             )
+        # The report and its source-verification transaction were committed by
+        # ``run_worker`` before this optional graph integration begins.
         graph_patch_record: Path | None = None
+        graph_issue: BaseException | None = None
+        graph_issue_obligations: list[str] = []
         if knowledge_graph is not None:
             assert graph_problem_id is not None and run_id is not None
             if record.graph_task_id is None:
@@ -2938,29 +3122,58 @@ async def run_adaptive_research(
                     replay_patch_payload,
                 )
             else:
-                graph_merge = knowledge_graph.integrate_worker_report(
-                    problem_id=graph_problem_id,
-                    run_id=run_id,
-                    assignment=record.assignment.model_dump(mode="json"),
-                    task_id=record.graph_task_id,
-                    report=report.model_dump(mode="json", exclude={"graph_patch"}),
-                    proposed_patch=report.graph_patch,
-                    source_artifact=(
-                        f".matek/runs/{run_id}/research/workers/{record.assignment.id}.json"
-                    ),
-                    operation_id=f"worker-report:{run_id}:{record.assignment.id}",
-                )
+                proposed_patch: GraphPatch | None = None
+                if report.graph_patch is not None:
+                    try:
+                        proposed_patch = GraphPatch.model_validate_json(report.graph_patch)
+                    except (ValidationError, ValueError) as exc:
+                        graph_issue = exc
+                        graph_issue_obligations = [
+                            "Discard or repair the optional graph proposal; retain the "
+                            "validated scientific report."
+                        ]
+                try:
+                    graph_merge = knowledge_graph.integrate_worker_report(
+                        problem_id=graph_problem_id,
+                        run_id=run_id,
+                        assignment=record.assignment.model_dump(mode="json"),
+                        task_id=record.graph_task_id,
+                        report=report.model_dump(mode="json", exclude={"graph_patch"}),
+                        proposed_patch=proposed_patch,
+                        source_artifact=(
+                            f".matek/runs/{run_id}/research/workers/{record.assignment.id}.json"
+                        ),
+                        operation_id=f"worker-report:{run_id}:{record.assignment.id}",
+                    )
+                except BaseException as exc:
+                    if classify_failure(exc) is FailureCategory.INTEGRITY:
+                        raise
+                    graph_issue = exc
+                    graph_issue_obligations = [
+                        "Retry graph integration from the frozen report without rerunning "
+                        "the scientific worker."
+                    ]
+                    graph_merge = None
+                if graph_merge is not None and graph_merge.issues and graph_issue is None:
+                    graph_issue = StageValidationError("; ".join(graph_merge.issues))
+                    graph_issue_obligations = [
+                        "Rebase or correct the rejected graph mutation from the frozen graph "
+                        "revision; the scientific report remains accepted."
+                    ]
                 graph_patch_record = _atomic_write_immutable_json(
                     graph_patches_dir / f"{record.assignment.id}.json",
                     {
                         "assignment_id": record.assignment.id,
                         "task_id": record.graph_task_id,
-                        "proposed_patch": (
-                            report.graph_patch.model_dump(mode="json")
-                            if report.graph_patch is not None
+                        "proposed_patch_json": report.graph_patch,
+                        "merge_result": (
+                            graph_merge.model_dump(mode="json") if graph_merge is not None else None
+                        ),
+                        "warning": (
+                            f"{type(graph_issue).__name__}: {redact_text(str(graph_issue))[:1000]}"
+                            if graph_issue is not None
                             else None
                         ),
-                        "merge_result": graph_merge.model_dump(mode="json"),
                     },
                 )
             record.graph_patch_path = graph_patch_record.relative_to(destination).as_posix()
@@ -3010,6 +3223,14 @@ async def run_adaptive_research(
         )
         if published_sequence != event_sequence:
             raise StageValidationError("Research event cursor changed during report commit.")
+        if graph_issue is not None:
+            record_execution_issue(
+                event_kind="graph_mutation_rejected",
+                exc=graph_issue,
+                category=FailureCategory.EVIDENCE,
+                assignment_id=record.assignment.id,
+                extra_obligations=graph_issue_obligations,
+            )
         persist_research_index()
         return event_sequence
 
@@ -3021,7 +3242,7 @@ async def run_adaptive_research(
         ResearchAcceptanceGate | None,
         list[str],
         FinalJudgeDecision | None,
-        Literal["scientific", "budget"] | None,
+        Literal["scientific", "budget", "execution", "evidence"] | None,
     ]:
         nonlocal current_candidate, current_audits, current_verdict, final_judge_response_id
         attempt = scheduler.active_candidate_attempt
@@ -3204,6 +3425,11 @@ async def run_adaptive_research(
         )
         if run_complexity:
             required_audits.append("complexity")
+        if attempt.mandatory_audits and attempt.mandatory_audits != required_audits:
+            raise StageValidationError("Candidate mandatory-audit set changed after it was frozen.")
+        if not attempt.mandatory_audits:
+            attempt.mandatory_audits = list(required_audits)
+            persist_scheduler()
         audit_inputs = {
             name: json.dumps(
                 {
@@ -3397,31 +3623,82 @@ async def run_adaptive_research(
         if reservations_changed:
             persist_scheduler()
 
-        audit_tasks: list[asyncio.Task[tuple[str, AuditVerdict, str]]] = []
-        audit_budget_failure = False
+        audit_tasks: dict[asyncio.Task[tuple[str, AuditVerdict, str]], str] = {}
         if missing_audits:
-            try:
-                async with asyncio.TaskGroup() as audit_group:
-                    for name in missing_audits:
-                        audit_tasks.append(audit_group.create_task(run_audit(name)))
-            except* (BudgetExceeded, _ResearchBudgetExhausted):
-                audit_budget_failure = True
-        for task in audit_tasks:
-            if task.cancelled() or task.exception() is not None:
-                continue
-            name, audit, response_id = task.result()
-            current_audits[name] = audit
-            attempt.audit_response_ids[name] = response_id
-            audit_path = _atomic_write_immutable_json(audit_attempt_dir / f"{name}.json", audit)
-            attempt.audit_sha256[name] = sha256_file(audit_path)
-        if audit_tasks:
+            for name in missing_audits:
+                task = asyncio.create_task(run_audit(name))
+                audit_tasks[task] = name
+            pending_audits = set(audit_tasks)
+            while pending_audits:
+                completed_audits, pending_audits = await asyncio.wait(
+                    pending_audits,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in completed_audits:
+                    name = audit_tasks[task]
+                    try:
+                        completed_name, audit, response_id = task.result()
+                    except (BudgetExceeded, _ResearchBudgetExhausted) as exc:
+                        issue = record_execution_issue(
+                            event_kind="candidate_audit_unavailable",
+                            exc=exc,
+                            category=FailureCategory.RESOURCE,
+                            candidate_attempt=attempt_name,
+                            audit_name=name,
+                            extra_obligations=[f"Retry the missing mandatory {name} audit."],
+                        )
+                        attempt.audit_execution_issues.append(issue)
+                        persist_scheduler()
+                        continue
+                    except BaseException as exc:
+                        category = classify_failure(exc)
+                        if category is FailureCategory.INTEGRITY:
+                            for pending_task in pending_audits:
+                                pending_task.cancel()
+                            await asyncio.gather(*pending_audits, return_exceptions=True)
+                            raise
+                        issue = record_execution_issue(
+                            event_kind="candidate_audit_unavailable",
+                            exc=exc,
+                            category=(FailureCategory.EVIDENCE if name == "sources" else category),
+                            candidate_attempt=attempt_name,
+                            audit_name=name,
+                            extra_obligations=[f"Retry the missing mandatory {name} audit."],
+                        )
+                        attempt.audit_execution_issues.append(issue)
+                        persist_scheduler()
+                        continue
+                    if completed_name != name:
+                        raise StageValidationError(
+                            f"Audit task {name!r} returned identity {completed_name!r}."
+                        )
+                    current_audits[name] = audit
+                    attempt.audit_response_ids[name] = response_id
+                    audit_path = _atomic_write_immutable_json(
+                        audit_attempt_dir / f"{name}.json", audit
+                    )
+                    attempt.audit_sha256[name] = sha256_file(audit_path)
+                    artifact_paths[f"audit_{attempt_name}_{name}"] = audit_path
+                    artifact_paths[f"audit_{name}"] = atomic_write_json(
+                        audits_dir / f"{name}.json", audit
+                    )
+                    # Each pass/failure is a standalone candidate checkpoint. A crash
+                    # after this point retries only audits absent from audit_sha256.
+                    append_event(
+                        "candidate_audit_completed",
+                        response_id=response_id,
+                        artifact=audit_path,
+                        detail=[name, audit.verdict.value],
+                    )
+        unavailable_audits = [name for name in required_audits if name not in current_audits]
+        if unavailable_audits:
+            scheduler.phase = SchedulerPhase.AWAITING_AUDITS
             persist_scheduler()
-        if audit_budget_failure:
             return (
                 None,
-                ["A configured run-wide budget was exhausted during mandatory audits."],
+                [f"Mandatory audit remains unavailable: {name}." for name in unavailable_audits],
                 None,
-                "budget",
+                ("evidence" if unavailable_audits == ["sources"] else "execution"),
             )
 
         for name, audit in current_audits.items():
@@ -3594,9 +3871,10 @@ async def run_adaptive_research(
         tasks: set[asyncio.Task[Any]],
         *,
         requeue_cancelled: bool,
-    ) -> list[str]:
+    ) -> WorkerCollectionResult:
+        accepted_reports: list[ResearchWorkerReport] = []
         candidate_ids: list[str] = []
-        first_error: BaseException | None = None
+        execution_issues: list[ExecutionIssue] = []
         ordered = sorted(
             tasks,
             key=lambda task: scheduler.assignments.index(active[task]),
@@ -3607,6 +3885,7 @@ async def run_adaptive_research(
             if isinstance(result, tuple):
                 report, response_id = result
                 accept_worker_result(record, report, response_id)
+                accepted_reports.append(report)
                 if report.status == WorkerStatus.CANDIDATE_COMPLETE:
                     candidate_ids.append(record.assignment.id)
                 continue
@@ -3617,15 +3896,68 @@ async def run_adaptive_research(
                     record.status = AssignmentLifecycle.CANCELLED
                 continue
             if isinstance(result, BaseException):
-                if record.status != AssignmentLifecycle.RETIRED:
-                    record.status = AssignmentLifecycle.QUEUED
-                if first_error is None:
-                    first_error = result
-                continue
-            if first_error is None:
-                first_error = StageValidationError(
-                    "Research worker returned an invalid task result."
+                category = classify_failure(result)
+                if category is FailureCategory.INTEGRITY:
+                    persist_scheduler()
+                    raise result
+                record.execution_attempts += 1
+                issue = record_execution_issue(
+                    event_kind="worker_execution_failed",
+                    exc=result,
+                    category=category,
+                    assignment_id=record.assignment.id,
+                    repair_generation=record.repair_generation,
+                    extra_obligations=[
+                        (
+                            "Run the one bounded repair generation for this assignment."
+                            if record.repair_generation == 0
+                            else "Coordinator must reassign or retire this failed assignment."
+                        )
+                    ],
                 )
+                execution_issues.append(issue)
+                if (
+                    record.status != AssignmentLifecycle.RETIRED
+                    and record.repair_generation == 0
+                    and category in {FailureCategory.EXECUTION, FailureCategory.EVIDENCE}
+                ):
+                    record.repair_generation = 1
+                    record.status = AssignmentLifecycle.QUEUED
+                    record.request_key = None
+                    try:
+                        reserve_worker_request(record)
+                    except (_ResearchBudgetExhausted, BudgetExceeded) as budget_exc:
+                        record.status = AssignmentLifecycle.RETIRED
+                        execution_issues.append(
+                            record_execution_issue(
+                                event_kind="worker_repair_unavailable",
+                                exc=budget_exc,
+                                category=FailureCategory.RESOURCE,
+                                assignment_id=record.assignment.id,
+                                repair_generation=1,
+                                extra_obligations=[
+                                    "Coordinator must reassign or retire the task when capacity "
+                                    "is available."
+                                ],
+                            )
+                        )
+                elif record.status != AssignmentLifecycle.RETIRED:
+                    record.status = AssignmentLifecycle.RETIRED
+                continue
+            invalid_result = StageValidationError(
+                "Research worker returned an invalid task result."
+            )
+            record.status = AssignmentLifecycle.RETIRED
+            execution_issues.append(
+                record_execution_issue(
+                    event_kind="worker_execution_failed",
+                    exc=invalid_result,
+                    category=FailureCategory.EXECUTION,
+                    assignment_id=record.assignment.id,
+                    repair_generation=record.repair_generation,
+                    extra_obligations=["Coordinator must reassign or retire the task."],
+                )
+            )
         if candidate_ids:
             active_attempt_report_ids = set(
                 scheduler.active_candidate_attempt.report_ids
@@ -3647,15 +3979,18 @@ async def run_adaptive_research(
                 )
             )
         persist_scheduler()
-        if first_error is not None:
-            raise first_error
-        return candidate_ids
+        return WorkerCollectionResult(
+            accepted_reports=accepted_reports,
+            candidate_ids=candidate_ids,
+            execution_issues=execution_issues,
+        )
 
     async def pause_active(*, requeue_cancelled: bool) -> list[str]:
         tasks = set(active)
         for task in tasks:
             task.cancel()
-        return await collect_tasks(tasks, requeue_cancelled=requeue_cancelled)
+        collected = await collect_tasks(tasks, requeue_cancelled=requeue_cancelled)
+        return collected.candidate_ids
 
     async def apply_directed_cancellations() -> list[str]:
         tasks = {
@@ -3663,7 +3998,10 @@ async def run_adaptive_research(
         }
         for task in tasks:
             task.cancel()
-        return await collect_tasks(tasks, requeue_cancelled=False) if tasks else []
+        if not tasks:
+            return []
+        collected = await collect_tasks(tasks, requeue_cancelled=False)
+        return collected.candidate_ids
 
     async def audit_pending_candidate(
         *, resume_after_failure: bool = True
@@ -3767,10 +4105,11 @@ async def run_adaptive_research(
                     )
                     completed_workers = {task for task in completed if task is not evaluation_task}
                     if completed_workers:
-                        raced = await collect_tasks(
+                        raced_collection = await collect_tasks(
                             completed_workers,
                             requeue_cancelled=True,
                         )
+                        raced = raced_collection.candidate_ids
                         attempt.raced_candidate_report_ids = list(
                             dict.fromkeys([*attempt.raced_candidate_report_ids, *raced])
                         )
@@ -3782,6 +4121,16 @@ async def run_adaptive_research(
                 evaluation_task.cancel()
                 await asyncio.gather(evaluation_task, return_exceptions=True)
                 raise
+
+            if failure_kind in {"execution", "evidence"}:
+                attempt.outcome_ready = False
+                attempt.outcome_gate = None
+                attempt.outcome_obligations = []
+                attempt.outcome_decision = None
+                attempt.outcome_failure_kind = None
+                scheduler.phase = SchedulerPhase.AWAITING_AUDITS
+                persist_scheduler()
+                return await pause_retriable(obligations=obligations)
 
             attempt.outcome_ready = True
             attempt.outcome_gate = gate.model_dump(mode="json") if gate is not None else None
@@ -3799,10 +4148,11 @@ async def run_adaptive_research(
 
         done_after_outcome = {task for task in active if task.done()}
         if done_after_outcome:
-            raced = await collect_tasks(
+            raced_collection = await collect_tasks(
                 done_after_outcome,
                 requeue_cancelled=True,
             )
+            raced = raced_collection.candidate_ids
             attempt.raced_candidate_report_ids = list(
                 dict.fromkeys([*attempt.raced_candidate_report_ids, *raced])
             )
@@ -4051,11 +4401,28 @@ async def run_adaptive_research(
                     )
                 done_now, _ = await asyncio.wait(set(active), return_when=asyncio.FIRST_COMPLETED)
 
-            candidate_ids = await collect_tasks(
+            collection = await collect_tasks(
                 done_now,
                 requeue_cancelled=True,
             )
+            candidate_ids = collection.candidate_ids
             persist_research_index()
+            if collection.execution_issues and all(
+                issue.category is FailureCategory.RESOURCE for issue in collection.execution_issues
+            ):
+                return await finish(
+                    ResearchOutcome.BUDGET_EXHAUSTED,
+                    obligations=list(
+                        dict.fromkeys(
+                            [
+                                obligation
+                                for issue in collection.execution_issues
+                                for obligation in issue.recovery_obligations
+                            ]
+                            + ["Research model-call or provider resource budget exhausted."]
+                        )
+                    ),
+                )
             if candidate_ids:
                 scheduler.pending_candidate_report_ids = [candidate_ids[0]]
                 scheduler.pending_candidate_source = "worker"

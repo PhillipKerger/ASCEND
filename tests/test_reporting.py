@@ -101,3 +101,67 @@ def test_report_exposes_literature_and_problem_clarification_outcomes(tmp_path: 
     assert "Problem clarification required" in markdown
     assert "Which objects should be extended?" in markdown
     assert "Prior literature assessment" in markdown
+
+
+def test_report_separates_retriable_workflow_from_candidate_scientific_state(
+    tmp_path: Path,
+) -> None:
+    run_root = create_run_root(tmp_path, run_id="20260722T120000Z-paused-abcdef")
+    (run_root / "input" / "problem.md").write_text("Prove P.\n", encoding="utf-8")
+    coordinator = run_root / "research" / "coordinator"
+    coordinator.mkdir(parents=True)
+    (coordinator / "state.json").write_text(
+        json.dumps(
+            {
+                "phase": "awaiting_audits",
+                "next_event_sequence": 12,
+                "decisions": [{"decision": {}}],
+                "assignments": [
+                    {"status": "completed"},
+                    {"status": "completed"},
+                    {"status": "queued"},
+                ],
+                "active_candidate_attempt": {
+                    "attempt_name": "event-7-attempt-1",
+                    "mandatory_audits": ["foundational", "domain", "hostile"],
+                    "audit_sha256": {"foundational": "a" * 64, "domain": "b" * 64},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate_dir = run_root / "research" / "candidate"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    (candidate_dir / "package.json").write_text(
+        json.dumps({"exact_theorem": "The strongest frozen candidate theorem."}),
+        encoding="utf-8",
+    )
+    state = new_run_state("20260722T120000Z-paused-abcdef", tmp_path, run_root)
+    state.metadata.update(
+        {
+            "research_status": "CANDIDATE_AWAITING_AUDIT",
+            "workflow_status": "PAUSED_RETRIABLE",
+            "resume_action": "Resume only the missing hostile audit.",
+            "execution_issues": [
+                {
+                    "category": "execution",
+                    "message": "Hostile audit provider crashed.",
+                    "trace_paths": ["research/issues/issue-00000001.json"],
+                    "recovery_obligations": ["Retry the missing hostile audit."],
+                }
+            ],
+        }
+    )
+
+    result = write_final_report(state)
+
+    assert result.report.scientific_status == "CANDIDATE_AWAITING_AUDIT"
+    assert result.report.workflow_status == "PAUSED_RETRIABLE"
+    assert result.report.strongest_result == "The strongest frozen candidate theorem."
+    assert result.report.research_checkpoint["assignments"]["completed"] == 2
+    assert result.report.research_checkpoint["missing_audits"] == ["hostile"]
+    markdown = result.report_markdown.read_text(encoding="utf-8")
+    assert "Workflow | `PAUSED_RETRIABLE`" in markdown
+    assert "Missing mandatory audits: hostile" in markdown
+    assert "Trace: research/issues/issue-00000001.json" in markdown
+    assert "Recovery: Retry the missing hostile audit." in markdown

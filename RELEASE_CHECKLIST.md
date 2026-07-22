@@ -56,6 +56,11 @@
 
 - [x] Framework preserved verbatim and hash checked.
 - [x] Adaptive research registry and independent audit suite implemented.
+- [x] Recoverable worker/provider/source failures are durable coordinator events; integrity
+  failures alone hard-stop research.
+- [x] Candidate audits checkpoint independently and resume retries only missing checks.
+- [x] Invalid graph proposals cannot discard validated scientific worker reports.
+- [x] Schema-invalid and schema-repair provider attempts are usage-accounted.
 - [x] No manuscript is generated after a rejected proof.
 - [x] Related-work requirement and independent bibliography verification are mandatory.
 - [x] False citations and unsupported theorem hypotheses block progression.

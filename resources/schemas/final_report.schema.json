@@ -4,6 +4,7 @@
   "required": [
     "run_id",
     "scientific_status",
+    "workflow_status",
     "manuscript_status",
     "lean_status",
     "strongest_result",
@@ -15,6 +16,9 @@
       "type": "string"
     },
     "scientific_status": {
+      "type": "string"
+    },
+    "workflow_status": {
       "type": "string"
     },
     "manuscript_status": {
@@ -42,6 +46,20 @@
       "type": "string"
     },
     "literature_resolution_summary": {
+      "type": ["string", "null"]
+    },
+    "source_provenance_warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "execution_issues": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "research_checkpoint": {
+      "type": "object"
+    },
+    "resume_action": {
       "type": ["string", "null"]
     },
     "knowledge_graph": {

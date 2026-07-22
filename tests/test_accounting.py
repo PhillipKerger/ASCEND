@@ -20,6 +20,7 @@ from matek_theorem_agent.logging import (
 from matek_theorem_agent.openai_client import (
     ModelRequest,
     ModelResult,
+    ProviderAttempt,
     UsageMetadata,
     normalized_model_request,
 )
@@ -112,6 +113,73 @@ async def test_accounting_decorator_logs_and_aggregates(tmp_path: Path) -> None:
     usage = json.loads((run_root / "logs" / "usage.jsonl").read_text().splitlines()[0])
     assert usage["usage"]["response_id"] == "resp_fixture"
     assert usage["usage"]["reasoning_tokens"] == 3
+
+
+async def test_accounting_includes_schema_invalid_and_repair_attempts(tmp_path: Path) -> None:
+    class SchemaRepairClient(FakeClient):
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[T]
+        ) -> ModelResult[T]:
+            self.calls += 1
+            invalid_usage = UsageMetadata(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                reasoning_tokens=10,
+                estimated_cost_usd=0.10,
+            )
+            repaired_usage = UsageMetadata(
+                input_tokens=110,
+                output_tokens=15,
+                total_tokens=125,
+                reasoning_tokens=8,
+                estimated_cost_usd=0.11,
+            )
+            return ModelResult(
+                parsed=output_type.model_validate({"value": "repaired"}),
+                response_id="resp_repaired",
+                usage=repaired_usage,
+                provider_attempts=(
+                    ProviderAttempt(
+                        response_id="resp_schema_invalid",
+                        status="schema_validation_failed",
+                        usage=invalid_usage,
+                        schema_valid=False,
+                        attempt=1,
+                    ),
+                    ProviderAttempt(
+                        response_id="resp_repaired",
+                        status="completed",
+                        usage=repaired_usage,
+                        schema_valid=True,
+                        attempt=2,
+                    ),
+                ),
+            )
+
+    run_root = tmp_path / "run"
+    (run_root / "logs").mkdir(parents=True)
+    budget = BudgetTracker(Limits(maximum_cost_usd=1.0), maximum_calls=2)
+    client = AccountingModelClient(
+        SchemaRepairClient(),
+        stage="research",
+        budget=budget,
+        logger=RunLogger(run_root),
+        provider="api",
+    )
+
+    result = await client.generate_structured(
+        ModelRequest("worker", "assignment", ModelSettings()), Answer
+    )
+
+    assert result.parsed.value == "repaired"
+    assert budget.snapshot().calls == 2
+    assert budget.snapshot().total_tokens == 245
+    usage = load_usage_journal_strict(run_root / "logs" / "usage.jsonl")
+    assert [record.response_id for record in usage] == [
+        "resp_schema_invalid",
+        "resp_repaired",
+    ]
 
 
 async def test_accounting_decorator_creates_explicit_model_role_contexts(

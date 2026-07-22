@@ -34,6 +34,7 @@ Every run must follow this layout:
 │   ├── workers/<assignment-id>.json
 │   ├── source-verification/<assignment-id>.json
 │   ├── graph-patches/<assignment-id>.json
+│   ├── issues/<issue-id>.json
 │   ├── rounds/<round-id>/...  # legacy completed-run compatibility only
 │   ├── candidate/
 │   │   ├── proof.md
@@ -159,15 +160,30 @@ The operational `logs/events.jsonl` and provider trace JSONL files are diagnosti
 not the authoritative research-event ledger.
 
 `research/graph-patches/<assignment-id>.json` records the worker proposal and deterministic merge
-result. Full worker evidence is durable before graph integration. Graph commits are idempotent by
-operation ID, so resume cannot double-apply a patch; a forced prompt replay reuses the originally
-frozen graph memory/context and patch record when it is required to preserve model-call identity.
+result or rejection warning. Full scientific worker evidence is durable before graph integration,
+so an invalid optional proposal never discards a valid proof or counterexample. Patch preconditions
+are bound by MATEK to the frozen graph revision; workers do not supply trusted content hashes.
+Graph commits are idempotent by operation ID, so resume cannot double-apply a patch; a forced
+prompt replay reuses the originally frozen graph memory/context and patch record when it is
+required to preserve model-call identity.
+
+`research/issues/<issue-id>.json` contains immutable categorized execution, evidence, scientific,
+or resource issues, their trace paths, and exact recovery obligations. Each issue is delivered to
+the coordinator by a corresponding immutable event. Integrity failures are not quarantined: state
+corruption, immutable-artifact mismatch, unsafe paths, security failures, and unauthorized writes
+remain hard stops.
+
+Each completed candidate audit is written beneath its attempt directory and bound into the
+canonical scheduler checkpoint immediately. An unavailable audit leaves the attempt in
+`awaiting_audits`; resume retries only audit names without a committed hash and response ID.
 
 ## Model traces
 
 Store visible model outputs, request configuration, response IDs, tool/citation metadata, and
-usage. Do not request or store private chain-of-thought. Reasoning summaries may be stored only
-when explicitly configured and should not be required for reproducibility.
+usage. Every terminal provider attempt is added to `logs/usage.jsonl` before its final output is
+admitted, including schema-invalid attempts and bounded schema-repair generations. Do not request
+or store private chain-of-thought. Reasoning summaries may be stored only when explicitly
+configured and should not be required for reproducibility.
 
 `config/effective_config.toml` is the resume source. It changes only after an explicit,
 confirmed provider migration. A state-first `pending_backend_migration` intent lets ordinary

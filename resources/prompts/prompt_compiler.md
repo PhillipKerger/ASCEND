@@ -46,6 +46,8 @@ Requirements:
 - Do not invent papers, theorem names, authors, dates, or claims.
 - For every source-ledger entry, assign a stable `source_id`, list canonical DOI/arXiv/ISBN/MR
   or authoritative HTTPS identifiers, and link each prose evidence claim through `source_ids`.
-  Set `required_for_claim` only when the mathematical claim logically depends on that source.
-  Leave verification to MATEK.
+  Set `purpose = "target_identification"` only when the source is necessary to identify what
+  theorem the user is asking about; otherwise use `purpose = "literature_support"`. Set
+  `required_for_claim` when a literature or mathematical claim depends on the source. Leave
+  verification to MATEK.
 - Return the complete adapted prompt and the required structured metadata.

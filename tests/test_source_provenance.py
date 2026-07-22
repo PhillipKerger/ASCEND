@@ -109,6 +109,33 @@ async def test_verifier_retries_one_transient_failure() -> None:
 
 
 @pytest.mark.asyncio
+async def test_arxiv_verifier_falls_back_to_abs_page() -> None:
+    requests: list[str] = []
+
+    async def fetcher(url: str, timeout: float, maximum_bytes: int) -> HttpResponse:
+        requests.append(url)
+        if "export.arxiv.org" in url:
+            raise TimeoutError("export endpoint unavailable")
+        return HttpResponse(
+            200,
+            url,
+            {"Content-Type": "text/html"},
+            b"<title>A Verified Mathematical Source</title>",
+        )
+
+    verifier = BoundedHttpSourceVerifier(fetcher=fetcher, maximum_attempts=1)
+    report = await verifier.verify(
+        ["arxiv:2401.01234"], expected_title="A Verified Mathematical Source"
+    )
+
+    assert report.records[0].status is SourceVerificationStatus.VERIFIED
+    assert requests == [
+        "https://export.arxiv.org/api/query?id_list=2401.01234",
+        "https://arxiv.org/abs/2401.01234",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_verifier_reports_partially_unavailable_identifier_set() -> None:
     async def fetcher(url: str, timeout: float, maximum_bytes: int) -> HttpResponse:
         if "crossref.org" in url:

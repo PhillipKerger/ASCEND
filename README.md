@@ -236,6 +236,8 @@ The prompt flow is:
    pending-event write-ahead record, creates a sequenced immutable event such as
    `research/events/00000001.json`, clears the pending record, and refreshes the derived
    `research/coordinator/mailbox.json`. It does not wait for all other workers.
+   If the optional graph proposal is malformed or stale, that mutation is recorded as a warning;
+   the already validated scientific report remains available to the coordinator.
 5. The coordinator consumes newly useful events together with the unchanged big prompt and claim
    contract, assignment lifecycle state, approach registry, audit obligations, and complete raw
    reports. It can immediately redirect, retire, or add assignments, and the scheduler refills
@@ -274,6 +276,12 @@ resumes/refills. The result records
 `research_subagents_assigned` separately from `research_subagents_used`; these are telemetry, not
 cumulative limits. A worker's self-declared success therefore changes scheduling but never
 verifies its own proof.
+
+Audits checkpoint independently. If an auditor or evidence source is temporarily unavailable,
+completed audit passes survive and the run reports `Scientific: CANDIDATE_AWAITING_AUDIT` with
+`Workflow: PAUSED_RETRIABLE`; `matek resume` retries only missing checks. No manuscript,
+bibliography, or Lean promotion occurs until every mandatory audit and imported theorem is
+verified.
 
 The proof package must explicitly say whether the result is quantitative or algorithmic. The
 foundational auditor checks that classification independently and blocks a false negative; an
@@ -413,6 +421,9 @@ Scientific rejection is a valid workflow result, not necessarily a process failu
 distinguish research rejection, accepted proof, manuscript or bibliography failure,
 statement-only or partial Lean work, approved-axiom verification, and axiom-free
 `LEAN_VERIFIED`. Example reports are available in [`examples/reports`](examples/reports).
+Recoverable provider, schema, evidence, or resource issues are reported separately from the
+strongest scientific state. Only security, state corruption, unsafe paths, unauthorized writes,
+and immutable-artifact integrity failures hard-stop a run.
 
 ## Citation and AI-usage disclosure
 
@@ -648,9 +659,11 @@ The image must already contain the configured LaTeX compiler, Lean/Lake toolchai
   access is available and run `matek resume RUN_ID`; MATEK will not switch to API billing.
 - **Run time limit reached:** completed calls and artifacts remain checkpointed. Increase the
   frozen allowance explicitly with `matek resume RUN_ID --time-limit-minutes N` if desired.
-- **Live search unavailable:** source-dependent stages stop rather than weakening bibliography
-  checks. Restore Codex search or network access, then resume. To intentionally prohibit all
-  research-side web access, use `--no-web-search` (normally together with `--research-only`).
+- **Live search unavailable:** literature-support claims are quarantined or qualified so research
+  can continue, but target identification may pause and final citation/bibliography gates remain
+  strict. Restore Codex search or network access, then resume any missing source audits. To
+  intentionally prohibit all research-side web access, use `--no-web-search` (normally together
+  with `--research-only`).
 - **Git repository required:** run MATEK inside the intended Git project. Power users may set
   `codex.skip_git_repo_check = true`, but doing so weakens change provenance.
 - **Lean/Lake or LaTeX missing:** install the tools reported by `matek doctor`, use `--no-lean`

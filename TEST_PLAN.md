@@ -35,6 +35,8 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 - Ambiguous input produces a clarification request and no downstream model or command calls.
 - Fully resolved literature matches require verified primary-source evidence and retain known
   result provenance.
+- An unavailable literature-support arXiv source is quarantined and its claims are downgraded while
+  research still starts; target-identification evidence remains fail closed.
 - Event-driven research configuration defaults and migration of legacy
   `maximum_assignments_per_round`/`maximum_rounds` and `--max-rounds` inputs to
   `maximum_pending_assignments`/`maximum_coordinator_decisions` without reintroducing barriers.
@@ -52,6 +54,12 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 - A fast worker completion can trigger a decision and refill while slower workers remain active.
 - Candidate audit pauses new admission; in-flight completions remain durable, and a failed audit
   becomes an immediate high-priority coordinator event.
+- A worker schema failure during candidate auditing becomes a durable issue and does not cancel
+  already-running audits. Invalid optional graph patches likewise retain valid scientific reports.
+- Two completed audits survive a third audit crash and restart retries only the missing audit;
+  acceptance remains impossible with any missing audit or unverified imported theorem.
+- Invalid provider outputs and successful schema-repair attempts both count toward usage and call
+  limits.
 - Sparse progress maps Ascension 2 to coordinator start/resume and Ascension 3 to live-pool
   management, with no per-batch repetition.
 - Retry classification and incomplete API responses.
@@ -97,6 +105,9 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
     exists (the focused fixture scales the ceiling down for fast offline execution).
 16. Candidate acceptance while research remains active prevents queued work from starting;
     candidate rejection preserves in-flight reports and immediately reprioritizes audit repairs.
+17. Retriable research failure reports expose separate workflow/scientific status, completed
+    workers, committed and missing audits, trace paths, and the resume action.
+18. Corrupt state, immutable hash mismatch, unsafe path, and unauthorized write still hard-stop.
 
 ## Optional live tests
 

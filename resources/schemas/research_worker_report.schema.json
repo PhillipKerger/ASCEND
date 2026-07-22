@@ -1,394 +1,5 @@
 {
   "$defs": {
-    "ClaimType": {
-      "enum": [
-        "lemma",
-        "theorem",
-        "conjecture",
-        "corollary",
-        "equivalence",
-        "algorithm",
-        "lower_bound",
-        "upper_bound",
-        "classification"
-      ],
-      "title": "ClaimType",
-      "type": "string"
-    },
-    "EpistemicStatus": {
-      "enum": [
-        "open",
-        "conjectured",
-        "candidate",
-        "proved_informally",
-        "audit_passed",
-        "lean_verified",
-        "refuted",
-        "inconsistent",
-        "stale"
-      ],
-      "title": "EpistemicStatus",
-      "type": "string"
-    },
-    "GraphEdge": {
-      "additionalProperties": false,
-      "properties": {
-        "relation": {
-          "$ref": "#/$defs/RelationType"
-        },
-        "source_id": {
-          "title": "Source Id",
-          "type": "string"
-        },
-        "target_id": {
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "source_id",
-        "relation",
-        "target_id"
-      ],
-      "title": "GraphEdge",
-      "type": "object"
-    },
-    "GraphNodeCreate": {
-      "additionalProperties": false,
-      "properties": {
-        "body": {
-          "title": "Body",
-          "type": "string"
-        },
-        "claim_type": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ClaimType"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "epistemic_status": {
-          "$ref": "#/$defs/EpistemicStatus"
-        },
-        "evidence": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "matek_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Matek Id"
-        },
-        "node_type": {
-          "$ref": "#/$defs/NodeType"
-        },
-        "source_artifacts": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Source Artifacts",
-          "type": "array"
-        },
-        "tags": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Tags",
-          "type": "array"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        },
-        "workflow_status": {
-          "$ref": "#/$defs/WorkflowStatus"
-        }
-      },
-      "required": [
-        "matek_id",
-        "node_type",
-        "title",
-        "body",
-        "claim_type",
-        "epistemic_status",
-        "workflow_status",
-        "tags",
-        "evidence",
-        "source_artifacts"
-      ],
-      "title": "GraphNodeCreate",
-      "type": "object"
-    },
-    "GraphNodeUpdate": {
-      "additionalProperties": false,
-      "properties": {
-        "body": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Body"
-        },
-        "evidence": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "expected_content_hash": {
-          "title": "Expected Content Hash",
-          "type": "string"
-        },
-        "matek_id": {
-          "title": "Matek Id",
-          "type": "string"
-        },
-        "reason": {
-          "title": "Reason",
-          "type": "string"
-        },
-        "source_artifacts": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Source Artifacts",
-          "type": "array"
-        },
-        "tags": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Tags"
-        },
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Title"
-        }
-      },
-      "required": [
-        "matek_id",
-        "expected_content_hash",
-        "title",
-        "body",
-        "tags",
-        "evidence",
-        "source_artifacts",
-        "reason"
-      ],
-      "title": "GraphNodeUpdate",
-      "type": "object"
-    },
-    "GraphPatch": {
-      "additionalProperties": false,
-      "properties": {
-        "add_edges": {
-          "items": {
-            "$ref": "#/$defs/GraphEdge"
-          },
-          "title": "Add Edges",
-          "type": "array"
-        },
-        "agent_role": {
-          "title": "Agent Role",
-          "type": "string"
-        },
-        "base_graph_revision": {
-          "title": "Base Graph Revision",
-          "type": "string"
-        },
-        "create_nodes": {
-          "items": {
-            "$ref": "#/$defs/GraphNodeCreate"
-          },
-          "title": "Create Nodes",
-          "type": "array"
-        },
-        "evidence": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Evidence",
-          "type": "array"
-        },
-        "proposed_status_changes": {
-          "items": {
-            "$ref": "#/$defs/GraphStatusChange"
-          },
-          "title": "Proposed Status Changes",
-          "type": "array"
-        },
-        "remove_edges": {
-          "items": {
-            "$ref": "#/$defs/GraphEdge"
-          },
-          "title": "Remove Edges",
-          "type": "array"
-        },
-        "run_id": {
-          "title": "Run Id",
-          "type": "string"
-        },
-        "task_id": {
-          "title": "Task Id",
-          "type": "string"
-        },
-        "unresolved_obligations": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Unresolved Obligations",
-          "type": "array"
-        },
-        "update_nodes": {
-          "items": {
-            "$ref": "#/$defs/GraphNodeUpdate"
-          },
-          "title": "Update Nodes",
-          "type": "array"
-        }
-      },
-      "required": [
-        "base_graph_revision",
-        "run_id",
-        "task_id",
-        "agent_role",
-        "create_nodes",
-        "update_nodes",
-        "add_edges",
-        "remove_edges",
-        "proposed_status_changes",
-        "evidence",
-        "unresolved_obligations"
-      ],
-      "title": "GraphPatch",
-      "type": "object"
-    },
-    "GraphStatusChange": {
-      "additionalProperties": false,
-      "properties": {
-        "epistemic_status": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EpistemicStatus"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "expected_content_hash": {
-          "title": "Expected Content Hash",
-          "type": "string"
-        },
-        "matek_id": {
-          "title": "Matek Id",
-          "type": "string"
-        },
-        "reason": {
-          "title": "Reason",
-          "type": "string"
-        },
-        "workflow_status": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WorkflowStatus"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "matek_id",
-        "expected_content_hash",
-        "epistemic_status",
-        "workflow_status",
-        "reason"
-      ],
-      "title": "GraphStatusChange",
-      "type": "object"
-    },
-    "NodeType": {
-      "enum": [
-        "problem",
-        "definition",
-        "claim",
-        "proof",
-        "approach",
-        "task",
-        "counterexample",
-        "experiment",
-        "source",
-        "audit",
-        "formalization",
-        "run",
-        "artifact",
-        "human_note"
-      ],
-      "title": "NodeType",
-      "type": "string"
-    },
-    "RelationType": {
-      "enum": [
-        "depends_on",
-        "proves",
-        "disproves",
-        "refutes",
-        "strengthens",
-        "weakens",
-        "specializes",
-        "generalizes",
-        "equivalent_to",
-        "contradicts",
-        "motivates",
-        "blocks",
-        "blocked_by",
-        "resolves",
-        "tests",
-        "cites",
-        "audits",
-        "formalizes",
-        "supersedes",
-        "created_during",
-        "related_to",
-        "targets"
-      ],
-      "title": "RelationType",
-      "type": "string"
-    },
     "SourceEvidenceClaim": {
       "additionalProperties": false,
       "description": "A prose claim linked explicitly to stable source IDs.",
@@ -430,6 +41,9 @@
           "title": "Identifiers",
           "type": "array"
         },
+        "purpose": {
+          "$ref": "#/$defs/SourcePurpose"
+        },
         "required_for_claim": {
           "title": "Required For Claim",
           "type": "boolean"
@@ -463,12 +77,22 @@
         "title",
         "identifiers",
         "evidence_claims",
+        "purpose",
         "required_for_claim",
         "verified",
         "verification_detail"
       ],
       "title": "SourceLedgerEntry",
       "type": "object"
+    },
+    "SourcePurpose": {
+      "description": "Why prompt compilation needs a source.\n\nLiterature support may be quarantined without making the mathematical target\nambiguous. Target-identification evidence cannot be discarded safely.",
+      "enum": [
+        "literature_support",
+        "target_identification"
+      ],
+      "title": "SourcePurpose",
+      "type": "string"
     },
     "WorkerStatus": {
       "enum": [
@@ -478,20 +102,6 @@
         "candidate_complete"
       ],
       "title": "WorkerStatus",
-      "type": "string"
-    },
-    "WorkflowStatus": {
-      "enum": [
-        "queued",
-        "active",
-        "in_progress",
-        "blocked",
-        "dormant",
-        "abandoned",
-        "superseded",
-        "complete"
-      ],
-      "title": "WorkflowStatus",
       "type": "string"
     }
   },
@@ -543,12 +153,13 @@
     "graph_patch": {
       "anyOf": [
         {
-          "$ref": "#/$defs/GraphPatch"
+          "type": "string"
         },
         {
           "type": "null"
         }
-      ]
+      ],
+      "title": "Graph Patch"
     },
     "mechanism": {
       "anyOf": [

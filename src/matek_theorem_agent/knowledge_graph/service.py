@@ -2145,7 +2145,8 @@ class KnowledgeGraph:
         """Validate and atomically merge a proposed agent patch.
 
         A stale base revision may rebase only when every touched source node is
-        unchanged from that snapshot and explicit node hashes still match.  This
+        unchanged from that frozen snapshot. MATEK binds content hashes from that
+        server-owned revision; workers never supply trusted hashes. This
         permits independent concurrent additions while detecting true edit conflicts.
         """
 
@@ -2219,14 +2220,6 @@ class KnowledgeGraph:
                     conflicts.append(
                         f"node {node_id} changed after base revision {patch.base_graph_revision}"
                     )
-            for update in patch.update_nodes:
-                current = by_id.get(update.matek_id)
-                if current is not None and current.content_hash != update.expected_content_hash:
-                    conflicts.append(f"content hash conflict for {update.matek_id}")
-            for change in patch.proposed_status_changes:
-                current = by_id.get(change.matek_id)
-                if current is not None and current.content_hash != change.expected_content_hash:
-                    conflicts.append(f"content hash conflict for {change.matek_id}")
             if len(proposed_ids) != len(set(proposed_ids)):
                 conflicts.append("patch proposes duplicate stable node IDs")
             conflicts.extend(

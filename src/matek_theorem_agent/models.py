@@ -51,6 +51,7 @@ class ScientificStatus(StrEnum):
     NEEDS_PROBLEM_CLARIFICATION = "NEEDS_PROBLEM_CLARIFICATION"
     PROMPT_COMPILED = "PROMPT_COMPILED"
     RESEARCH_RUNNING = "RESEARCH_RUNNING"
+    CANDIDATE_AWAITING_AUDIT = "CANDIDATE_AWAITING_AUDIT"
     RESEARCH_PARTIAL = "RESEARCH_PARTIAL"
     RESEARCH_REJECTED = "RESEARCH_REJECTED"
     RESEARCH_ACCEPTED_FOR_MANUSCRIPT = "RESEARCH_ACCEPTED_FOR_MANUSCRIPT"
@@ -68,9 +69,29 @@ class ScientificStatus(StrEnum):
     REPORT_COMPLETE = "REPORT_COMPLETE"
 
 
+class FailureCategory(StrEnum):
+    """Stable persisted classification for workflow and research failures."""
+
+    INTEGRITY = "integrity"
+    EXECUTION = "execution"
+    EVIDENCE = "evidence"
+    SCIENTIFIC = "scientific"
+    RESOURCE = "resource"
+
+
+class WorkflowExecutionStatus(StrEnum):
+    """Operational state, deliberately independent from mathematical status."""
+
+    RUNNING = "RUNNING"
+    PAUSED_RETRIABLE = "PAUSED_RETRIABLE"
+    COMPLETE = "COMPLETE"
+    HARD_STOPPED = "HARD_STOPPED"
+
+
 class FailureInfo(_StateModel):
     kind: str
     message: str
+    category: FailureCategory = FailureCategory.EXECUTION
     occurred_at: datetime = Field(default_factory=utc_now)
     retriable: bool = False
     details: dict[str, Any] = Field(default_factory=dict)
@@ -197,12 +218,14 @@ def new_run_state(
 
 __all__ = [
     "STAGE_ORDER",
+    "FailureCategory",
     "FailureInfo",
     "RunState",
     "ScientificStatus",
     "StageName",
     "StageRecord",
     "StageStatus",
+    "WorkflowExecutionStatus",
     "initial_stage_records",
     "new_run_state",
     "utc_now",

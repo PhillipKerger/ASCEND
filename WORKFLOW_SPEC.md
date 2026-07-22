@@ -43,6 +43,13 @@ repair. An unresolved marker blocks the workflow only in the exact target or suc
 an optional sentence is removed with a recorded warning. Partial/full resolution claims require
 verified sources and an exact statement-and-hypothesis comparison.
 
+Every source states whether it identifies the target or supports a literature claim. Failure to
+verify target-identification evidence pauses for clarification. Failure to resolve literature-only
+evidence instead preserves the source-verification report, marks the source and dependent claims
+unverified, qualifies or removes those claims from the compiled prompt, and continues research.
+Both `export.arxiv.org` and `arxiv.org/abs/<id>` are deterministic arXiv resolution routes.
+Quarantined literature evidence remains ineligible for candidate acceptance and bibliography use.
+
 The adapted prompt front-loads a compact research-mandate snapshot modeled at a high level on
 the public Cycle Double Cover prompt: exact target, boundary conventions, near-misses, adaptive
 independent search, persistence, adversarial review, search policy, and a proof-only completion
@@ -56,6 +63,10 @@ worker request freezes a bounded graph context and base revision. A worker may p
 patch but cannot write the vault. Once its raw report and independent source verification are
 durable, the deterministic graph service validates/merges the patch and distilled report, then
 publishes the worker event. Valid partial and blocked results therefore survive interruption.
+The scientific report transaction and the optional graph mutation are separate: an invalid or
+stale patch produces a durable warning while the proof, counterexample, or partial result remains
+available. MATEK binds graph content hashes from the frozen revision rather than trusting hashes
+supplied by a worker.
 
 Research is a nested orchestration boundary. The deterministic outer workflow starts or resumes
 one application-owned logical research coordinator and gives it the complete, unabridged compiled
@@ -101,6 +112,12 @@ MATEK runs a durable event loop with no round barrier:
    synchronization barrier.
 5. Persist the coordinator's acknowledgement cursor and next decision, update the registry, and
    immediately retire, redirect, or refill work as directed.
+
+Provider, schema, and worker-execution failures are isolated to their assignments. `collect_tasks`
+returns accepted reports, candidate IDs, and structured issues; it never discards concurrent
+successes by raising the first recoverable worker exception. MATEK records
+`worker_execution_failed`, permits one bounded repair generation, and then lets the coordinator
+reassign or retire the route. Integrity failures still stop the scheduler.
 
 On every activation, the coordinator receives the original complete prompt and claim contract,
 all unacknowledged mailbox events, the current assignment lifecycle state, the approach registry,
@@ -157,6 +174,13 @@ for unrelated active workers. A package that exposes unresolved proof steps fail
 independent judging; every structurally complete package immediately runs every mandatory
 independent audit plus the final judge. Reports that finish while admission is paused are durably
 appended to the mailbox and remain available to the coordinator.
+
+Each audit is an independent checkpoint. Its JSON, provider response ID, and hash are committed as
+soon as that audit finishes. A failed audit is scientific feedback; a crashed or unavailable audit
+is an execution/evidence issue that leaves the candidate in `AWAITING_AUDITS` and pauses the
+workflow retriably. Resume launches only missing audits. The final judge is not called, and the
+candidate cannot be accepted, until every frozen mandatory audit and every imported theorem is
+independently verified.
 
 Acceptance stops the research scheduler, cancels work that no longer needs to start, and advances
 the workflow. If the gate does not pass, MATEK appends the full failed-audit reports, judge
@@ -252,6 +276,11 @@ the final theorem statement hash with the approved `challenge.lean` statement ha
 
 Generate `REPORT.md`, `report.json`, and `verification_certificate.json`. The report must be
 truthful even when research or formalization fails.
+
+Report scientific state independently from execution state. For example, an unavailable mandatory
+audit is `Scientific: CANDIDATE_AWAITING_AUDIT` and `Workflow: PAUSED_RETRIABLE`. The report derives
+the strongest candidate, completed workers, committed audit progress, missing checks, issue trace
+paths, and exact resume action from the canonical scheduler checkpoint.
 
 Update the persistent run node with the strongest result, unresolved obligations, and terminal or
 incomplete status. Report metadata links the graph name and selection mode, stable problem ID,
