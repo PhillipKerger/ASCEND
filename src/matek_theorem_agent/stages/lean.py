@@ -207,7 +207,7 @@ class LeanIterationRecord(BaseModel):
 
 class LeanWorkflowSettings(BaseModel):
     maximum_statement_revisions: int = Field(default=3, ge=1)
-    maximum_codex_iterations: int = Field(default=50, ge=0)
+    maximum_codex_iterations: int = Field(default=10_000, ge=0)
     maximum_no_progress_iterations: int = Field(default=3, ge=1)
     codex_timeout_seconds: int = Field(default=1800, ge=1)
     lean_timeout_seconds: int = Field(default=600, ge=1)

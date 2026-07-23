@@ -13,6 +13,7 @@ import matek_theorem_agent.stages.research as research_stage
 from matek_theorem_agent.budget import BudgetExceeded, BudgetSnapshot
 from matek_theorem_agent.codex_client import CodexRequest, CodexResult
 from matek_theorem_agent.config import ModelSettings
+from matek_theorem_agent.coordinator_context import serialize_coordinator_payload
 from matek_theorem_agent.execution.base import CommandRequest, CommandResult
 from matek_theorem_agent.knowledge_graph import KnowledgeGraph
 from matek_theorem_agent.openai_client import (
@@ -703,8 +704,9 @@ async def test_invalid_optional_graph_proposal_does_not_discard_scientific_repor
             if output_type is ResearchCoordinatorDecision and payload["initial_portfolio"]:
                 memory = payload["knowledge_graph_memory"]
                 assert memory["review_required_before_delegation"] is True
-                assert memory["overview"]["prior_node_count"] > 0
-                assert memory["frontier"]["prior_runs"]
+                assert memory["node_count"] > 0
+                assert memory["graph_root"].endswith("/resilience")
+                assert payload["graph_node_summaries"]
                 self.initial_graph_review_seen = True
             result = await super().generate_structured(request, output_type)
             if output_type is ResearchWorkerReport:
@@ -2311,15 +2313,15 @@ async def test_failed_grouped_repair_preserves_singleton_candidate_for_gate(
 def test_research_workflow_defaults_use_a_large_continuous_pending_window() -> None:
     settings = ResearchWorkflowSettings()
 
-    assert settings.orchestration_mode == "flat"
+    assert settings.orchestration_mode == "hierarchical"
     assert settings.maximum_subagents_per_agent == 8
-    assert settings.hierarchical_subagent_limit == 0
-    assert settings.minimum_initial_assignments == 16
-    assert settings.maximum_concurrent_agents == 32
-    assert settings.maximum_pending_assignments == 32
-    assert settings.maximum_coordinator_decisions == 256
+    assert settings.hierarchical_subagent_limit == 8
+    assert settings.minimum_initial_assignments == 8
+    assert settings.maximum_concurrent_agents == 8
+    assert settings.maximum_pending_assignments == 1_024
+    assert settings.maximum_coordinator_decisions == 100_000
     assert settings.maximum_coordinator_context_characters == 800_000
-    assert settings.maximum_coordinator_requested_artifacts == 8
+    assert settings.maximum_coordinator_requested_artifacts == 32
     assert "maximum_research_subagents" not in type(settings).model_fields
     assert "exact_target_persistence" not in type(settings).model_fields
 
@@ -2546,7 +2548,7 @@ async def test_scientific_reduction_stop_is_declined_and_exact_research_continue
 
 
 @pytest.mark.asyncio
-async def test_default_pool_runs_32_web_enabled_initial_research_workers(
+async def test_default_pool_runs_8_hierarchical_web_enabled_initial_research_workers(
     tmp_path: Path,
 ) -> None:
     class ThirtyTwoWorkerClient:
@@ -2564,7 +2566,13 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
             assert request.settings.web_search is True
             payload = json.loads(request.input_text)
             if output_type is ResearchCoordinatorDecision:
-                assert payload["maximum_concurrent_workers"] == 32
+                assert payload["maximum_concurrent_workers"] == 8
+                assert (
+                    payload["research_agent_hierarchy"][
+                        "maximum_sub_subagents_per_subagent"
+                    ]
+                    == 8
+                )
                 assert payload["worker_web_search_enabled"] is True
                 if payload["initial_portfolio"]:
                     parsed: BaseModel = ResearchCoordinatorDecision(
@@ -2577,7 +2585,7 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
                                 task=f"Investigate independent route {index}",
                                 expected_output="A rigorous partial result or exact obstruction",
                             )
-                            for index in range(32)
+                            for index in range(8)
                         ],
                         rationale="Fill the available initial research pool.",
                     )
@@ -2597,7 +2605,7 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
                 self.worker_ids.add(assignment_id)
                 self.active_workers += 1
                 self.maximum_active_workers = max(self.maximum_active_workers, self.active_workers)
-                if self.active_workers == 32:
+                if self.active_workers == 8:
                     self.all_workers_started.set()
                 try:
                     await asyncio.wait_for(self.all_workers_started.wait(), timeout=2)
@@ -2624,8 +2632,8 @@ async def test_default_pool_runs_32_web_enabled_initial_research_workers(
     )
 
     assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
-    assert client.maximum_active_workers == 32
-    assert len(client.worker_ids) == 32
+    assert client.maximum_active_workers == 8
+    assert len(client.worker_ids) == 8
 
 
 @pytest.mark.asyncio
@@ -2880,7 +2888,7 @@ async def test_repeated_context_rejection_pauses_with_partial_progress_and_resum
     )
 
     assert result.outcome is ResearchOutcome.PAUSED_RETRIABLE
-    assert result.pause_reason == "CONTEXT_BUDGET_EXHAUSTED"
+    assert result.pause_reason == "PROVIDER_CONTEXT_REJECTED_AFTER_COMPACTION"
     assert len(result.worker_reports) == 4
     assert result.strongest_result != "No complete result was established."
     assert "matek resume" in (result.resume_action or "")
@@ -2894,7 +2902,7 @@ async def test_repeated_context_rejection_pauses_with_partial_progress_and_resum
     pending = scheduler["pending_coordinator_request"]
     assert scheduler["phase"] == "running"
     assert pending["request_payload"] != json.loads(client.rejected_inputs[-1])
-    assert len(json.dumps(pending["request_payload"], sort_keys=True)) < len(
+    assert len(serialize_coordinator_payload(pending["request_payload"])) < len(
         client.rejected_inputs[-1]
     )
     prior_events = {
@@ -3410,6 +3418,7 @@ async def test_research_scales_initial_portfolio_to_available_budget_above_safet
         research_dir=tmp_path,
         workflow_settings=ResearchWorkflowSettings(
             maximum_model_calls=10,
+            minimum_initial_assignments=9,
             maximum_concurrent_agents=9,
         ),
     )

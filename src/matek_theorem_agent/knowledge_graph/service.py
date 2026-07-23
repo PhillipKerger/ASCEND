@@ -2954,9 +2954,12 @@ class KnowledgeGraph:
                 "review_required_before_delegation": review_required,
                 "overview": {
                     "node_count": len(problem_nodes),
+                    "edge_count": sum(len(node.relations) for node in problem_nodes),
                     "prior_node_count": len(prior_nodes),
                     "node_type_counts": node_type_counts,
                 },
+                "graph_root": self.graph_root.relative_to(self.project_root).as_posix(),
+                "index_path": self.index_path.relative_to(self.project_root).as_posix(),
                 "frontier": frontier.model_dump(mode="json"),
                 "instruction": (
                     "Before creating initial assignments, review this graph overview and "

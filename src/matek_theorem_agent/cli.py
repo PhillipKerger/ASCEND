@@ -299,6 +299,7 @@ def _config_overrides(
     max_rounds: int | None = None,
     max_agents: int | None = None,
     hierarchical: bool | None = None,
+    flat: bool | None = None,
     subagents_per_agent: int | None = None,
     time_limit_minutes: int | None = None,
     no_lean: bool | None = None,
@@ -310,6 +311,8 @@ def _config_overrides(
         raise ConfigError(
             "--max-coordinator-decisions and deprecated --max-rounds cannot be combined"
         )
+    if hierarchical and flat:
+        raise ConfigError("--hierarchical and --flat cannot be combined")
     return {
         "backend": backend.value if backend is not None else None,
         "budget_usd": budget_usd,
@@ -317,7 +320,13 @@ def _config_overrides(
         "max_rounds": max_rounds,
         "max_agents": max_agents,
         "research_mode": (
-            "hierarchical" if hierarchical is True or subagents_per_agent is not None else None
+            "flat"
+            if flat
+            else (
+                "hierarchical"
+                if hierarchical is True or subagents_per_agent is not None
+                else None
+            )
         ),
         "subagents_per_agent": subagents_per_agent,
         "time_limit_minutes": time_limit_minutes,
@@ -329,11 +338,19 @@ def _config_overrides(
 
 
 def _time_limit_display(config: AppConfig) -> str:
+    minutes: float | None
     if config.backend.provider == "codex":
-        minutes = config.codex.limits.max_wall_clock_minutes
-        return "unlimited" if minutes is None else f"{minutes} minutes"
-    hours = config.limits.maximum_wall_clock_hours
-    return "unlimited" if hours is None else f"{hours * 60:g} minutes"
+        codex_minutes = config.codex.limits.max_wall_clock_minutes
+        minutes = None if codex_minutes is None else float(codex_minutes)
+    else:
+        hours = config.limits.maximum_wall_clock_hours
+        minutes = None if hours is None else hours * 60
+    if minutes is None:
+        return "unlimited"
+    if minutes % 60 == 0:
+        display_hours = minutes / 60
+        return f"{display_hours:g} hour{'s' if display_hours != 1 else ''}"
+    return f"{minutes:g} minutes"
 
 
 def _model_role_display(config: AppConfig, role: str) -> str:
@@ -403,12 +420,19 @@ def _resolved_run_summary(
         if config.backend.provider == "codex"
         else f"${config.limits.maximum_cost_usd:g} API spend"
     )
-    nested_limit = config.research.hierarchical_subagent_limit
+    nested_limit = config.effective_hierarchical_subagent_limit
     research_organization = (
         f"hierarchical · up to {concurrency} concurrent first-level agents · "
-        f"up to {nested_limit} Codex subagents per first-level agent · one nested tier"
+        f"up to {nested_limit} Codex subagents per first-level agent · "
+        f"up to {concurrency * nested_limit} nested agents across the first-level pool · "
+        "one nested tier"
         if nested_limit > 0
-        else "flat · regular research agents without nested delegation"
+        else (
+            "flat · regular research agents without nested delegation · "
+            "Responses API adapter has no nested-agent tool"
+            if config.backend.provider == "api"
+            else "flat · regular research agents without nested delegation"
+        )
     )
     return {
         "model backend": (
@@ -1002,7 +1026,7 @@ def run(
         None,
         "--max-coordinator-decisions",
         min=1,
-        help="Limit event-driven coordinator decisions (default 256).",
+        help="Limit event-driven coordinator decisions (default 100000).",
     ),
     max_rounds: int | None = typer.Option(
         None,
@@ -1015,6 +1039,11 @@ def run(
         False,
         "--hierarchical",
         help="Let each first-level Codex research agent spawn a bounded nested team.",
+    ),
+    flat: bool = typer.Option(
+        False,
+        "--flat",
+        help="Disable nested delegation and use regular first-level research agents.",
     ),
     subagents_per_agent: int | None = typer.Option(
         None,
@@ -1059,6 +1088,7 @@ def run(
             max_rounds=max_rounds,
             max_agents=max_agents,
             hierarchical=hierarchical,
+            flat=flat,
             subagents_per_agent=subagents_per_agent,
             time_limit_minutes=time_limit_minutes,
             no_lean=no_lean,
@@ -1156,6 +1186,7 @@ def run(
                         "max_rounds": max_rounds,
                         "max_agents": max_agents,
                         "hierarchical": hierarchical,
+                        "flat": flat,
                         "subagents_per_agent": subagents_per_agent,
                         "time_limit_minutes": time_limit_minutes,
                         "no_web_search": no_web_search,
@@ -1380,6 +1411,11 @@ def resume(
         "--hierarchical",
         help="Enable hierarchical research for remaining unlaunched workers.",
     ),
+    flat: bool = typer.Option(
+        False,
+        "--flat",
+        help="Disable nested delegation for remaining unlaunched workers.",
+    ),
     subagents_per_agent: int | None = typer.Option(
         None,
         "--subagents-per-agent",
@@ -1445,6 +1481,7 @@ def resume(
             max_rounds=max_rounds,
             max_agents=max_agents,
             hierarchical=hierarchical,
+            flat=flat,
             subagents_per_agent=subagents_per_agent,
             time_limit_minutes=time_limit_minutes,
             no_web_search=no_web_search,

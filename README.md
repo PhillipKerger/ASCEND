@@ -21,8 +21,8 @@ knowledge graphs that can serve as starting points for future work.
 | Model access | Official Codex CLI with ChatGPT sign-in; no OpenAI API key required |
 | Run outputs | `.matek/runs/<run-id>/` inside your project |
 | Persistent memory | One typed Markdown graph per problem in `.matek/knowledge/<graph-name>/`, shared across runs |
-| Research breadth | A continuous logical coordinator starts 16 diverse workers, then refills a live pool up to 32 active workers; there is no cumulative worker-count cap |
-| Parallelism | Configurable; the default Codex run admits up to 32 web-enabled research agents at once |
+| Research breadth | A continuous logical coordinator starts eight diverse first-level workers and refills adaptively; there is no cumulative worker-count cap |
+| Parallelism | Hierarchical by default: eight first-level Codex workers, each with up to eight nested agents (64 nested slots) |
 | Research roles | GPT 5.6 Sol with max coordinator effort and independent xhigh workers; the API adapter also requests pro mode |
 | Write boundary | `.matek/` only, unless `--allow-project-edits` is explicitly supplied |
 | Verification | Independent source checks, LaTeX compilation, and deterministic Lean checks |
@@ -115,9 +115,10 @@ matek run follow-up.md --knowledge-graph problem
 ## Choosing the research strength and number of agents
 
 The most important research settings are configurable in `matek.toml`. MATEK does not use fixed
-rounds or a wait-for-all batch. By default its logical coordinator starts sixteen independent
+rounds or a wait-for-all batch. By default its logical coordinator starts eight independent
 assignments spanning at least four materially different approach families. As results arrive, it
-can immediately redirect work and refill or expand the live pool up to 32 active workers. MATEK
+can immediately redirect work and refill the eight-worker first-level pool. Each first-level
+Codex worker may use up to eight bounded nested agents, yielding 64 nested-agent slots. MATEK
 imposes no cumulative research-worker count limit; open-work, concurrency, coordinator-
 decision, model-call, cost, token, and optional time budgets remain independent.
 
@@ -138,23 +139,25 @@ model = "gpt-5.6-sol"
 research_coordinator_effort = "max"
 research_worker_effort = "xhigh"
 audit_effort = "xhigh"        # independent proof auditors
-max_parallel_agents = 32      # backend-wide concurrent model-call ceiling
-max_parallel_web_agents = 32  # concurrent calls that have web search enabled
+max_parallel_agents = 64      # backend-wide concurrent model-call ceiling
+max_parallel_web_agents = 64  # concurrent calls that have web search enabled
 
 [codex.limits]
-max_research_coordinator_decisions = 256 # second coordinator-decision ceiling
+max_research_coordinator_decisions = 100000 # high safety ceiling
+max_wall_clock_minutes = 900  # 15 active hours across run/resume
+max_formalization_iterations = 10000
 # max_agent_calls = 512       # optional; no call-count ceiling is imposed by default
 # max_codex_threads = 512     # optional second global call-count ceiling
 
 [research]
-orchestration_mode = "flat" # set to "hierarchical" for bounded Codex subagents
-maximum_subagents_per_agent = 8 # used only in hierarchical mode; zero keeps regular workers
-minimum_initial_agents = 16   # initial assignments; configurable down to the safety floor of 4
-maximum_concurrent_agents = 32 # research-worker concurrency ceiling
-maximum_pending_assignments = 32 # total open (queued plus running) assignment ceiling
-maximum_coordinator_decisions = 256 # event-indexed coordinator-decision ceiling
+orchestration_mode = "hierarchical" # use "flat" to disable nested delegation
+maximum_subagents_per_agent = 8 # nested agents per first-level Codex worker
+minimum_initial_agents = 8    # initial assignments; safety floor is 4
+maximum_concurrent_agents = 8 # first-level MATEK worker ceiling
+maximum_pending_assignments = 1024 # high queued-plus-running safety ceiling
+maximum_coordinator_decisions = 100000 # high event-indexed safety ceiling
 maximum_coordinator_context_characters = 800000 # final serialized provider input ceiling
-maximum_coordinator_requested_artifacts = 8 # bounded on-demand evidence retrieval
+maximum_coordinator_requested_artifacts = 32 # bounded on-demand evidence retrieval
 ```
 
 Reasoning effort accepts `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`, subject
@@ -168,28 +171,28 @@ uses `api.max_parallel_agents`, and its usage is bounded by
 has no global call-count ceiling by default, but users may set
 `codex.limits.max_agent_calls` or `codex.limits.max_codex_threads` explicitly.
 
-The effective research concurrency is the lowest applicable ceiling. With the defaults and web
-search enabled, that is `min(32, 32, 32) = 32` simultaneous research workers. Raising only
+The effective first-level research concurrency is the lowest applicable ceiling. With the defaults
+and web search enabled, that is `min(8, 64, 64) = 8` simultaneous MATEK workers. Raising only
 `research.maximum_concurrent_agents` therefore has no effect until the corresponding Codex
 backend ceilings are also high enough. Initial workers and later coordinator refills draw from
 this same pool and use web search by default. With `--no-web-search`, the web-agent ceiling no longer
 constrains calls at the backend; the current orchestration nevertheless includes that configured
 ceiling when it computes its conservative worker-admission window.
 
-Hierarchical mode is optional and currently Codex-only:
+Hierarchical mode is the Codex default:
 
 ```bash
-matek run problem.md --hierarchical --max-agents 8 --subagents-per-agent 8
+matek run problem.md
 ```
 
-Here MATEK may run up to eight first-level research workers concurrently, and each worker may use
+MATEK may run up to eight first-level research workers concurrently, and each worker may use
 up to eight Codex subagents for independent pieces of its assignment. The coordinator and workers
 are told both limits. Each first-level worker must check and synthesize its nested results into one
 ordinary `ResearchWorkerReport`; children are instructed not to delegate further and never count
 as audits or bypass the scientific acceptance gate. Nested agents inherit their parent's sandbox
 and web policy. Setting `--subagents-per-agent 0` gives workers the regular-subagent prompt and
-does not enable Codex nested tools. Flat mode remains the default, and the API backend rejects a
-positive hierarchy rather than silently changing behavior. See the official
+does not enable Codex nested tools; `--flat` is the direct CLI override. The Responses API adapter
+visibly resolves to portable flat execution because it has no nested-agent tool. See the official
 [Codex subagents documentation](https://developers.openai.com/codex/multi-agent).
 
 At the start of `matek run`, MATEK prints the resolved configuration before any model call. This
@@ -203,11 +206,11 @@ These controls have different expected effects:
 
 | Setting | Expected effect | Main tradeoff |
 | --- | --- | --- |
-| `minimum_initial_agents` | More independent starting approaches and better route diversity | More model calls and allowance usage at bootstrap; the default is 16 and the safety floor is 4 |
-| `maximum_pending_assignments` | Allows a larger total open set of queued plus running assignments | A large open set may become stale as new evidence arrives; default 32 |
-| `maximum_coordinator_decisions` | Allows more completion- and audit-driven redirects/refills | Potentially much more elapsed time and total usage; default 256 |
+| `minimum_initial_agents` | More independent starting approaches and better route diversity | More model calls and allowance usage at bootstrap; the default is 8 and the safety floor is 4 |
+| `maximum_pending_assignments` | Allows a larger total open set of queued plus running assignments | A large open set may become stale as new evidence arrives; default safety ceiling 1,024 |
+| `maximum_coordinator_decisions` | Allows more completion- and audit-driven redirects/refills | Potentially much more elapsed time and total usage; default safety ceiling 100,000 |
 | `maximum_coordinator_context_characters` | Bounds each final serialized coordinator input; default 800,000 | Lower values compact sooner and may require on-demand evidence retrieval |
-| `maximum_concurrent_agents` | Allows up to 32 research workers to run simultaneously by default when backend limits permit | Does not increase research breadth by itself; high concurrency can encounter provider rate limits |
+| `maximum_concurrent_agents` | Sets first-level MATEK concurrency; default 8 | Nested capacity is this value times `maximum_subagents_per_agent`; high concurrency can encounter provider limits |
 | `research_coordinator_effort` | Gives global synthesis, prioritization, repair planning, and the final research judgment more reasoning effort | `max` can be slower and more allowance-intensive; stronger results are not guaranteed |
 | `research_worker_effort` | Gives each independent proof-search call more reasoning effort | Higher effort is slower and more allowance-intensive; default `xhigh` |
 | `audit_effort` | Gives fresh independent proof audits a larger reasoning effort | More verification time and usage, but reducing it can make subtle gaps easier to miss |
@@ -217,11 +220,11 @@ These controls have different expected effects:
 For a one-off run, the CLI exposes the two most common scheduling controls:
 
 ```bash
-# At most 32 research workers active at once and 192 coordinator decisions
-matek run problem.md --max-agents 32 --max-coordinator-decisions 192
+# At most 6 first-level workers, each with 4 nested agents
+matek run problem.md --max-agents 6 --subagents-per-agent 4
 
 # Inspect the resolved ceilings, model, and effort without starting any agents
-matek run problem.md --max-agents 32 --max-coordinator-decisions 192 --dry-run
+matek run problem.md --max-agents 6 --subagents-per-agent 4 --dry-run
 ```
 
 The old `--max-rounds` flag and `maximum_rounds`/`maximum_assignments_per_round` configuration
@@ -251,7 +254,7 @@ The prompt flow is:
    the scheduler constraints. Before its first decision, it also reviews the selected knowledge
    graph's problem-scoped overview and frontier when prior graph memory exists, then uses stable
    node IDs and prior results, failures, gaps, audits, and tasks to shape delegation. The API
-   adapter also requests pro mode. Its first decision creates sixteen precise, materially
+   adapter also requests pro mode. Its first decision creates eight precise, materially
    different assignments by default.
 3. Every independent GPT 5.6 Sol xhigh worker receives the complete big prompt, the exact
    claim contract, and one assignment containing its route, inputs, expected output, and stopping
@@ -299,24 +302,29 @@ completed, the strongest retained result, remaining obligations, the next action
 the full report and run artifacts. This terminal handoff is derived from the persisted report and
 does not consume an additional model call.
 
-Coordinator transport defaults to a conservative 800,000-character ceiling measured after the
-backend has serialized its final input. Compaction never byte-truncates JSON or mathematics. Each
+Coordinator transport defaults to a conservative 800,000-character hard ceiling measured after
+the backend has serialized its final input. Compact/indexed requests target at most 760,000
+characters, reserving at least 5% or 40,000 characters of headroom. Compaction never byte-truncates
+JSON or mathematics. Each
 activation persists a manifest with included and omitted artifact IDs, validated relative paths,
-hashes, graph revisions, character/token estimates, and the exact payload hash. Codex can inspect
-catalogued files when deeper evidence is needed; an API coordinator can request up to eight
-omitted artifacts or graph nodes for its next bounded activation. A provider size rejection
-creates a smaller, distinct request. If cumulative scheduler history still does not fit, MATEK
+hashes, graph revisions, per-section character measurements, character/token estimates, and the
+exact payload hash. The compact request includes only high-priority catalog entries plus the full
+catalog's path, SHA-256, total count, and kind counts. Its graph section is one root/revision/index
+descriptor plus the already bounded node summaries—never a duplicate exhaustive graph view.
+Codex can inspect catalogued files when deeper evidence is needed; an API coordinator can request
+up to 32 omitted artifacts or graph nodes for its next bounded activation. A provider size
+rejection creates a smaller, distinct request. If cumulative scheduler history still does not fit, MATEK
 switches to an indexed context containing the exact prompt and claim, live controls, open work,
 newest events, bounded summaries, and authenticated references into the scheduler ledger and
-knowledge graph. `CONTEXT_BUDGET_EXHAUSTED` is reserved for an exact prompt/claim that physically
-cannot fit the provider envelope or repeated provider rejection of every smaller valid request.
+knowledge graph. `MANDATORY_CONTEXT_TOO_LARGE` is reserved for the exact prompt/claim plus provider
+instructions, output contract, and envelope that physically cannot fit. Repeated provider
+rejections are reported separately and leave a smaller resumable generation.
 
 `--max-agents N` controls how many research workers may run concurrently. The initial portfolio
-contains 16 assignments by default; the coordinator may refill or expand the live pool to 32
-active workers with the default Codex settings, including when web search is enabled. The default
-`maximum_pending_assignments = 32` caps the total open set (queued plus running), so 32 active
-workers leave no additional queued capacity. There is no separate cumulative research-worker
-count cap.
+contains eight assignments by default and the coordinator refills the eight-worker first-level
+pool, including when web search is enabled. Each parent may use eight nested agents. The default
+`maximum_pending_assignments = 1024` is a high open-work safety ceiling, not a target queue size.
+There is no separate cumulative research-worker count cap.
 Research-coordinator, worker,
 candidate-packager, auditor, and final-judge calls use role-isolated execution contexts; Codex
 traces record those roles explicitly. Each worker starts in a fresh context.
@@ -613,7 +621,7 @@ treats missing online evidence as verified.
 `--time-limit-minutes N` sets one active wall-clock allowance for the complete workflow. The
 same limit applies to Codex and API execution, elapsed active time is checkpointed across
 resume attempts, and an in-flight model call is cancelled when the remaining allowance expires.
-Paused time between commands is not charged. There is no time limit by default;
+Paused time between commands is not charged. The default is 900 minutes (15 active hours);
 `MATEK_TIME_LIMIT_MINUTES=N` is equivalent to the CLI option. Existing configurations that set
 `codex.limits.max_wall_clock_minutes` or `api.limits.maximum_wall_clock_hours` remain supported.
 
@@ -640,9 +648,20 @@ research_worker_effort = "xhigh"
 audit_effort = "xhigh"
 manuscript_effort = "high"
 formalization_effort = "xhigh"
-max_parallel_agents = 32
-max_parallel_web_agents = 32
+max_parallel_agents = 64
+max_parallel_web_agents = 64
 persist_sessions = true
+
+[codex.limits]
+max_wall_clock_minutes = 900
+
+[research]
+orchestration_mode = "hierarchical"
+maximum_subagents_per_agent = 8
+minimum_initial_agents = 8
+maximum_concurrent_agents = 8
+maximum_pending_assignments = 1024
+maximum_coordinator_decisions = 100000
 
 [graph]
 maximum_context_nodes = 40

@@ -145,14 +145,14 @@ adapter uses Codex CLI's model and reasoning-effort controls and does not treat 
 mode field as a Codex setting. Role-specific settings remain configurable within backend
 capabilities.
 
-The optional Codex hierarchical mode is deliberately inside the existing worker boundary rather
+The default Codex hierarchical mode is deliberately inside the existing worker boundary rather
 than a second scheduler. MATEK continues to own and checkpoint the first-level pool; a
 `research-worker` Codex process alone receives `agents.enabled=true` and
 `agents.max_concurrent_threads_per_session=<configured limit>`. Coordinator, audit, manuscript,
 and Lean roles do not receive that allowance. Nested agents inherit the parent's sandbox and
 search policy, work only one instructed tier deep, and return through the parent worker's single
-validated report and aggregate usage record. Flat mode remains the portable default, and the API
-adapter fails configuration validation when a positive nested allowance is requested.
+validated report and aggregate usage record. Explicit flat mode remains available, and the API
+adapter visibly resolves to that portable path because it has no nested-agent tool.
 
 `research/coordinator/state.json` is the canonical atomic scheduler checkpoint. Immutable files
 under `research/events/<zero-padded-sequence>.json`, immutable coordinator decisions, complete raw
@@ -168,10 +168,11 @@ the logical coordinator.
 The event loop is:
 
 1. Start or restore the logical coordinator with the complete compiled prompt and exact claim
-   contract. Its first decision supplies a diverse portfolio of sixteen assignments by default.
+   contract. Its first decision supplies a diverse portfolio of eight assignments by default.
 2. Persist and validate the decision, then admit independent workers under research and
-   backend-specific semaphores. The default open-work limit is 32 queued-plus-running assignments;
-   the concurrency limit permits up to 32 members of that set to be active.
+   backend-specific semaphores. The default open-work safety ceiling is 1,024
+   queued-plus-running assignments; the first-level concurrency limit permits up to eight members
+   of that set to be active, each with up to eight nested Codex agents.
 3. On each completion, atomically persist the entire raw report and its hash, checkpoint the
    transition with a pending-event write-ahead record, create one monotonically sequenced immutable
    event file, clear the pending record, and refresh the mailbox view. The ordering ensures every
@@ -206,14 +207,18 @@ and blocked routes with their mathematical evidence. It may help fit a fresh mod
 never overwrites or substitutes for the canonical scheduler checkpoint, immutable event evidence,
 or full raw reports.
 
-Each coordinator request is preflighted against a conservative 800,000-character default measured
-after backend framing. Its immutable context manifest records the cursor, included and omitted
-artifacts, hashes, character/token estimates, and compaction reason. Knowledge-graph neighborhoods
-are retrieval indexes, not proof evidence. Provider size rejection lowers the effective limit and
-rebuilds a new request. Compact-state overflow activates an indexed transport view with bounded
-scientific summaries and authenticated scheduler/event/graph/artifact references instead of
-pausing the workflow. Only an immutable exact prompt/claim that cannot fit, or repeated provider
-rejection of every smaller valid request, produces `CONTEXT_BUDGET_EXHAUSTED`. Candidate packaging
+Each coordinator request is preflighted against a conservative 800,000-character hard default
+measured after backend framing, while compact/indexed packing reserves at least 5% or 40,000
+characters. Its immutable context manifest records the cursor, per-section measurements, included
+and omitted artifacts, hashes, character/token estimates, and compaction reason. An exhaustive
+artifact catalog is stored once and represented in transport by a path/hash/count descriptor;
+graph transport similarly uses one root/revision/index/count descriptor plus capped selected node
+summaries. Knowledge-graph neighborhoods are retrieval indexes, not proof evidence. Provider size
+rejection lowers the effective limit, removes an additional low-priority field, and rebuilds a
+smaller request. Compact-state overflow activates an indexed transport view where all cumulative
+sections are optional. Only the exact prompt/claim plus provider instructions, output contract,
+and envelope can produce `MANDATORY_CONTEXT_TOO_LARGE`; repeated provider rejection has a separate
+retriable diagnosis. Candidate packaging
 and audits continue to receive complete candidate-specific evidence and retain their strict gates.
 There is no cumulative logical-worker ceiling and no fixed-round synchronization barrier.
 Total-open-assignment, concurrent-call, coordinator-decision, model-call, cost, token, and

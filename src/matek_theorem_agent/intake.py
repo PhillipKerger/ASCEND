@@ -269,8 +269,13 @@ def ingest_problem(
                     else config.models.research_worker.reasoning_effort
                 ),
                 "minimum_initial_agents": config.research.minimum_initial_agents,
-                "research_orchestration_mode": config.research.orchestration_mode,
-                "maximum_subagents_per_agent": (config.research.hierarchical_subagent_limit),
+                "research_orchestration_mode": config.effective_research_orchestration_mode,
+                "configured_research_orchestration_mode": (
+                    config.research.orchestration_mode
+                ),
+                "maximum_subagents_per_agent": (
+                    config.effective_hierarchical_subagent_limit
+                ),
                 "maximum_pending_assignments": (config.research.maximum_pending_assignments),
                 "maximum_coordinator_decisions": (config.research.maximum_coordinator_decisions),
                 "maximum_concurrent_agents": config.research.maximum_concurrent_agents,

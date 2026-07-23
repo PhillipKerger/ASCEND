@@ -54,14 +54,17 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
   evidence.
 - Every coordinator activation includes the unchanged main prompt and claim contract,
   unacknowledged events, registry/audit state, and complete referenced raw reports.
-- Synthetic checkpoints with at least 32 large reports stay below the measured serialized-input
-  ceiling; new/candidate reports outrank older progress, repeated issues aggregate without losing
+- Synthetic checkpoints with at least 833 omitted artifacts stay below the headroom-adjusted
+  serialized-input target; the exhaustive catalog becomes one path/hash/count descriptor,
+  graph memory is not duplicated, and per-section caps hold. New/candidate reports outrank older
+  progress, repeated issues aggregate without losing
   assignment IDs or paths, and every omitted artifact remains hash-addressable.
 - Bounded API retrieval services requested artifacts on a later activation. Provider
   `input_too_large` rejection creates a smaller distinct request and preserves the event cursor
   across resume. Oversized cumulative scheduler state falls back to an indexed context below the
-  transport limit and continues; only an immutable exact prompt/claim or repeated rejection of all
-  smaller valid requests reports a retriable context pause.
+  transport limit and continues. Only the exact prompt/claim plus provider instructions, output
+  contract, and envelope reports `MANDATORY_CONTEXT_TOO_LARGE`; repeated provider rejection has a
+  distinct retriable diagnosis and leaves a smaller request for resume.
 - A fast worker completion can trigger a decision and refill while slower workers remain active.
 - Candidate audit pauses new admission; in-flight completions remain durable, and a failed audit
   becomes an immediate high-priority coordinator event.
@@ -113,8 +116,9 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
 12. Existing theorem: exact source/hypothesis matching is recorded without a novelty claim.
 13. Post-manuscript Lean confirmation: approve, decline, five-minute timeout-to-proceed,
     noninteractive auto-proceed, and crash-safe decision reuse.
-14. Live-pool refill: one of sixteen initial workers finishes while others run, the coordinator
-    consumes that completion and admits targeted work up to the 32-worker ceiling without a batch
+14. Live-pool refill: one of eight initial workers finishes while others run, the coordinator
+    consumes that completion and admits targeted work up to the eight-worker first-level ceiling
+    (with eight nested agents per parent) without a batch
     barrier.
 15. More logical workers complete over time than the configured total-open ceiling while open and
     active-concurrency ceilings remain respected, demonstrating that no cumulative worker cap

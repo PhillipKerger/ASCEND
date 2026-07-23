@@ -1,18 +1,23 @@
 # Changelog
 
-## 0.3.0 — 2026-07-22
+## 0.3.0 — 2026-07-23
 
-- Added optional Codex hierarchical research mode. Users can set first-level worker concurrency
+- Made Codex hierarchical research the default: eight first-level workers may each use up to
+  eight one-tier nested agents, for 64 nested-agent slots. Users can set first-level concurrency
   with `--max-agents` and a per-worker nested allowance with `--subagents-per-agent`; the
-  coordinator and workers see both limits, zero produces regular workers, and only research-worker
-  Codex processes receive the bounded collaboration controls.
+  coordinator and workers see both limits, `--flat` or a zero allowance produces regular workers,
+  and only research-worker Codex processes receive the bounded collaboration controls. The API
+  adapter visibly resolves to its portable flat mode because it has no nested-agent tool.
+- Set the default active-time allowance to 15 hours and raised scheduler, backend, API-spend, and
+  formalization safety ceilings so ordinary default runs should encounter the time boundary first.
+  The backend-wide concurrency ceiling is now 64; the durable first-level MATEK pool remains eight.
 - Added deterministic, resumable coordinator context budgeting with an 800,000-character default
   measured on final provider input. Large histories compact into prioritized summaries and
   hash-bound artifact/graph references; API coordinators can request omitted evidence on demand.
-  Provider size rejection rebuilds a smaller distinct request. Oversized cumulative scheduler
-  history now falls through to an indexed context instead of pausing; only an immutable exact
-  prompt/claim or repeated rejection of every smaller valid request can produce
-  `CONTEXT_BUDGET_EXHAUSTED`.
+  Compact mode reserves at least 5%/40,000 characters, caps every optional section, replaces
+  exhaustive catalogs and graph views with authenticated descriptors, and persists per-section
+  measurements. Provider size rejection rebuilds a smaller distinct request. Only the exact
+  prompt/claim plus provider/output envelope can produce `MANDATORY_CONTEXT_TOO_LARGE`.
 - `matek resume problem.md` now selects the newest run whose immutable intake record names that
   exact source file; run-ID resume remains unchanged.
 - Existing problem graphs now carry an explicit pre-delegation review requirement. The initial
@@ -22,9 +27,6 @@
   including backend-specific role models/reasoning, web access, effective research concurrency,
   limits, enabled downstream stages, sandbox, graph, and project-edit policy. Dry runs reuse the
   same summary so their reported plan cannot drift from ordinary execution.
-- Made the default 32-worker research capacity explicit for both initial assignments and later
-  refills. The coordinator now receives the worker search policy, and regression coverage verifies
-  that 32 web-enabled initial workers can occupy the pool concurrently.
 - Aligned the public specifications, example reports, and Lean confirmation wording with the
   independent scientific, manuscript, publication, workflow, and Lean statuses. Added a
   contributor guide and included the complete public specification set in source distributions.

@@ -735,14 +735,14 @@ class ResearchAcceptanceGate(BaseModel):
 class ResearchWorkflowSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    orchestration_mode: Literal["flat", "hierarchical"] = "flat"
+    orchestration_mode: Literal["flat", "hierarchical"] = "hierarchical"
     maximum_subagents_per_agent: int = Field(default=8, ge=0, le=32)
-    minimum_initial_assignments: int = Field(default=16, ge=4)
-    maximum_concurrent_agents: int = Field(default=32, ge=1)
-    maximum_pending_assignments: int = Field(default=32, ge=1)
-    maximum_coordinator_decisions: int = Field(default=256, ge=1)
+    minimum_initial_assignments: int = Field(default=8, ge=4)
+    maximum_concurrent_agents: int = Field(default=8, ge=1)
+    maximum_pending_assignments: int = Field(default=1_024, ge=1)
+    maximum_coordinator_decisions: int = Field(default=100_000, ge=1)
     maximum_coordinator_context_characters: int = Field(default=800_000, ge=100_000)
-    maximum_coordinator_requested_artifacts: int = Field(default=8, ge=1, le=32)
+    maximum_coordinator_requested_artifacts: int = Field(default=32, ge=1, le=32)
     maximum_model_calls: int | None = Field(default=None, ge=0)
     run_complexity_audit: bool | None = None
 
@@ -1395,6 +1395,7 @@ async def run_adaptive_research(
     decisions_dir = ensure_stage_directory(coordinator_dir / "decisions")
     requests_dir = ensure_stage_directory(coordinator_dir / "requests")
     context_manifests_dir = ensure_stage_directory(coordinator_dir / "context-manifests")
+    context_catalogs_dir = ensure_stage_directory(coordinator_dir / "artifact-catalogs")
     events_dir = ensure_stage_directory(destination / "events")
     assignments_dir = ensure_stage_directory(destination / "assignments")
     workers_dir = ensure_stage_directory(destination / "workers")
@@ -3320,7 +3321,11 @@ async def run_adaptive_research(
                 "latest_independent_audits",
                 "latest_final_judge_verdict",
             }
-            base = {key: source_payload[key] for key in indexed_control_keys}
+            base = {
+                key: source_payload[key]
+                for key in indexed_control_keys
+                if key in source_payload
+            }
             assignment_counts = {
                 status.value: len(assignment_records(status)) for status in AssignmentLifecycle
             }
@@ -3442,11 +3447,33 @@ async def run_adaptive_research(
             source_payload["unacknowledged_events"] = recent_events()
             report_evidence = coordinator_report_evidence()
             graph_evidence = coordinator_graph_evidence(graph_memory, replayed_graph_payload)
+            complete_catalog = [
+                item.reference.model_dump(mode="json")
+                for item in [*report_evidence, *graph_evidence]
+            ]
+            catalog_identity = sha256_json(complete_catalog)
+            complete_catalog_path = _atomic_write_immutable_json(
+                context_catalogs_dir
+                / f"{decision_id:08d}-{catalog_identity[:16]}.json",
+                {
+                    "schema_version": 1,
+                    "decision_id": decision_id,
+                    "artifacts": complete_catalog,
+                },
+            )
+            artifact_paths[
+                f"coordinator_artifact_catalog_{decision_id}_{catalog_identity[:8]}"
+            ] = complete_catalog_path
             builder = CoordinatorContextBuilder(
                 configured_character_limit=settings.maximum_coordinator_context_characters,
                 effective_character_limit=character_limit,
                 provider_input_characters=lambda serialized: provider_input_character_measure(
                     serialized, decision_model_settings
+                ),
+                graph_summary_character_limit=(
+                    knowledge_graph.maximum_context_characters
+                    if knowledge_graph is not None
+                    else 60_000
                 ),
             )
             built = builder.build(
@@ -3462,6 +3489,12 @@ async def run_adaptive_research(
                 graph_evidence=graph_evidence,
                 requested_artifact_ids=scheduler.requested_artifact_ids,
                 requested_graph_node_ids=scheduler.requested_graph_node_ids,
+                artifact_catalog_descriptor={
+                    "relative_path": complete_catalog_path.relative_to(
+                        destination.parent
+                    ).as_posix(),
+                    "sha256": sha256_file(complete_catalog_path),
+                },
                 force_compact=(
                     force_compact
                     or bool(graph_evidence)
@@ -3479,6 +3512,27 @@ async def run_adaptive_research(
             decision_model_settings = pending_request.request_settings
             scheduler.pending_coordinator_request = None
             pending_request = None
+        if pending_request is not None and pending_request.context_manifest_path is not None:
+            # Manifests written before compact-index headroom could freeze a request
+            # exactly at the hard ceiling. Rebuild that activation from the same
+            # event cursor instead of replaying the already failed preflight payload.
+            prior_manifest_path = resolved_artifact(pending_request.context_manifest_path)
+            if (
+                prior_manifest_path.is_file()
+                and pending_request.context_manifest_sha256 is not None
+                and sha256_file(prior_manifest_path)
+                == pending_request.context_manifest_sha256
+            ):
+                prior_manifest = CoordinatorContextManifest.model_validate_json(
+                    read_regular_text(prior_manifest_path)
+                )
+                if prior_manifest.reserved_headroom_characters == 0:
+                    legacy_unbounded_request = pending_request
+                    event_sequence = pending_request.after_event_sequence
+                    decision_model_settings = pending_request.request_settings
+                    payload = dict(pending_request.request_payload)
+                    scheduler.pending_coordinator_request = None
+                    pending_request = None
         if pending_request is not None:
             if pending_request.decision_id != decision_id:
                 raise StageValidationError(
@@ -3620,6 +3674,7 @@ async def run_adaptive_research(
             raise CoordinatorContextBudgetExhausted(
                 limit=frozen_context_limit,
                 required=provider_characters,
+                diagnostic="OPTIONAL_CONTEXT_PREFLIGHT_FAILED",
             )
         context_rebuilds = 0
         while True:
@@ -3648,23 +3703,45 @@ async def run_adaptive_research(
                     raise CoordinatorContextBudgetExhausted(
                         limit=frozen_context_limit,
                         required=provider_characters,
+                        diagnostic="PROVIDER_CONTEXT_REJECTED_AFTER_COMPACTION",
                     ) from exc
+                mandatory_retry_payload: dict[str, object] = {
+                    key: payload[key]
+                    for key in ("compiled_prompt", "claim_contract")
+                    if key in payload
+                }
+                mandatory_retry_characters = provider_input_character_measure(
+                    serialize_coordinator_payload(mandatory_retry_payload),
+                    decision_model_settings,
+                )
                 reduced_limit = max(
-                    100_000,
+                    mandatory_retry_characters + 10_000,
                     min(
                         frozen_context_limit - 65_536,
                         frozen_context_limit * 3 // 4,
-                        provider_characters - 65_536,
+                        provider_characters - 1,
                     ),
                 )
                 if reduced_limit >= frozen_context_limit:
                     raise CoordinatorContextBudgetExhausted(
                         limit=frozen_context_limit,
                         required=provider_characters,
+                        diagnostic="PROVIDER_CONTEXT_REJECTED_AFTER_COMPACTION",
                     ) from exc
                 frozen_context_limit = reduced_limit
                 event_sequence = scheduler.next_event_sequence - 1
                 payload["after_event_sequence"] = event_sequence
+                # Independently of the numeric limit, remove at least one
+                # lowest-priority transport field per rejected generation. This
+                # guarantees the next request is smaller even when the provider
+                # rejects an already tiny payload far below its advertised limit.
+                rejected_generation_pruning_order = (
+                    "remaining_model_calls_before_this_call",
+                    "remaining_coordinator_decisions_after_this_call",
+                    "open_assignment_count",
+                )
+                for optional_key in rejected_generation_pruning_order[:context_rebuilds]:
+                    payload.pop(optional_key, None)
                 payload, context_manifest = build_context(
                     payload,
                     character_limit=frozen_context_limit,
@@ -3719,6 +3796,7 @@ async def run_adaptive_research(
                     raise CoordinatorContextBudgetExhausted(
                         limit=frozen_context_limit,
                         required=provider_characters,
+                        diagnostic="OPTIONAL_CONTEXT_PREFLIGHT_FAILED",
                     ) from exc
                 if context_rebuilds >= 3:
                     # The smaller generation is durable and has not been submitted. A
@@ -3726,6 +3804,7 @@ async def run_adaptive_research(
                     raise CoordinatorContextBudgetExhausted(
                         limit=frozen_context_limit,
                         required=provider_characters,
+                        diagnostic="PROVIDER_CONTEXT_REJECTED_AFTER_COMPACTION",
                     ) from exc
         coordinator_request_key = tracker.request_key(
             instructions=coordinator_prompt,
@@ -5430,6 +5509,7 @@ async def run_adaptive_research(
                 scheduler.phase = SchedulerPhase.AUDITING
                 persist_scheduler()
     except CoordinatorContextBudgetExhausted as exc:
+        mandatory_context_failure = exc.diagnostic == "MANDATORY_CONTEXT_TOO_LARGE"
         if not any(
             issue.event_kind == "coordinator_context_budget_exhausted"
             and issue.message == f"{type(exc).__name__}: {redact_text(str(exc))[:1000]}"
@@ -5440,9 +5520,16 @@ async def run_adaptive_research(
                 exc=exc,
                 category=FailureCategory.RESOURCE,
                 extra_obligations=[
-                    "Indexed compaction was exhausted. Verify whether the immutable exact prompt "
-                    "and claim contract fit the selected provider, then resume with a larger "
-                    "supported transport limit or provider context window."
+                    (
+                        "MANDATORY_CONTEXT_TOO_LARGE: the exact prompt/claim plus the provider "
+                        "instructions, output contract, and envelope do not fit. Optional "
+                        "catalogs, graph views, assignments, issues, and continuity state were "
+                        "already removed."
+                        if mandatory_context_failure
+                        else "Coordinator transport remained unavailable after headroom-adjusted "
+                        "optional pruning. Resume will rebuild or submit the persisted smaller "
+                        "generation without replaying the rejected request."
+                    )
                 ],
             )
         return await pause_retriable(
@@ -5451,7 +5538,7 @@ async def run_adaptive_research(
                 "The complete research record remains durable; no acceptance gate was weakened.",
             ],
             phase=SchedulerPhase.RUNNING,
-            pause_reason="CONTEXT_BUDGET_EXHAUSTED",
+            pause_reason=exc.diagnostic,
             resume_action=(
                 "Run `matek resume` to rebuild the pending coordinator activation from the "
                 "same event cursor under its persisted reduced context budget."

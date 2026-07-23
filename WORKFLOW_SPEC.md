@@ -88,7 +88,7 @@ correctness.
 
 ### Bootstrap portfolio
 
-The first coordinator decision creates sixteen independent assignments by default, spanning at
+The first coordinator decision creates eight independent assignments by default, spanning at
 least four materially distinct approach families. Suggested roles are not fixed quotas; examples
 include direct proof, alternative structural formulation, hostile counterexample search,
 literature/known-theorem mapping, computation, and formalization-aware lemma decomposition.
@@ -97,22 +97,22 @@ If the compiler found that existing literature resolves the target, the portfoli
 independent source verification, hypothesis matching, proof reconstruction, and formalization.
 Known results must remain labeled as known rather than novel.
 
-### Optional hierarchical workers
+### Default hierarchical workers
 
-Flat application-managed workers remain the default. With Codex hierarchical mode enabled, the
+With the default Codex hierarchical mode, the
 coordinator still creates and observes the durable first-level assignments, while each
 first-level research-worker process receives Codex's collaboration tools and a configured
-per-session nested-thread limit. For example, `--max-agents 8 --hierarchical
---subagents-per-agent 8` permits up to eight active MATEK workers, each of which may use up to
+per-session nested-thread limit. The defaults, equivalent to
+`--max-agents 8 --subagents-per-agent 8`, permit up to eight active MATEK workers, each of which may use up to
 eight nested agents for bounded parts of its assignment. Nested agents inherit the parent's
 sandbox and search policy. The first-level worker must tell its children not to delegate further,
 validate their work, and return one normal scientific report. MATEK checkpoints that report and
 the aggregate provider usage at the existing worker boundary.
 
-Both tiers receive the resolved limits. If the nested limit is zero, workers receive the regular
-subagent contract and Codex nested-agent controls are not enabled. The current Responses API
-adapter rejects a positive hierarchical configuration rather than pretending that nested tools
-exist. Nested outputs are never independent proof audits and never relax candidate acceptance.
+Both tiers receive the resolved limits. `--flat` or a zero nested limit gives workers the regular
+subagent contract and leaves Codex nested-agent controls disabled. The Responses API adapter
+visibly resolves to this portable flat path because it has no nested-agent tool. Nested outputs
+are never independent proof audits and never relax candidate acceptance.
 
 ### Completion-driven coordinator loop
 
@@ -120,9 +120,10 @@ MATEK runs a durable event loop with no round barrier:
 
 1. Validate and persist each coordinator decision and assignment before admitting work.
 2. Admit useful queued assignments while the applicable concurrency, backend, and budget ceilings
-   have capacity. The live pool starts from the diverse sixteen and may grow or refill to 32 active
-   workers by default. `maximum_pending_assignments` limits the total open set—queued plus
-   running—to 32 by default, while the concurrency setting limits the active subset.
+   have capacity. The live pool starts from the diverse eight and refills up to eight active
+   first-level workers by default, each with up to eight nested agents. The high
+   `maximum_pending_assignments` safety ceiling limits the total open set—queued plus running—to
+   1,024 by default, while concurrency limits the active subset.
 3. When any worker finishes, atomically preserve its complete raw `ResearchWorkerReport`, hash and
    per-assignment source verification. Atomically checkpoint the scheduler transition with the
    event in its pending-event write-ahead field, create the next immutable event file under
@@ -149,14 +150,17 @@ addressable by stable ID, validated relative path, and frozen SHA-256. Codex may
 paths, while API coordinators request a bounded set for the next activation.
 
 Every context has an immutable manifest recording its event cursor, mode, inclusion reasons,
-omissions, measured characters, token estimate, and hash. Provider `input_too_large` responses
-produce a distinct request under a smaller limit rather than an identical retry. If the ordinary
-compact state cannot fit, MATEK switches to indexed mode: cumulative assignment/history/audit
-material becomes prioritized summaries and authenticated references, while exact prompt/claim,
-live controls, open work, and newest events remain inline. `CONTEXT_BUDGET_EXHAUSTED` is reserved
-for an immutable exact prompt/claim or provider envelope that still cannot fit, or repeated
-provider rejection of every smaller valid request. `research/continuity.json` remains a derived
-navigation view, never a lossy replacement for reports or the immutable event ledger.
+omissions, per-section measured characters, token estimate, reserved headroom, and hash. Compact
+mode targets at most 95% of the configured ceiling and at least 40,000 characters of headroom.
+Only new/current/candidate/audit/requested catalog entries remain inline; one authenticated
+descriptor addresses the exhaustive on-disk catalog. Graph transport contains one compact
+root/revision/index/count descriptor plus capped selected node summaries. Provider
+`input_too_large` responses produce a distinct, smaller request rather than an identical retry.
+If ordinary compact state cannot fit, indexed mode makes every cumulative section optional and
+independently capped. `MANDATORY_CONTEXT_TOO_LARGE` is reserved for the exact prompt/claim plus
+provider instructions, output contract, and envelope; repeated provider rejection has a separate
+retriable diagnosis. `research/continuity.json` remains a derived navigation view, never a lossy
+replacement for reports or the immutable event ledger.
 
 Each decision may add assignments, retire or redirect work, request hostile checks or lemma
 completion, recommend candidate packaging, or report an actual budget/resource boundary. The
@@ -173,10 +177,10 @@ There is no cumulative research-worker ceiling. Total-open-assignment, active-co
 coordinator-decision, model-call, cost, token, and optional active-wall-clock limits remain
 independent controls. None introduces a wait-for-all barrier. Explicit Codex call-count limits
 remain available but are unset by default. Public scheduler controls are
-`research.maximum_pending_assignments` (default 32 total open assignments) and
-`research.maximum_coordinator_decisions` (default 256). Legacy round controls are converted to a
+`research.maximum_pending_assignments` (default safety ceiling 1,024) and
+`research.maximum_coordinator_decisions` (default safety ceiling 100,000). Legacy round controls are converted to a
 scaled decision budget only; they do not change event-driven execution. Initial workers and later
-refills use the same worker settings and 32-slot default pool. Web search is enabled for both by
+refills use the same worker settings and eight-slot first-level pool. Web search is enabled for both by
 default and disabled only by the frozen global `--no-web-search` policy.
 
 ## Stage 3 — Candidate proof and audits
@@ -232,10 +236,10 @@ pro/xhigh contexts by default and the research final judge uses pro/max. The Cod
 xhigh auditor effort and max final-judge effort for the same model; all are configurable within
 backend capabilities. A worker's status alone is never treated as proof verification.
 
-The optional `--time-limit-minutes` allowance covers active execution across all stages and is
+The `--time-limit-minutes` allowance covers active execution across all stages and is
 carried across resume attempts. It bounds in-flight model calls as well as pre-call and stage
-boundary checks; paused time between CLI invocations is not counted. No wall-clock limit is
-applied by default.
+boundary checks; paused time between CLI invocations is not counted. The default allowance is
+900 minutes (15 active hours).
 
 ## Stage 4 — Manuscript and bibliography
 

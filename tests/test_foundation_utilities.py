@@ -141,13 +141,14 @@ def test_budget_carries_elapsed_time_across_resume() -> None:
     assert tracker.snapshot().elapsed_seconds == 35.0
 
 
-def test_budget_has_no_wall_clock_limit_by_default() -> None:
+def test_budget_has_fifteen_hour_wall_clock_limit_by_default() -> None:
     tracker = BudgetTracker(
         Limits(maximum_cost_usd=1.0),
-        prior_elapsed_seconds=10_000_000.0,
+        monotonic=lambda: 0.0,
+        prior_elapsed_seconds=14 * 60 * 60,
     )
 
-    assert tracker.remaining().wall_clock_seconds is None
+    assert tracker.remaining().wall_clock_seconds == 60 * 60
     tracker.ensure_available()
 
 

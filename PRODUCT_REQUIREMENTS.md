@@ -79,18 +79,18 @@ formalization, and generates a reproducible final report.
 - Start or resume one durable logical research coordinator with the complete, unabridged compiled
   prompt and exact claim contract. Provider calls may use fresh contexts; correctness must come
   from application-owned state rather than a surviving provider conversation.
-- Have the coordinator create sixteen initial assignments by default, spanning at least four
+- Have the coordinator create eight initial assignments by default, spanning at least four
   materially different approaches unless the configured budget is lower.
 - Keep initial workers independent; do not reveal the favored route to all workers.
-- Provide an optional Codex hierarchical mode. The user configures the first-level MATEK worker
-  concurrency and a per-worker nested-agent allowance (eight by default when enabled). Give both
+- Use Codex hierarchical mode by default. The user configures the first-level MATEK worker
+  concurrency (eight by default) and a per-worker nested-agent allowance (also eight). Give both
   limits to the coordinator and every first-level worker. A worker with a positive allowance may
   delegate bounded independent subtasks one tier deep, but must check and synthesize them into its
   own `ResearchWorkerReport`; its children cannot bypass MATEK checkpoints or acceptance gates.
   A zero nested allowance makes the worker a regular subagent and the prompt must say so without
-  implying that nested delegation is available. Keep flat application-managed orchestration as
-  the backend-portable default; do not silently emulate unavailable nested tools on the API
-  adapter.
+  implying that nested delegation is available. Preserve explicit flat mode. Because the API
+  adapter has no nested-agent tool, visibly resolve API execution to the backend-portable flat
+  path rather than emulating unavailable delegation.
 - Run research as a completion-driven event loop rather than fixed rounds. Atomically preserve
   every assignment and full raw worker report, then atomically write one immutable zero-padded
   completion-event file and refresh the materialized mailbox snapshot. Activate the coordinator
@@ -104,17 +104,24 @@ formalization, and generates a reproducible final report.
   authenticated artifact and graph-node references with stable IDs, validated relative paths,
   revisions, and SHA-256 hashes. Codex may read those paths; backends without filesystem access
   may request a bounded evidence set for the next activation.
+- In compact mode inline catalog entries only for new/current/candidate/audit/requested evidence.
+  Represent the exhaustive catalog by its validated relative path, SHA-256, total count, and
+  artifact-kind counts. Replace the full graph memory view with graph root, revision, index path,
+  node/edge counts, and retrieval instructions; inline only the already selected bounded graph
+  summaries so graph state is not duplicated.
 - Preflight before starting a provider process. Persist each context manifest and any omissions.
   A provider `input_too_large` result must reduce the measured budget and create a distinct compact
   request. If cumulative scheduler state cannot fit, automatically rebuild an indexed context
   containing the exact prompt/claim, live controls, open work, newest events, bounded scientific
-  summaries, and authenticated ledger/graph/artifact references. Reserve
-  `CONTEXT_BUDGET_EXHAUSTED` for the exceptional case where the immutable exact prompt/claim and
-  provider envelope still cannot fit after indexed compaction, or the provider rejects every
-  successively smaller valid request.
-- Refill useful work dynamically after completions instead of waiting for a batch barrier. Permit
-  up to 32 total open assignments (queued plus running) by default. Permit up to 32 of that open
-  set to be active research workers, subject to backend and budget limits. Initial workers and
+  summaries, and authenticated ledger/graph/artifact references. Cap every optional serialized
+  section and reserve at least 5% or 40,000 characters of headroom. Repeatedly prune the
+  lowest-priority optional entries and remeasure. Reserve `MANDATORY_CONTEXT_TOO_LARGE` for the
+  exceptional case where the exact prompt/claim plus provider instructions, output contract, and
+  envelope cannot fit; report repeated provider rejection separately.
+- Refill useful work dynamically after completions instead of waiting for a batch barrier. Use
+  1,024 total open assignments (queued plus running) as a high default safety ceiling. Permit up
+  to eight of that open set to be active first-level research workers, each with up to eight
+  nested Codex agents, subject to backend and budget limits. Initial workers and
   later refills share that pool and use web search by default; only the explicit global
   `--no-web-search` policy disables search for them.
 - Maintain an approach registry containing mechanism, result, assumptions, bottleneck,
@@ -158,8 +165,9 @@ formalization, and generates a reproducible final report.
   passes; otherwise append the complete failed-audit reports and exact repair obligations as
   high-priority events, reactivate the coordinator immediately, and refill the live pool.
 - Expose a total active wall-clock limit for the complete run, persist elapsed time across resume,
-  and use the remaining allowance to bound in-flight model calls. Keep this limit disabled by
-  default and require explicit user configuration.
+  and use the remaining allowance to bound in-flight model calls. Default to 15 active hours.
+  Other scheduler and iteration defaults should be high safety ceilings so time is the resource
+  boundary ordinarily expected to stop a default run.
 
 ### FR-3A Persistent mathematical knowledge graph
 

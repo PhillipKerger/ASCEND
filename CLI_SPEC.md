@@ -84,6 +84,7 @@ Without a backend flag, a new installation uses Codex. Important options:
 --max-coordinator-decisions INTEGER
 --max-agents INTEGER
 --hierarchical
+--flat
 --subagents-per-agent INTEGER
 --time-limit-minutes INTEGER
 --no-web-search
@@ -120,8 +121,9 @@ coordinator and live pool, not a provider parameter.
 
 `--no-web-search` disables web search in every model stage and disables MATEK's deterministic
 public-identifier HTTP resolver. Search remains enabled by default. The resolved setting is
-saved with the run; initial research workers and later refills share the default 32-slot worker
-pool and the same search policy. The same flag on `matek resume` disables it for all remaining stages.
+saved with the run; initial research workers and later refills share the default eight-slot
+first-level pool and the same search policy. The same flag on `matek resume` disables it for all
+remaining stages.
 Unverifiable citations remain unverified, so this option never weakens the bibliography gate and
 a fully offline run should normally also use `--research-only`.
 
@@ -134,17 +136,18 @@ and resume always uses that frozen graph.
 `--time-limit-minutes N` sets the total active wall-clock allowance across prompt compilation,
 research, manuscript work, and formal verification. Elapsed active time is stored in run state
 and carried into resume; time while MATEK is not running is excluded. The remaining allowance
-also bounds each in-flight model call. There is no wall-clock limit by default.
+also bounds each in-flight model call. The default is 900 minutes (15 active hours).
 `MATEK_TIME_LIMIT_MINUTES=N` is the environment form.
 
-`--max-agents N` caps simultaneous research workers. The built-in concurrency default is 32.
-`research.maximum_pending_assignments` defaults to 32 total open assignments—queued plus
-running—and `research.maximum_coordinator_decisions` defaults to 256 event-indexed decisions. The
+`--max-agents N` caps simultaneous first-level research workers. The built-in default is eight.
+`research.maximum_pending_assignments` defaults to a high 1,024-open-assignment safety ceiling,
+and `research.maximum_coordinator_decisions` defaults to 100,000 event-indexed decisions. The
 concurrency limit controls the active subset of that open set. None of these settings imposes a
 separate cumulative logical-worker limit. Codex global call-count limits remain configurable in
 TOML but are unset by default.
 
-`--hierarchical` enables one nested Codex tier inside each first-level research worker.
+Hierarchical execution is the Codex default. `--hierarchical` explicitly enables it and `--flat`
+disables nested delegation.
 `--max-agents X` remains the first-level MATEK worker-concurrency limit, while
 `--subagents-per-agent X_PRIME` sets the maximum concurrently open Codex subagents available to
 each such worker. The hierarchical default is eight nested agents per first-level worker; zero
@@ -152,16 +155,17 @@ means that workers are explicitly instructed to operate as regular subagents and
 tools are not enabled. The coordinator and worker inputs contain both resolved limits. Nested
 agents inherit the parent worker's sandbox and web policy, cannot delegate further under MATEK's
 contract, and must be checked and synthesized by the parent into its ordinary durable report.
-This mode currently requires the Codex backend; a positive nested limit with `--backend api` is a
-configuration error.
+The Responses API adapter has no nested-agent tool and visibly resolves to portable flat
+execution.
 
 `research.maximum_coordinator_context_characters` defaults to 800,000 and applies to the final
-serialized provider input rather than raw report text alone. `matek run` displays this ceiling and
-the bounded on-demand evidence-request limit. Oversized histories are compacted into prioritized
-working sets with hash-bound references. If compact scheduler history remains oversized, indexed
-mode retains exact prompt/claim and live state while replacing cumulative history with bounded
-summaries and authenticated scheduler/event/graph references. Only an immutable exact prompt/claim
-or provider envelope that still cannot fit may pause as `CONTEXT_BUDGET_EXHAUSTED`.
+serialized provider input rather than raw report text alone. Compact requests reserve at least 5%
+or 40,000 characters, so the normal target is at most 760,000. `matek run` displays this ceiling
+and the bounded on-demand evidence-request limit. Exhaustive artifact and graph indexes stay on
+disk; transport carries high-priority entries plus authenticated descriptors and capped summaries.
+Every optional section is prunable. Only the exact prompt/claim plus provider instructions, output
+contract, and envelope may pause as `MANDATORY_CONTEXT_TOO_LARGE`; repeated provider rejection is
+reported separately with a smaller resumable generation.
 
 Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
@@ -175,7 +179,8 @@ worker completion. A full run may show:
 ASCENSION 0: Fetching problem.
 ASCENSION 1: Formulating technical research prompt.
 ASCENSION 2: Starting continuous research coordinator.
-ASCENSION 3: Managing adaptive research pool: 16 initial assignments, up to 32 active agents.
+ASCENSION 3: Managing adaptive research pool: 8 initial assignments, up to 8 active agents,
+each with up to 8 nested subagents.
 ASCENSION 4: Packaging the candidate solution for independent audits.
 ASCENSION 5: Writing manuscript and verifying bibliography.
 ASCENSION 6: Assessing and verifying the Lean formalization.

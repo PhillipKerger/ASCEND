@@ -26,19 +26,23 @@ follow-up work, but typoed/unknown names fail closed. Resume uses the graph iden
 intake, and graph maintenance requires explicit selection whenever more than one graph exists.
 
 - Explicit application-level agents are the stable default.
-- Optional hierarchical execution may use Codex subagents inside a first-level research worker.
+- Default Codex hierarchical execution may use subagents inside a first-level research worker.
   MATEK's first-level scheduler, report checkpoint, aggregate usage accounting, and independent
   acceptance roles remain authoritative; nested helpers never replace them.
 - Run workers concurrently with `asyncio` and bounded concurrency.
 - Research uses one durable logical coordinator with a completion-driven mailbox and live worker
   pool, not fixed rounds or wait-for-all worker batches.
-- The coordinator creates an initial diverse portfolio of sixteen, then reacts to persisted
-  worker/audit events and dynamically refills up to 32 active workers by default.
+- The coordinator creates an initial diverse portfolio of eight, then reacts to persisted
+  worker/audit events and dynamically refills the eight-worker first-level pool by default.
+  Each first-level Codex worker may use eight one-tier nested agents (64 nested slots total).
 - The canonical atomic coordinator checkpoint owns scheduler state and a pending-event write-ahead
   record. Full raw reports, per-assignment source verification, and atomically created immutable
   event/decision files validate that checkpoint. The mailbox, assignment files, approach registry,
   and continuity view aid delivery and navigation but may not replace either the checkpoint or its
   evidence; correctness may not depend on hidden provider memory.
+- Compact coordinator transport reserves at least 5% or 40,000 characters, caps all optional
+  sections, and sends authenticated catalog/graph descriptors instead of exhaustive indexes.
+  Only the exact prompt/claim and provider/output envelope are mandatory transport material.
 - Hosted multi-agent features may later be added as an experimental backend, never as a
   required dependency.
 

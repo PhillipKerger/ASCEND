@@ -138,10 +138,10 @@ class CodexLimits(_StrictSettings):
     """Subscription/credit limits, intentionally separate from API dollars."""
 
     max_agent_calls: int | None = Field(default=None, gt=0)
-    max_research_coordinator_decisions: int = Field(default=256, gt=0)
+    max_research_coordinator_decisions: int = Field(default=100_000, gt=0)
     max_codex_threads: int | None = Field(default=None, gt=0)
-    max_wall_clock_minutes: int | None = Field(default=None, gt=0)
-    max_formalization_iterations: int = Field(default=60, gt=0)
+    max_wall_clock_minutes: int | None = Field(default=900, gt=0)
+    max_formalization_iterations: int = Field(default=10_000, gt=0)
 
     @model_validator(mode="before")
     @classmethod
@@ -181,8 +181,8 @@ class CodexSettings(_StrictSettings):
     formalization_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
         "xhigh"
     )
-    max_parallel_agents: int = Field(default=32, gt=0)
-    max_parallel_web_agents: int = Field(default=32, gt=0)
+    max_parallel_agents: int = Field(default=64, gt=0)
+    max_parallel_web_agents: int = Field(default=64, gt=0)
     persist_sessions: bool = True
     skip_git_repo_check: bool = False
     extra_args: list[str] = Field(default_factory=list)
@@ -277,14 +277,14 @@ class CodexSettings(_StrictSettings):
 
 
 class ResearchSettings(_StrictSettings):
-    orchestration_mode: Literal["flat", "hierarchical"] = "flat"
+    orchestration_mode: Literal["flat", "hierarchical"] = "hierarchical"
     maximum_subagents_per_agent: int = Field(default=8, ge=0, le=32)
-    minimum_initial_agents: int = Field(default=16, ge=4)
-    maximum_concurrent_agents: int = Field(default=32, gt=0)
-    maximum_pending_assignments: int = Field(default=32, gt=0)
-    maximum_coordinator_decisions: int = Field(default=256, gt=0)
+    minimum_initial_agents: int = Field(default=8, ge=4)
+    maximum_concurrent_agents: int = Field(default=8, gt=0)
+    maximum_pending_assignments: int = Field(default=1_024, gt=0)
+    maximum_coordinator_decisions: int = Field(default=100_000, gt=0)
     maximum_coordinator_context_characters: int = Field(default=800_000, ge=100_000)
-    maximum_coordinator_requested_artifacts: int = Field(default=8, ge=1, le=32)
+    maximum_coordinator_requested_artifacts: int = Field(default=32, ge=1, le=32)
     require_foundational_audit: Literal[True] = True
     require_domain_audit: Literal[True] = True
     require_hostile_audit: Literal[True] = True
@@ -372,7 +372,7 @@ class LeanSettings(_StrictSettings):
     docker_image: str = "matek-theorem-agent:latest"
     allow_project_edits: bool = False
     codex_command: str = "codex"
-    maximum_codex_iterations: int = Field(default=50, ge=0)
+    maximum_codex_iterations: int = Field(default=10_000, ge=0)
     # Successful Lean verification always enforces these checks.  Keeping the fields
     # fixed at true prevents a configuration from promising a weaker trust boundary.
     prohibit_sorry: Literal[True] = True
@@ -411,8 +411,8 @@ class LeanSettings(_StrictSettings):
 
 
 class Limits(_StrictSettings):
-    maximum_cost_usd: float = Field(default=150.0, ge=0, allow_inf_nan=False)
-    maximum_wall_clock_hours: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    maximum_cost_usd: float = Field(default=100_000.0, ge=0, allow_inf_nan=False)
+    maximum_wall_clock_hours: float | None = Field(default=15.0, gt=0, allow_inf_nan=False)
     maximum_api_retries: int = Field(default=4, ge=0)
     maximum_total_tokens: int | None = Field(default=None, gt=0)
 
@@ -478,7 +478,7 @@ class PricingSettings(_StrictSettings):
 class ApiSettings(_StrictSettings):
     """Existing Responses API configuration, namespaced without changing semantics."""
 
-    max_parallel_agents: int = Field(default=32, gt=0)
+    max_parallel_agents: int = Field(default=64, gt=0)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
     limits: Limits = Field(default_factory=Limits)
     pricing: PricingSettings = Field(default_factory=PricingSettings)
@@ -534,11 +534,6 @@ class AppConfig(_StrictSettings):
 
     @model_validator(mode="after")
     def selected_models_have_budget_pricing(self) -> AppConfig:
-        if self.backend.provider != "codex" and self.research.hierarchical_subagent_limit > 0:
-            raise ValueError(
-                "research.orchestration_mode='hierarchical' currently requires the Codex "
-                "backend; the Responses API adapter does not expose nested-agent tools"
-            )
         if self.backend.provider != "api":
             return self
         selected = {
@@ -585,6 +580,22 @@ class AppConfig(_StrictSettings):
     @property
     def research_settings(self) -> ResearchSettings:
         return self.research
+
+    @property
+    def effective_research_orchestration_mode(self) -> Literal["flat", "hierarchical"]:
+        """Resolve provider capabilities without pretending the API has nested tools."""
+
+        if self.backend.provider != "codex":
+            return "flat"
+        return self.research.orchestration_mode
+
+    @property
+    def effective_hierarchical_subagent_limit(self) -> int:
+        """Return the nested allowance actually available on the selected backend."""
+
+        if self.effective_research_orchestration_mode != "hierarchical":
+            return 0
+        return self.research.maximum_subagents_per_agent
 
     @property
     def web_search_enabled(self) -> bool:

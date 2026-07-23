@@ -33,7 +33,7 @@ maximum_concurrent_agents = 5
         cli_overrides={"max_rounds": 4},
     )
 
-    assert config.research.minimum_initial_agents == 16  # default
+    assert config.research.minimum_initial_agents == 8  # default
     assert config.research.maximum_concurrent_agents == 5  # project
     assert config.research.maximum_rounds == 4  # CLI beats environment
 
@@ -123,18 +123,19 @@ def test_role_specific_research_defaults() -> None:
     assert config.codex.model == "gpt-5.6-sol"
     assert config.codex.research_coordinator_effort == "max"
     assert config.codex.research_worker_effort == "xhigh"
-    assert config.research.maximum_pending_assignments == 32
-    assert config.research.maximum_coordinator_decisions == 256
+    assert config.research.maximum_pending_assignments == 1_024
+    assert config.research.maximum_coordinator_decisions == 100_000
     assert config.research.maximum_coordinator_context_characters == 800_000
-    assert config.research.maximum_coordinator_requested_artifacts == 8
-    assert config.research.orchestration_mode == "flat"
+    assert config.research.maximum_coordinator_requested_artifacts == 32
+    assert config.research.orchestration_mode == "hierarchical"
     assert config.research.maximum_subagents_per_agent == 8
-    assert config.research.hierarchical_subagent_limit == 0
-    assert config.codex.limits.max_research_coordinator_decisions == 256
+    assert config.research.hierarchical_subagent_limit == 8
+    assert config.effective_hierarchical_subagent_limit == 8
+    assert config.codex.limits.max_research_coordinator_decisions == 100_000
     assert "maximum_subagents =" not in config_as_toml(config)
 
 
-def test_hierarchical_research_configuration_is_explicit_and_codex_only() -> None:
+def test_hierarchical_research_configuration_resolves_to_provider_capability() -> None:
     config = merge_config(
         AppConfig(),
         {
@@ -149,8 +150,10 @@ def test_hierarchical_research_configuration_is_explicit_and_codex_only() -> Non
     assert config.research.maximum_subagents_per_agent == 6
     assert config.research.hierarchical_subagent_limit == 6
 
-    with pytest.raises(ConfigError, match=r"hierarchical.*Codex"):
-        merge_config(config, {"backend": "api"})
+    api_config = merge_config(config, {"backend": "api"})
+    assert api_config.research.orchestration_mode == "hierarchical"
+    assert api_config.effective_research_orchestration_mode == "flat"
+    assert api_config.effective_hierarchical_subagent_limit == 0
 
 
 def test_zero_nested_limit_keeps_hierarchical_workers_regular() -> None:
@@ -266,8 +269,8 @@ def test_total_time_limit_updates_both_backends_and_environment(tmp_path: Path) 
         env={"MATEK_TIME_LIMIT_MINUTES": "30"},
     )
 
-    assert default.codex.limits.max_wall_clock_minutes is None
-    assert default.limits.maximum_wall_clock_hours is None
+    assert default.codex.limits.max_wall_clock_minutes == 900
+    assert default.limits.maximum_wall_clock_hours == 15.0
     assert configured.codex.limits.max_wall_clock_minutes == 45
     assert configured.limits.maximum_wall_clock_hours == 0.75
     assert from_environment.codex.limits.max_wall_clock_minutes == 30
@@ -284,7 +287,7 @@ def test_nested_and_dotted_cli_overrides_are_supported() -> None:
     nested = merge_config(AppConfig(), {"research": {"maximum_rounds": 3}})
     dotted = merge_config(AppConfig(), {"models.audit.web_search": False})
     assert nested.research.maximum_rounds == 3
-    assert nested.research.maximum_coordinator_decisions == 96
+    assert nested.research.maximum_coordinator_decisions == 3_072
     assert not dotted.models.audit.web_search
 
 
@@ -500,19 +503,19 @@ def test_checked_in_example_config_loads() -> None:
 
     assert config.config_version == 2
     assert config.backend.provider == "codex"
-    assert config.codex.max_parallel_agents == 32
-    assert config.codex.max_parallel_web_agents == 32
+    assert config.codex.max_parallel_agents == 64
+    assert config.codex.max_parallel_web_agents == 64
     assert config.codex.limits.max_agent_calls is None
     assert config.codex.limits.max_codex_threads is None
-    assert config.api.max_parallel_agents == 32
-    assert config.research.minimum_initial_agents == 16
-    assert config.research.maximum_concurrent_agents == 32
-    assert config.research.maximum_pending_assignments == 32
-    assert config.research.maximum_coordinator_decisions == 256
+    assert config.api.max_parallel_agents == 64
+    assert config.research.minimum_initial_agents == 8
+    assert config.research.maximum_concurrent_agents == 8
+    assert config.research.maximum_pending_assignments == 1_024
+    assert config.research.maximum_coordinator_decisions == 100_000
     assert config.research.maximum_coordinator_context_characters == 800_000
-    assert config.research.maximum_coordinator_requested_artifacts == 8
-    assert config.research.maximum_assignments_per_round == 32
-    assert config.research.maximum_rounds == 8
+    assert config.research.maximum_coordinator_requested_artifacts == 32
+    assert config.research.maximum_assignments_per_round == 1_024
+    assert config.research.maximum_rounds == 98
     assert config.models.research_coordinator.model == "gpt-5.6-sol"
     assert config.models.research_coordinator.reasoning_effort == "max"
     assert config.models.research_worker.model == "gpt-5.6-sol"
@@ -523,8 +526,11 @@ def test_checked_in_example_config_loads() -> None:
     assert config.codex.research_coordinator_effort == "max"
     assert config.codex.research_worker_effort == "xhigh"
     assert config.codex.research_effort == "xhigh"
-    assert config.codex.limits.max_research_coordinator_decisions == 256
-    assert config.codex.limits.max_research_rounds == 8
+    assert config.codex.limits.max_research_coordinator_decisions == 100_000
+    assert config.codex.limits.max_research_rounds == 3_125
+    assert config.codex.limits.max_wall_clock_minutes == 900
+    assert config.limits.maximum_wall_clock_hours == 15.0
+    assert config.lean.maximum_codex_iterations == 10_000
     assert config.lean.docker_image == "matek-theorem-agent:latest"
     assert set(config.pricing.models) == {
         "gpt-5.6-sol",

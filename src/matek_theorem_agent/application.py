@@ -583,7 +583,7 @@ class WorkflowRunner:
                 "model": self.config.codex.model,
                 "reasoning_effort": effort,
                 "maximum_subagents": (
-                    self.config.research.hierarchical_subagent_limit
+                    self.config.effective_hierarchical_subagent_limit
                     if category in {"research", "research_worker"}
                     else 0
                 ),
@@ -957,8 +957,15 @@ class WorkflowRunner:
                 "backend_display_name": backend_metadata["display_name"],
                 "authentication_class": backend_metadata.get("authentication_class", "unverified"),
                 "automatic_fallback": False,
-                "research_orchestration_mode": (self.config.research.orchestration_mode),
-                "maximum_subagents_per_agent": (self.config.research.hierarchical_subagent_limit),
+                "research_orchestration_mode": (
+                    self.config.effective_research_orchestration_mode
+                ),
+                "configured_research_orchestration_mode": (
+                    self.config.research.orchestration_mode
+                ),
+                "maximum_subagents_per_agent": (
+                    self.config.effective_hierarchical_subagent_limit
+                ),
                 "maximum_concurrent_agents": (self.config.research.maximum_concurrent_agents),
             }
         )
@@ -1847,7 +1854,9 @@ class WorkflowRunner:
                     compiled_problem=compiled,
                     research_dir=state.run_root / "research",
                     workflow_settings=ResearchWorkflowSettings(
-                        orchestration_mode=self.config.research.orchestration_mode,
+                        orchestration_mode=(
+                            self.config.effective_research_orchestration_mode
+                        ),
                         maximum_subagents_per_agent=(
                             self.config.research.maximum_subagents_per_agent
                         ),
