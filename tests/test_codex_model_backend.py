@@ -273,6 +273,7 @@ def _request(
     web_search: bool = True,
     effort: str = "xhigh",
     model: str = "gpt-5.6-sol",
+    maximum_subagents: int = 0,
 ) -> ModelRequest:
     return ModelRequest(
         instructions="Return the answer.",
@@ -281,6 +282,7 @@ def _request(
             model=model,
             web_search=web_search,
             reasoning_effort=effort,  # type: ignore[arg-type]
+            maximum_subagents=maximum_subagents,
         ),
     )
 
@@ -454,6 +456,39 @@ async def test_optional_model_search_and_stage_reasoning_policy(tmp_path: Path) 
     config_index = argv.index("--config")
     assert argv[config_index + 1] == 'model_reasoning_effort="high"'
     assert argv[-3:] == ("--color", "never", "-")
+
+
+@pytest.mark.asyncio
+async def test_hierarchical_limit_is_enabled_only_for_research_workers(tmp_path: Path) -> None:
+    backend = FakeCodexBackend(["success", "success", "success"])
+    client = CodexCliModelClient(
+        tmp_path,
+        backend=backend,
+    )
+    run_root = _run_root(tmp_path)
+
+    worker = client.for_stage("research", run_root=run_root, role="research-worker")
+    coordinator = client.for_stage("research", run_root=run_root, role="research-coordinator")
+    await worker.generate_structured(_request(maximum_subagents=8), Answer)
+    await coordinator.generate_structured(_request(maximum_subagents=8), Answer)
+    await worker.generate_structured(_request(), Answer)
+
+    worker_argv = backend.exec_requests[0].argv
+    coordinator_argv = backend.exec_requests[1].argv
+    regular_worker_argv = backend.exec_requests[2].argv
+    assert "agents.enabled=true" in worker_argv
+    assert "agents.max_concurrent_threads_per_session=8" in worker_argv
+    assert "agents.enabled=true" not in coordinator_argv
+    assert "agents.enabled=false" in coordinator_argv
+    assert not any(
+        argument.startswith("agents.max_concurrent_threads_per_session=")
+        for argument in coordinator_argv
+    )
+    assert "agents.enabled=false" in regular_worker_argv
+    assert not any(
+        argument.startswith("agents.max_concurrent_threads_per_session=")
+        for argument in regular_worker_argv
+    )
 
 
 @pytest.mark.asyncio

@@ -11,6 +11,7 @@ from matek_theorem_agent.workspace import (
     PathConfinementError,
     RunLock,
     RunLockHeldError,
+    WorkspaceError,
     atomic_write_json,
     atomic_write_text,
     confined_path,
@@ -18,6 +19,7 @@ from matek_theorem_agent.workspace import (
     discover_project_root,
     generate_run_id,
     latest_run_root,
+    latest_run_root_for_problem,
 )
 
 
@@ -62,6 +64,42 @@ def test_latest_run_uses_embedded_timestamp_with_problem_first_ids(tmp_path: Pat
 
     assert older.name > newer.name
     assert latest_run_root(tmp_path) == newer
+
+
+def test_latest_run_for_problem_uses_frozen_source_path_not_run_name(tmp_path: Path) -> None:
+    first_problem = tmp_path / "first.md"
+    second_problem = tmp_path / "second.md"
+    first_problem.write_text("First problem.\n", encoding="utf-8")
+    second_problem.write_text("Second problem.\n", encoding="utf-8")
+    older = create_run_root(
+        tmp_path,
+        run_id="run-unrelated-name-20260718T120000Z-abcdef",
+    )
+    newer = create_run_root(
+        tmp_path,
+        run_id="run-another-name-20260720T120000Z-abcdef",
+    )
+    other = create_run_root(
+        tmp_path,
+        run_id="run-first-20260721T120000Z-abcdef",
+    )
+    for run_root, problem in (
+        (older, first_problem),
+        (newer, first_problem),
+        (other, second_problem),
+    ):
+        atomic_write_json(
+            run_root / "input" / "invocation.json",
+            {"problem_file": str(problem.resolve())},
+            confinement_root=run_root,
+        )
+
+    assert latest_run_root_for_problem(tmp_path, first_problem) == newer
+    assert latest_run_root_for_problem(tmp_path, second_problem) == other
+
+    missing = tmp_path / "missing.md"
+    with pytest.raises(WorkspaceError, match="does not exist"):
+        latest_run_root_for_problem(tmp_path, missing)
 
 
 def test_create_run_root_builds_exact_concrete_contract_dirs(tmp_path: Path) -> None:

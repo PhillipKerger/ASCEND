@@ -75,7 +75,13 @@ from .state import (
     StateStore,
     first_incomplete_stage,
 )
-from .workspace import RunLock, WorkspaceError, discover_project_root, sha256_file
+from .workspace import (
+    RunLock,
+    WorkspaceError,
+    discover_project_root,
+    latest_run_root_for_problem,
+    sha256_file,
+)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -292,6 +298,8 @@ def _config_overrides(
     max_coordinator_decisions: int | None = None,
     max_rounds: int | None = None,
     max_agents: int | None = None,
+    hierarchical: bool | None = None,
+    subagents_per_agent: int | None = None,
     time_limit_minutes: int | None = None,
     no_lean: bool | None = None,
     no_web_search: bool | None = None,
@@ -308,6 +316,10 @@ def _config_overrides(
         "max_coordinator_decisions": max_coordinator_decisions,
         "max_rounds": max_rounds,
         "max_agents": max_agents,
+        "research_mode": (
+            "hierarchical" if hierarchical is True or subagents_per_agent is not None else None
+        ),
+        "subagents_per_agent": subagents_per_agent,
         "time_limit_minutes": time_limit_minutes,
         "no_lean": True if no_lean else None,
         "no_web_search": True if no_web_search else None,
@@ -391,6 +403,13 @@ def _resolved_run_summary(
         if config.backend.provider == "codex"
         else f"${config.limits.maximum_cost_usd:g} API spend"
     )
+    nested_limit = config.research.hierarchical_subagent_limit
+    research_organization = (
+        f"hierarchical · up to {concurrency} concurrent first-level agents · "
+        f"up to {nested_limit} Codex subagents per first-level agent · one nested tier"
+        if nested_limit > 0
+        else "flat · regular research agents without nested delegation"
+    )
     return {
         "model backend": (
             "codex — Codex CLI (no automatic API fallback)"
@@ -408,6 +427,7 @@ def _resolved_run_summary(
         "initial research agents": (
             f"minimum {config.research.minimum_initial_agents}; may fill available pool"
         ),
+        "research organization": research_organization,
         "concurrent research agents": (f"up to {concurrency} effective ({concurrency_ceilings})"),
         "maximum pending assignments": config.research.maximum_pending_assignments,
         "coordinator decision limit": coordinator_decisions,
@@ -448,6 +468,14 @@ def _show_migration_notice(config: AppConfig) -> None:
 def _effective_run_config_path(run_root: Path) -> Path:
     effective = run_root / "config" / "effective_config.toml"
     return effective if effective.is_file() else run_root / "input" / "config.resolved.toml"
+
+
+def _resolve_resume_selector(project_root: Path, selector: str | None) -> Path:
+    """Resolve a run ID, or the latest run created from a named problem file."""
+
+    if selector is not None and Path(selector).suffix.lower() in {".md", ".txt"}:
+        return latest_run_root_for_problem(project_root, Path(selector))
+    return resolve_run_root(project_root, selector)
 
 
 def _validate_problem_for_dry_run(problem_file: Path) -> str:
@@ -983,6 +1011,18 @@ def run(
         help="Deprecated: migrate each historical round to one pending-window of decisions.",
     ),
     max_agents: int | None = typer.Option(None, "--max-agents", min=1),
+    hierarchical: bool = typer.Option(
+        False,
+        "--hierarchical",
+        help="Let each first-level Codex research agent spawn a bounded nested team.",
+    ),
+    subagents_per_agent: int | None = typer.Option(
+        None,
+        "--subagents-per-agent",
+        min=0,
+        max=32,
+        help="Nested agents available to each first-level agent (default 8 in hierarchical mode).",
+    ),
     time_limit_minutes: int | None = typer.Option(
         None,
         "--time-limit-minutes",
@@ -1018,6 +1058,8 @@ def run(
             max_coordinator_decisions=max_coordinator_decisions,
             max_rounds=max_rounds,
             max_agents=max_agents,
+            hierarchical=hierarchical,
+            subagents_per_agent=subagents_per_agent,
             time_limit_minutes=time_limit_minutes,
             no_lean=no_lean,
             no_web_search=no_web_search,
@@ -1113,6 +1155,8 @@ def run(
                         "max_coordinator_decisions": max_coordinator_decisions,
                         "max_rounds": max_rounds,
                         "max_agents": max_agents,
+                        "hierarchical": hierarchical,
+                        "subagents_per_agent": subagents_per_agent,
                         "time_limit_minutes": time_limit_minutes,
                         "no_web_search": no_web_search,
                         "sandbox": sandbox.value if sandbox else None,
@@ -1210,6 +1254,16 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
                 f"workers {configuration.get('research_worker_model', 'unobserved')} "
                 f"at {configuration.get('research_worker_effort', 'unobserved')}"
             )
+            hierarchy_mode = configuration.get("research_orchestration_mode", "flat")
+            nested_limit = configuration.get("maximum_subagents_per_agent", 0)
+            console.print(
+                "Research organization: "
+                + (
+                    f"hierarchical; up to {nested_limit} nested subagents per first-level agent"
+                    if hierarchy_mode == "hierarchical" and nested_limit
+                    else "flat; regular research agents"
+                )
+            )
         scheduler_path = state.run_root / "research" / "coordinator" / "state.json"
         if scheduler_path.is_file():
             scheduler = json.loads(scheduler_path.read_text(encoding="utf-8"))
@@ -1302,7 +1356,11 @@ def status(run_id: str | None = typer.Argument(None)) -> None:
 
 @app.command()
 def resume(
-    run_id: str | None = typer.Argument(None),
+    run_id: str | None = typer.Argument(
+        None,
+        metavar="RUN_ID_OR_PROBLEM",
+        help="Run ID, or a .md/.txt problem file whose most recent run should resume.",
+    ),
     force_stage: StageName | None = typer.Option(None, "--force-stage"),
     backend: BackendChoice | None = typer.Option(
         None,
@@ -1317,6 +1375,18 @@ def resume(
         None, "--max-rounds", min=1, help="Deprecated compatibility option."
     ),
     max_agents: int | None = typer.Option(None, "--max-agents", min=1),
+    hierarchical: bool = typer.Option(
+        False,
+        "--hierarchical",
+        help="Enable hierarchical research for remaining unlaunched workers.",
+    ),
+    subagents_per_agent: int | None = typer.Option(
+        None,
+        "--subagents-per-agent",
+        min=0,
+        max=32,
+        help="Nested agents available to each first-level agent.",
+    ),
     time_limit_minutes: int | None = typer.Option(
         None,
         "--time-limit-minutes",
@@ -1335,7 +1405,13 @@ def resume(
 
     try:
         root = _project_root()
-        run_root = resolve_run_root(root, run_id)
+        run_root = _resolve_resume_selector(root, run_id)
+        if run_id is not None and Path(run_id).suffix.lower() in {".md", ".txt"}:
+            selection = Text("Resuming most recent run for ")
+            selection.append(run_id, style="bold")
+            selection.append(": ")
+            selection.append(run_root.name, style="bold")
+            console.print(selection)
         frozen = load_config(
             _effective_run_config_path(run_root),
             project_root=root,
@@ -1368,6 +1444,8 @@ def resume(
             max_coordinator_decisions=max_coordinator_decisions,
             max_rounds=max_rounds,
             max_agents=max_agents,
+            hierarchical=hierarchical,
+            subagents_per_agent=subagents_per_agent,
             time_limit_minutes=time_limit_minutes,
             no_web_search=no_web_search,
             verbose=verbose,

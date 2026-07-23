@@ -42,6 +42,9 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
   `maximum_pending_assignments`/`maximum_coordinator_decisions` without reintroducing barriers.
 - Budget accounting, the total-open queued-plus-running assignment limit, coordinator-decision
   limits, and active concurrency limits; no separate cumulative research-worker cap.
+- Hierarchical configuration and CLI precedence; both tier limits reach coordinator and worker
+  inputs, only Codex research-worker commands receive the nested-agent controls, a zero limit
+  produces the regular-subagent contract, and positive hierarchy is rejected for the API adapter.
 - Zero-padded coordinator decision/event IDs, assignment lifecycle transitions, mailbox
   acknowledgement, replay idempotence, and atomic raw-report/source-verification-before-event
   ordering.
@@ -55,8 +58,10 @@ recorded sanitized fixtures. Live tests require explicit environment flags.
   ceiling; new/candidate reports outrank older progress, repeated issues aggregate without losing
   assignment IDs or paths, and every omitted artifact remains hash-addressable.
 - Bounded API retrieval services requested artifacts on a later activation. Provider
-  `input_too_large` rejection creates a smaller distinct request, preserves the event cursor across
-  resume, and mandatory-state exhaustion reports a retriable pause with partial progress intact.
+  `input_too_large` rejection creates a smaller distinct request and preserves the event cursor
+  across resume. Oversized cumulative scheduler state falls back to an indexed context below the
+  transport limit and continues; only an immutable exact prompt/claim or repeated rejection of all
+  smaller valid requests reports a retriable context pause.
 - A fast worker completion can trigger a decision and refill while slower workers remain active.
 - Candidate audit pauses new admission; in-flight completions remain durable, and a failed audit
   becomes an immediate high-priority coordinator event.

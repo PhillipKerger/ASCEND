@@ -127,7 +127,40 @@ def test_role_specific_research_defaults() -> None:
     assert config.research.maximum_coordinator_decisions == 256
     assert config.research.maximum_coordinator_context_characters == 800_000
     assert config.research.maximum_coordinator_requested_artifacts == 8
+    assert config.research.orchestration_mode == "flat"
+    assert config.research.maximum_subagents_per_agent == 8
+    assert config.research.hierarchical_subagent_limit == 0
     assert config.codex.limits.max_research_coordinator_decisions == 256
+    assert "maximum_subagents =" not in config_as_toml(config)
+
+
+def test_hierarchical_research_configuration_is_explicit_and_codex_only() -> None:
+    config = merge_config(
+        AppConfig(),
+        {
+            "research_mode": "hierarchical",
+            "max_agents": 8,
+            "subagents_per_agent": 6,
+        },
+    )
+
+    assert config.research.orchestration_mode == "hierarchical"
+    assert config.research.maximum_concurrent_agents == 8
+    assert config.research.maximum_subagents_per_agent == 6
+    assert config.research.hierarchical_subagent_limit == 6
+
+    with pytest.raises(ConfigError, match=r"hierarchical.*Codex"):
+        merge_config(config, {"backend": "api"})
+
+
+def test_zero_nested_limit_keeps_hierarchical_workers_regular() -> None:
+    config = merge_config(
+        AppConfig(),
+        {"research_mode": "hierarchical", "subagents_per_agent": 0},
+    )
+
+    assert config.research.orchestration_mode == "hierarchical"
+    assert config.research.hierarchical_subagent_limit == 0
 
 
 def test_flat_environment_names_are_supported(tmp_path: Path) -> None:

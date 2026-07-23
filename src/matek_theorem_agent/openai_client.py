@@ -162,6 +162,18 @@ def normalized_model_request(
     if not cache_namespace.strip():
         raise ValueError("model request cache namespace must not be blank")
     settings = request.settings
+    normalized_settings: dict[str, Any] = {
+        "model": settings.model,
+        "reasoning_mode": settings.reasoning_mode,
+        "reasoning_effort": settings.reasoning_effort,
+        "web_search": settings.web_search,
+        "maximum_web_search_calls": settings.maximum_web_search_calls,
+        "max_output_tokens": settings.max_output_tokens,
+    }
+    # Preserve request identities for pre-hierarchy runs. A positive value changes
+    # the actual Codex tool surface and therefore must participate in new keys.
+    if settings.maximum_subagents > 0:
+        normalized_settings["maximum_subagents"] = settings.maximum_subagents
     return {
         "schema_version": 2,
         "stage": stage.strip(),
@@ -170,14 +182,7 @@ def normalized_model_request(
         "output_schema_sha256": strict_schema_sha256(output_type),
         "instructions": _normalized_text(request.instructions),
         "input_text": _normalized_text(request.input_text),
-        "settings": {
-            "model": settings.model,
-            "reasoning_mode": settings.reasoning_mode,
-            "reasoning_effort": settings.reasoning_effort,
-            "web_search": settings.web_search,
-            "maximum_web_search_calls": settings.maximum_web_search_calls,
-            "max_output_tokens": settings.max_output_tokens,
-        },
+        "settings": normalized_settings,
     }
 
 

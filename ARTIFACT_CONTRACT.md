@@ -134,9 +134,10 @@ Research worker, source-verification, coordinator-decision, candidate-attempt, a
 artifacts are immutable evidence objects. Their hashes are recorded before a corresponding
 monotonically sequenced event becomes visible. Coordinator request payloads are also immutable and
 their paths and hashes are bound into the canonical pending-request state before a model call.
-Every request is paired with an immutable context manifest recording its event cursor, normal or
-compact mode, final provider-input character count, token estimate, payload hash, inclusion
-reasons, aggregated events, omitted authenticated references, and effective limit. Rebuilt
+Every request is paired with an immutable context manifest recording its event cursor, normal,
+compact, or indexed mode, final provider-input character count, token estimate, payload hash,
+inclusion reasons, aggregated events, omitted state sections, omitted authenticated references,
+and effective limit. Rebuilt
 generations use distinct request and manifest paths, so a provider-rejected oversized payload is
 never silently replayed unchanged. Each
 event is created atomically as one immutable eight-digit file such as
@@ -199,6 +200,12 @@ usage. Every terminal provider attempt is added to `logs/usage.jsonl` before its
 admitted, including schema-invalid attempts and bounded schema-repair generations. Do not request
 or store private chain-of-thought. Reasoning summaries may be stored only when explicitly
 configured and should not be required for reproducibility.
+
+In optional Codex hierarchical mode, each first-level worker trace records its configured
+`maximum_subagents` and the exact shell-free Codex arguments enabling that bounded collaboration
+pool. Nested work remains inside that provider session; its aggregate terminal usage is charged to
+the first-level worker attempt, and only the synthesized `ResearchWorkerReport` crosses MATEK's
+durable scientific-report boundary.
 
 `config/effective_config.toml` is the resume source. It changes only after an explicit,
 confirmed provider migration. A state-first `pending_backend_migration` intent lets ordinary

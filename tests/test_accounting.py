@@ -255,6 +255,7 @@ async def test_model_call_is_atomically_checkpointed_and_replayed_after_restart(
         "instructions_sha256": checkpoint["request"]["instructions_sha256"],
         "maximum_web_search_calls": 8,
         "max_output_tokens": 100_000,
+        "maximum_subagents": 0,
         "model": "gpt-5.6-sol",
         "reasoning_effort": "xhigh",
         "reasoning_mode": "pro",

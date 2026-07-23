@@ -41,6 +41,7 @@ class ModelRequestAudit(BaseModel):
     web_search: bool
     maximum_web_search_calls: int = Field(gt=0)
     max_output_tokens: int = Field(gt=0)
+    maximum_subagents: int = Field(default=0, ge=0, le=32)
     instructions_sha256: str
     input_text_sha256: str
 
@@ -308,6 +309,7 @@ class ModelCallStore:
                     "web_search": settings.get("web_search"),
                     "maximum_web_search_calls": settings.get("maximum_web_search_calls"),
                     "max_output_tokens": settings.get("max_output_tokens"),
+                    "maximum_subagents": settings.get("maximum_subagents", 0),
                     "instructions_sha256": sha256(instructions.encode("utf-8")).hexdigest(),
                     "input_text_sha256": sha256(input_text.encode("utf-8")).hexdigest(),
                 }

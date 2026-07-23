@@ -54,10 +54,10 @@ class CoordinatorContextManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     decision_id: int = Field(ge=1)
     after_event_sequence: int = Field(ge=0)
-    mode: Literal["normal", "compact"]
+    mode: Literal["normal", "compact", "indexed"]
     configured_character_limit: int = Field(gt=0)
     effective_character_limit: int = Field(gt=0)
     serialized_payload_characters: int = Field(ge=0)
@@ -69,6 +69,7 @@ class CoordinatorContextManifest(BaseModel):
     aggregated_event_groups: list[dict[str, object]] = Field(default_factory=list)
     requested_artifact_ids: list[str] = Field(default_factory=list)
     requested_graph_node_ids: list[str] = Field(default_factory=list)
+    omitted_state_sections: list[dict[str, object]] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -79,13 +80,13 @@ class CoordinatorContextBuild:
 
 
 class CoordinatorContextBudgetExhausted(RuntimeError):
-    """Mandatory coordinator state cannot fit the configured transport budget."""
+    """The irreducible prompt/claim envelope cannot fit the transport budget."""
 
     def __init__(self, *, limit: int, required: int) -> None:
         self.limit = limit
         self.required = required
         super().__init__(
-            "CONTEXT_BUDGET_EXHAUSTED: mandatory coordinator state requires "
+            "CONTEXT_BUDGET_EXHAUSTED: the irreducible coordinator prompt/claim envelope requires "
             f"{required} serialized provider characters but the effective limit is {limit}."
         )
 
@@ -159,6 +160,41 @@ def _aggregate_repetitive_events(
     return combined, group_evidence
 
 
+def _compact_event(event: Mapping[str, object]) -> dict[str, object]:
+    """Preserve event identity and obligations without carrying unbounded prose."""
+
+    result = {
+        key: event[key]
+        for key in (
+            "schema_version",
+            "sequence",
+            "first_sequence",
+            "last_sequence",
+            "kind",
+            "count",
+            "assignment_id",
+            "decision_id",
+            "response_id",
+            "artifact",
+            "artifact_sha256",
+            "related_artifacts",
+            "affected_assignment_ids",
+            "issue_paths",
+        )
+        if key in event
+    }
+    raw_detail = event.get("detail", [])
+    detail = raw_detail if isinstance(raw_detail, list) else [raw_detail]
+    result["detail_summary"] = [
+        normalized if len(normalized) <= 320 else normalized[:319].rstrip() + "…"
+        for item in detail[:8]
+        if (normalized := " ".join(str(item).split()))
+    ]
+    if len(detail) > 8:
+        result["omitted_detail_items"] = len(detail) - 8
+    return result
+
+
 class CoordinatorContextBuilder:
     """Build a complete small context or a prioritized compact working set."""
 
@@ -190,6 +226,7 @@ class CoordinatorContextBuilder:
         after_event_sequence: int,
         normal_payload: dict[str, object],
         compact_base: dict[str, object],
+        indexed_base: dict[str, object] | None = None,
         events: list[dict[str, object]],
         assignment_table: list[dict[str, object]],
         report_evidence: list[CoordinatorEvidenceItem],
@@ -256,9 +293,21 @@ class CoordinatorContextBuilder:
 
         serialized, provider_characters = self._measure(payload)
         if provider_characters > self.effective_character_limit:
-            raise CoordinatorContextBudgetExhausted(
-                limit=self.effective_character_limit,
-                required=provider_characters,
+            if indexed_base is None:
+                raise CoordinatorContextBudgetExhausted(
+                    limit=self.effective_character_limit,
+                    required=provider_characters,
+                )
+            return self._build_indexed(
+                decision_id=decision_id,
+                after_event_sequence=after_event_sequence,
+                indexed_base=indexed_base,
+                events=compact_events,
+                assignment_table=assignment_table,
+                evidence=all_evidence,
+                aggregated=aggregated,
+                requested_artifacts=requested_artifacts,
+                requested_graph_nodes=requested_graph_nodes,
             )
 
         included: list[dict[str, str]] = []
@@ -334,12 +383,251 @@ class CoordinatorContextBuilder:
         )
         return CoordinatorContextBuild(payload, serialized, manifest)
 
+    def _build_indexed(
+        self,
+        *,
+        decision_id: int,
+        after_event_sequence: int,
+        indexed_base: dict[str, object],
+        events: list[dict[str, object]],
+        assignment_table: list[dict[str, object]],
+        evidence: list[CoordinatorEvidenceItem],
+        aggregated: list[dict[str, object]],
+        requested_artifacts: list[str],
+        requested_graph_nodes: list[str],
+    ) -> CoordinatorContextBuild:
+        """Build an emergency indexed view when even the ordinary compact base is too large."""
+
+        payload: dict[str, object] = {
+            **indexed_base,
+            "context_mode": "indexed",
+            "context_contract": {
+                "raw_evidence_is_authoritative": True,
+                "references_are_bound_to_frozen_sha256": True,
+                "historical_state_is_an_index_not_canonical_evidence": True,
+                "request_omitted_evidence_with": [
+                    "requested_artifact_ids",
+                    "requested_graph_node_ids",
+                ],
+            },
+            "assignment_lifecycle": [],
+            "unacknowledged_events": [],
+            "report_summaries": [],
+            "graph_node_summaries": [],
+            "visible_worker_reports": [],
+            "full_graph_nodes": [],
+            "requested_artifacts": [],
+            "requested_graph_nodes": [],
+            "artifact_catalog": [],
+            "indexed_omissions": [],
+        }
+        serialized, provider_characters = self._measure(payload)
+        if provider_characters > self.effective_character_limit:
+            raise CoordinatorContextBudgetExhausted(
+                limit=self.effective_character_limit,
+                required=provider_characters,
+            )
+        omission_reserve = min(4_096, max(self.effective_character_limit // 20, 512))
+        packing_limit = max(provider_characters, self.effective_character_limit - omission_reserve)
+
+        omitted_state: list[dict[str, object]] = []
+
+        def integer_value(value: object) -> int:
+            return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+        status_priority = {"running": 0, "queued": 1, "completed": 2}
+        ordered_assignments = sorted(
+            assignment_table,
+            key=lambda assignment_item: (
+                status_priority.get(str(assignment_item.get("status")), 3),
+                -integer_value(assignment_item.get("completed_event_sequence")),
+                str(assignment_item.get("assignment_id", "")),
+            ),
+        )
+        lifecycle = payload["assignment_lifecycle"]
+        assert isinstance(lifecycle, list)
+        open_assignments = [
+            item for item in ordered_assignments if item.get("status") in {"running", "queued"}
+        ]
+        for assignment_item in open_assignments:
+            lifecycle.append(assignment_item)
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                lifecycle.pop()
+                continue
+            serialized, provider_characters = candidate_serialized, candidate_characters
+
+        indexed_events = [_compact_event(event) for event in events]
+        selected_events: list[dict[str, object]] = []
+        for event in reversed(indexed_events):
+            selected_events.append(event)
+            selected_events.sort(
+                key=lambda event_item: integer_value(
+                    event_item.get("sequence", event_item.get("first_sequence", 0))
+                )
+            )
+            payload["unacknowledged_events"] = selected_events
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                selected_events.remove(event)
+                payload["unacknowledged_events"] = selected_events
+                continue
+            serialized, provider_characters = candidate_serialized, candidate_characters
+        if len(selected_events) < len(indexed_events):
+            omitted_state.append(
+                {
+                    "section": "unacknowledged_events",
+                    "included": len(selected_events),
+                    "omitted": len(indexed_events) - len(selected_events),
+                    "recovery": "Read immutable research/events/*.json evidence by sequence.",
+                }
+            )
+
+        ordered = sorted(
+            evidence,
+            key=lambda evidence_item: (
+                evidence_item.priority,
+                evidence_item.reference.artifact_id,
+            ),
+        )
+
+        def evidence_requested(evidence_item: CoordinatorEvidenceItem) -> bool:
+            reference = evidence_item.reference
+            return reference.artifact_id in requested_artifacts or (
+                reference.graph_node_id is not None
+                and reference.graph_node_id in requested_graph_nodes
+            )
+
+        included: list[dict[str, str]] = []
+        included_ids: set[str] = set()
+
+        def add_full_evidence(evidence_item: CoordinatorEvidenceItem) -> None:
+            nonlocal serialized, provider_characters
+            reference = evidence_item.reference
+            requested = evidence_requested(evidence_item)
+            if reference.kind == "graph_node":
+                key = "requested_graph_nodes" if requested else "full_graph_nodes"
+            else:
+                key = "requested_artifacts" if requested else "visible_worker_reports"
+            current = payload[key]
+            assert isinstance(current, list)
+            current.append(evidence_item.full_content)
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                current.pop()
+                return
+            serialized, provider_characters = candidate_serialized, candidate_characters
+            included_ids.add(reference.artifact_id)
+            included.append(
+                {
+                    "artifact_id": reference.artifact_id,
+                    "reason": evidence_item.inclusion_reason,
+                }
+            )
+
+        # Explicit retrieval requests are serviced before lower-priority history.
+        for evidence_item in ordered:
+            if evidence_requested(evidence_item):
+                add_full_evidence(evidence_item)
+
+        # Scientific summaries outrank closed assignment bookkeeping.
+        for evidence_item in ordered:
+            key = (
+                "graph_node_summaries"
+                if evidence_item.reference.kind == "graph_node"
+                else "report_summaries"
+            )
+            current = payload[key]
+            assert isinstance(current, list)
+            current.append(evidence_item.summary)
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                current.pop()
+                continue
+            serialized, provider_characters = candidate_serialized, candidate_characters
+
+        # Then include high-priority complete evidence that still fits.
+        for evidence_item in ordered:
+            if not evidence_requested(evidence_item) and evidence_item.priority < 10:
+                add_full_evidence(evidence_item)
+
+        # Summaries already carry path/hash pairs. The separate catalog is useful but
+        # lower priority than the scientific content and requested full evidence.
+        catalog = payload["artifact_catalog"]
+        assert isinstance(catalog, list)
+        for evidence_item in ordered:
+            catalog.append(evidence_item.reference.model_dump(mode="json"))
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                catalog.pop()
+                continue
+            serialized, provider_characters = candidate_serialized, candidate_characters
+
+        historical_assignments = [
+            item for item in ordered_assignments if item.get("status") not in {"running", "queued"}
+        ]
+        for assignment_item in historical_assignments:
+            lifecycle.append(assignment_item)
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters > packing_limit:
+                lifecycle.pop()
+                continue
+            serialized, provider_characters = candidate_serialized, candidate_characters
+        if len(lifecycle) < len(ordered_assignments):
+            omitted_state.append(
+                {
+                    "section": "assignment_lifecycle",
+                    "included": len(lifecycle),
+                    "omitted": len(ordered_assignments) - len(lifecycle),
+                    "recovery": "Use report summaries and the authenticated scheduler index.",
+                }
+            )
+
+        omitted = [
+            evidence_item.reference
+            for evidence_item in evidence
+            if evidence_item.reference.artifact_id not in included_ids
+        ]
+        payload["indexed_omissions"] = omitted_state
+        candidate_serialized, candidate_characters = self._measure(payload)
+        if candidate_characters <= self.effective_character_limit:
+            serialized, provider_characters = candidate_serialized, candidate_characters
+        elif omitted_state:
+            payload["indexed_omissions"] = [
+                {
+                    "section": "multiple_indexed_sections",
+                    "omitted": sum(integer_value(item.get("omitted")) for item in omitted_state),
+                    "recovery": "Inspect the context manifest and canonical scheduler ledger.",
+                }
+            ]
+            candidate_serialized, candidate_characters = self._measure(payload)
+            if candidate_characters <= self.effective_character_limit:
+                serialized, provider_characters = candidate_serialized, candidate_characters
+            else:
+                payload["indexed_omissions"] = []
+                serialized, provider_characters = self._measure(payload)
+        manifest = self._manifest(
+            decision_id=decision_id,
+            after_event_sequence=after_event_sequence,
+            mode="indexed",
+            payload=payload,
+            serialized=serialized,
+            provider_characters=provider_characters,
+            included=included,
+            omitted=omitted,
+            aggregated=aggregated,
+            requested_artifacts=requested_artifacts,
+            requested_graph_nodes=requested_graph_nodes,
+            omitted_state=omitted_state,
+        )
+        return CoordinatorContextBuild(payload, serialized, manifest)
+
     def _manifest(
         self,
         *,
         decision_id: int,
         after_event_sequence: int,
-        mode: Literal["normal", "compact"],
+        mode: Literal["normal", "compact", "indexed"],
         payload: Mapping[str, object],
         serialized: str,
         provider_characters: int,
@@ -348,6 +636,7 @@ class CoordinatorContextBuilder:
         aggregated: list[dict[str, object]],
         requested_artifacts: list[str],
         requested_graph_nodes: list[str],
+        omitted_state: list[dict[str, object]] | None = None,
     ) -> CoordinatorContextManifest:
         del payload
         return CoordinatorContextManifest(
@@ -365,6 +654,7 @@ class CoordinatorContextBuilder:
             aggregated_event_groups=aggregated,
             requested_artifact_ids=requested_artifacts,
             requested_graph_node_ids=requested_graph_nodes,
+            omitted_state_sections=list(omitted_state or []),
         )
 
 

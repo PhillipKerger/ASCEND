@@ -922,6 +922,16 @@ def test_ambiguous_problem_stops_before_research_and_asks_for_clarification(
     assert "Problem clarification required" in report
     assert "revise the problem file" in report.lower()
 
+    request_count = len(model.requests)
+    monkeypatch.setattr(cli_module, "_offline_runner", lambda config: runner)
+    resumed = CliRunner().invoke(app, ["resume", str(problem)])
+
+    assert resumed.exit_code == 0, resumed.output
+    assert "Resuming most recent run for" in resumed.output
+    assert state.run_id in resumed.output
+    assert "MATEK run summary" in resumed.output
+    assert len(model.requests) == request_count
+
 
 @pytest.mark.asyncio
 async def test_run_wide_deadline_interrupts_the_active_stage_and_writes_report(
@@ -2050,6 +2060,37 @@ def test_cli_heavy_research_defaults_are_resolved_in_dry_run(
     assert "xhigh effort" in result.output
     assert result.output.count("32") >= 2
     assert "total research-subagent limit" not in result.output
+    assert not (tmp_path / ".matek").exists()
+
+
+def test_cli_hierarchical_mode_prints_both_agent_limits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+    problem = make_problem(tmp_path)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "run",
+            str(problem),
+            "--hierarchical",
+            "--max-agents",
+            "8",
+            "--subagents-per-agent",
+            "6",
+            "--dry-run",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    normalized = " ".join(result.output.replace("│", " ").split())
+    assert "research organization" in result.output
+    assert "hierarchical" in result.output
+    assert "up to 8 concurrent first-level agents" in normalized
+    assert "up to 6 Codex subagents per first-level agent" in normalized
     assert not (tmp_path / ".matek").exists()
 
 

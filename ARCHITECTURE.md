@@ -145,6 +145,15 @@ adapter uses Codex CLI's model and reasoning-effort controls and does not treat 
 mode field as a Codex setting. Role-specific settings remain configurable within backend
 capabilities.
 
+The optional Codex hierarchical mode is deliberately inside the existing worker boundary rather
+than a second scheduler. MATEK continues to own and checkpoint the first-level pool; a
+`research-worker` Codex process alone receives `agents.enabled=true` and
+`agents.max_concurrent_threads_per_session=<configured limit>`. Coordinator, audit, manuscript,
+and Lean roles do not receive that allowance. Nested agents inherit the parent's sandbox and
+search policy, work only one instructed tier deep, and return through the parent worker's single
+validated report and aggregate usage record. Flat mode remains the portable default, and the API
+adapter fails configuration validation when a positive nested allowance is requested.
+
 `research/coordinator/state.json` is the canonical atomic scheduler checkpoint. Immutable files
 under `research/events/<zero-padded-sequence>.json`, immutable coordinator decisions, complete raw
 worker/source/audit reports, and their hashes are durable evidence used to validate it. Event
@@ -201,9 +210,11 @@ Each coordinator request is preflighted against a conservative 800,000-character
 after backend framing. Its immutable context manifest records the cursor, included and omitted
 artifacts, hashes, character/token estimates, and compaction reason. Knowledge-graph neighborhoods
 are retrieval indexes, not proof evidence. Provider size rejection lowers the effective limit and
-rebuilds a new request; mandatory-state overflow pauses retriably rather than being classified as a
-Codex process crash. Candidate packaging and audits continue to receive complete candidate-specific
-evidence and retain their strict gates.
+rebuilds a new request. Compact-state overflow activates an indexed transport view with bounded
+scientific summaries and authenticated scheduler/event/graph/artifact references instead of
+pausing the workflow. Only an immutable exact prompt/claim that cannot fit, or repeated provider
+rejection of every smaller valid request, produces `CONTEXT_BUDGET_EXHAUSTED`. Candidate packaging
+and audits continue to receive complete candidate-specific evidence and retain their strict gates.
 There is no cumulative logical-worker ceiling and no fixed-round synchronization barrier.
 Total-open-assignment, concurrent-call, coordinator-decision, model-call, cost, token, and
 wall-clock limits are separate controls.
@@ -216,7 +227,9 @@ The compiled problem carries a prior-literature classification. Exact known solu
 eligible for source verification, proof reconstruction, exposition, and formalization, but must
 never be reported as mathematically novel.
 
-Codex internal subagents are not a substitute for MATEK's independent roles and checkpoints.
+Codex internal subagents, when hierarchical mode is enabled, are scoped helpers inside one
+first-level worker. They are not substitutes for MATEK's independent roles, durable reports,
+auditors, or checkpoints.
 
 ### Persistent knowledge graph
 

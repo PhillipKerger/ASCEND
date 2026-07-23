@@ -458,6 +458,54 @@ def latest_run_root(project_root: Path) -> Path | None:
     return max(valid, key=lambda item: (_run_id_timestamp(item.name), item.name), default=None)
 
 
+def latest_run_root_for_problem(project_root: Path, problem_file: Path) -> Path:
+    """Return the newest run whose immutable invocation names this exact problem file."""
+
+    try:
+        source = problem_file.expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise WorkspaceError(f"problem file does not exist: {problem_file}") from exc
+    if not source.is_file() or source.suffix.lower() not in {".md", ".txt"}:
+        raise WorkspaceError(f"problem path must be a Markdown or text file: {problem_file}")
+
+    root = project_root.expanduser().resolve(strict=True)
+    runs_root = ensure_path_confined(root, root / ".matek" / "runs")
+    if not runs_root.is_dir():
+        raise WorkspaceError(f"no MATEK runs exist for problem file: {source}")
+
+    matches: list[Path] = []
+    for candidate in runs_root.iterdir():
+        try:
+            validate_run_id(candidate.name)
+            run_root = ensure_path_confined(runs_root, candidate)
+            if not run_root.is_dir():
+                continue
+            unresolved_invocation = run_root / "input" / "invocation.json"
+            if unresolved_invocation.is_symlink():
+                continue
+            invocation_path = ensure_path_confined(run_root, unresolved_invocation)
+            if not invocation_path.is_file():
+                continue
+            invocation = json.loads(invocation_path.read_text(encoding="utf-8"))
+            recorded = invocation.get("problem_file") if isinstance(invocation, dict) else None
+            if not isinstance(recorded, str):
+                continue
+            recorded_path = Path(recorded).expanduser().resolve(strict=False)
+        except (OSError, RuntimeError, UnicodeError, json.JSONDecodeError, WorkspaceError):
+            continue
+        if recorded_path == source:
+            matches.append(run_root)
+
+    selected = max(
+        matches,
+        key=lambda item: (_run_id_timestamp(item.name), item.name),
+        default=None,
+    )
+    if selected is None:
+        raise WorkspaceError(f"no MATEK run found for problem file: {source}")
+    return selected
+
+
 def _run_id_timestamp(run_id: str) -> str:
     """Extract the sortable UTC timestamp from either supported run-ID format."""
 

@@ -113,7 +113,7 @@ def test_large_coordinator_context_is_bounded_prioritized_and_addressable() -> N
     assert len(aggregate["issue_paths"]) == 12
 
 
-def test_mandatory_coordinator_state_fails_truthfully_when_it_cannot_fit() -> None:
+def test_immutable_prompt_contract_fails_truthfully_when_it_cannot_fit() -> None:
     builder = CoordinatorContextBuilder(configured_character_limit=100_000)
     mandatory = {
         "compiled_prompt": "mandatory theorem statement " * 8_000,
@@ -140,3 +140,67 @@ def test_mandatory_coordinator_state_fails_truthfully_when_it_cannot_fit() -> No
         assert "CONTEXT_BUDGET_EXHAUSTED" in str(exc)
     else:  # pragma: no cover - the fixture must exceed its explicit hard budget
         raise AssertionError("mandatory oversized context unexpectedly fit")
+
+
+def test_oversized_scheduler_state_falls_back_to_bounded_indexed_context() -> None:
+    builder = CoordinatorContextBuilder(configured_character_limit=100_000)
+    base = {
+        "compiled_prompt": "Exact unchanged research prompt.",
+        "claim_contract": {"conclusion": "P"},
+        "decision_id": 41,
+        "after_event_sequence": 2_000,
+    }
+    assignments = [
+        {
+            "assignment_id": f"worker-{index:04d}",
+            "status": "running" if index >= 1_995 else "completed",
+            "approach_family": f"family-{index % 8}",
+            "objective": "Large historical objective " * 20,
+            "completed_event_sequence": index,
+        }
+        for index in range(2_000)
+    ]
+    events = [
+        {
+            "schema_version": 1,
+            "sequence": index,
+            "kind": "worker_report_accepted",
+            "assignment_id": f"worker-{index:04d}",
+            "artifact": f"workers/worker-{index:04d}.json",
+            "artifact_sha256": f"{index:064x}",
+            "detail": ["Detailed historical event prose " * 30],
+        }
+        for index in range(1, 2_001)
+    ]
+
+    built = builder.build(
+        decision_id=41,
+        after_event_sequence=2_000,
+        normal_payload={**base, "assignment_lifecycle": assignments, "events": events},
+        compact_base={**base, "large_registry": "registry " * 80_000},
+        indexed_base={
+            **base,
+            "scheduler_state_index": {
+                "assignment_count": len(assignments),
+                "canonical_path": "research/coordinator/state.json",
+            },
+        },
+        events=events,
+        assignment_table=assignments,
+        report_evidence=[],
+        graph_memory=None,
+        force_compact=True,
+    )
+
+    assert built.manifest.mode == "indexed"
+    assert built.manifest.serialized_provider_input_characters <= 100_000
+    assert built.payload["context_mode"] == "indexed"
+    assert built.payload["scheduler_state_index"]["assignment_count"] == 2_000
+    selected_events = built.payload["unacknowledged_events"]
+    assert selected_events
+    assert selected_events[-1]["sequence"] == 2_000
+    lifecycle = built.payload["assignment_lifecycle"]
+    assert lifecycle
+    assert lifecycle[0]["status"] == "running"
+    assert built.manifest.omitted_state_sections
+    assert built.payload["indexed_omissions"]

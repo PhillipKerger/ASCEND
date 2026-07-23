@@ -343,6 +343,7 @@ class _ResolvedPolicy:
     model: str | None
     reasoning_effort: str
     allowed_write_paths: tuple[Path, ...]
+    maximum_subagents: int = 0
 
 
 @dataclass(frozen=True)
@@ -1024,6 +1025,7 @@ class CodexCliModelClient:
                         "web_search": policy.web_search,
                         "model_requested": policy.model,
                         "reasoning_effort_requested": policy.reasoning_effort,
+                        "maximum_subagents": policy.maximum_subagents,
                         "command": [_safe_diagnostic(argument) for argument in argv],
                     },
                     confinement_root=run_root,
@@ -1105,6 +1107,7 @@ class CodexCliModelClient:
                     },
                     "web_search": policy.web_search,
                     "sandbox": policy.sandbox,
+                    "maximum_subagents": policy.maximum_subagents,
                     "schema_sha256": schema_sha256,
                     "session_id": summary.session_id,
                     "item_counts": dict(summary.item_counts),
@@ -1541,6 +1544,9 @@ class CodexCliModelClient:
             model=model,
             reasoning_effort=effort,
             allowed_write_paths=tuple(paths),
+            maximum_subagents=(
+                request.settings.maximum_subagents if self._role == "research-worker" else 0
+            ),
         )
 
     def _active_run_root(self) -> Path:
@@ -1623,6 +1629,7 @@ class CodexCliModelClient:
                 # the explicit override is the actual configuration used here.
                 "reasoning_effort_actual": policy.reasoning_effort,
                 "web_search_enabled": policy.web_search,
+                "last_maximum_subagents": policy.maximum_subagents,
                 "tool_usage": tool_usage,
                 "last_session_id": summary.session_id,
                 "last_usage": summary.usage.to_dict(),
@@ -1695,6 +1702,19 @@ def build_codex_exec_argv(
         if policy.model is not None:
             argv.extend(("--model", policy.model))
         argv.extend(("--config", f'model_reasoning_effort="{policy.reasoning_effort}"'))
+        argv.extend(
+            (
+                "--config",
+                f"agents.enabled={'true' if policy.maximum_subagents > 0 else 'false'}",
+            )
+        )
+        if policy.maximum_subagents > 0:
+            argv.extend(
+                (
+                    "--config",
+                    f"agents.max_concurrent_threads_per_session={policy.maximum_subagents}",
+                )
+            )
 
     argv.append("exec")
     if resume_session_id is not None:
@@ -1708,6 +1728,19 @@ def build_codex_exec_argv(
         if policy.model is not None:
             argv.extend(("--model", policy.model))
         argv.extend(("--config", f'model_reasoning_effort="{policy.reasoning_effort}"'))
+        argv.extend(
+            (
+                "--config",
+                f"agents.enabled={'true' if policy.maximum_subagents > 0 else 'false'}",
+            )
+        )
+        if policy.maximum_subagents > 0:
+            argv.extend(
+                (
+                    "--config",
+                    f"agents.max_concurrent_threads_per_session={policy.maximum_subagents}",
+                )
+            )
 
     argv.extend(
         (

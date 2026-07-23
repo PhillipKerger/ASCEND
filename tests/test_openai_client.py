@@ -17,6 +17,7 @@ from matek_theorem_agent.openai_client import (
     OpenAIResponsesClient,
     TokenPricing,
     model_request_cache_key,
+    normalized_model_request,
 )
 
 
@@ -159,6 +160,20 @@ def test_request_cache_key_is_normalized_redacted_and_schema_sensitive() -> None
         Answer,
         stage="research",
         cache_namespace="force-generation-1",
+    )
+    nested = ModelRequest(
+        first.instructions,
+        first.input_text,
+        settings.model_copy(update={"maximum_subagents": 8}),
+    )
+    assert first_key != model_request_cache_key(nested, Answer, stage="research")
+    assert (
+        "maximum_subagents"
+        not in normalized_model_request(first, Answer, stage="research")["settings"]
+    )
+    assert (
+        normalized_model_request(nested, Answer, stage="research")["settings"]["maximum_subagents"]
+        == 8
     )
 
 

@@ -83,6 +83,8 @@ Without a backend flag, a new installation uses Codex. Important options:
 --budget-usd FLOAT
 --max-coordinator-decisions INTEGER
 --max-agents INTEGER
+--hierarchical
+--subagents-per-agent INTEGER
 --time-limit-minutes INTEGER
 --no-web-search
 --no-lean
@@ -142,11 +144,24 @@ concurrency limit controls the active subset of that open set. None of these set
 separate cumulative logical-worker limit. Codex global call-count limits remain configurable in
 TOML but are unset by default.
 
+`--hierarchical` enables one nested Codex tier inside each first-level research worker.
+`--max-agents X` remains the first-level MATEK worker-concurrency limit, while
+`--subagents-per-agent X_PRIME` sets the maximum concurrently open Codex subagents available to
+each such worker. The hierarchical default is eight nested agents per first-level worker; zero
+means that workers are explicitly instructed to operate as regular subagents and Codex nested
+tools are not enabled. The coordinator and worker inputs contain both resolved limits. Nested
+agents inherit the parent worker's sandbox and web policy, cannot delegate further under MATEK's
+contract, and must be checked and synthesized by the parent into its ordinary durable report.
+This mode currently requires the Codex backend; a positive nested limit with `--backend api` is a
+configuration error.
+
 `research.maximum_coordinator_context_characters` defaults to 800,000 and applies to the final
 serialized provider input rather than raw report text alone. `matek run` displays this ceiling and
 the bounded on-demand evidence-request limit. Oversized histories are compacted into prioritized
-working sets with hash-bound references; mandatory-state exhaustion pauses retriably rather than
-appearing as a Codex process crash.
+working sets with hash-bound references. If compact scheduler history remains oversized, indexed
+mode retains exact prompt/claim and live state while replacing cumulative history with bounded
+summaries and authenticated scheduler/event/graph references. Only an immutable exact prompt/claim
+or provider envelope that still cannot fit may pause as `CONTEXT_BUDGET_EXHAUSTED`.
 
 Generated run directories use
 `run-<problem-file-stem>[-<run-name>]-<UTC-timestamp>-<random-suffix>`. The problem stem and
@@ -166,6 +181,8 @@ ASCENSION 5: Writing manuscript and verifying bibliography.
 ASCENSION 6: Assessing and verifying the Lean formalization.
 ASCENSION 7: Preparing final report.
 ```
+
+In hierarchical mode Ascension 3 appends the per-agent nested limit.
 
 On resume, Ascension 2 prints `Resuming continuous research coordinator at event N.` using the
 canonical checkpoint's event cursor. Ascension 3 then uses the same adaptive-pool wording with the
@@ -206,10 +223,14 @@ The status header prints `Scientific:` and `Workflow:` separately. For a paused 
 it also shows completed and missing mandatory audits, so `CANDIDATE_AWAITING_AUDIT` is not confused
 with scientific rejection and `PAUSED_RETRIABLE` has a concrete resume target.
 
-## `matek resume [RUN_ID]`
+## `matek resume [RUN_ID_OR_PROBLEM]`
 
 Resumes the first incomplete stage with the provider stored in run state. Options include
 `--backend codex|api`, `--force-stage STAGE`, and backend-appropriate budget increases.
+
+The positional selector may be a run ID or a `.md`/`.txt` problem path. For a problem path, MATEK
+matches the immutable absolute source path in each run's intake record and resumes the newest
+matching run. It does not guess from a similar run-name slug.
 
 An omitted backend always means “use the frozen provider.” An explicit different provider must
 produce a warning, record the switch and reason in provenance, and never happen merely because

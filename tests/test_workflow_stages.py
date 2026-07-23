@@ -2311,6 +2311,9 @@ async def test_failed_grouped_repair_preserves_singleton_candidate_for_gate(
 def test_research_workflow_defaults_use_a_large_continuous_pending_window() -> None:
     settings = ResearchWorkflowSettings()
 
+    assert settings.orchestration_mode == "flat"
+    assert settings.maximum_subagents_per_agent == 8
+    assert settings.hierarchical_subagent_limit == 0
     assert settings.minimum_initial_assignments == 16
     assert settings.maximum_concurrent_agents == 32
     assert settings.maximum_pending_assignments == 32
@@ -2319,6 +2322,106 @@ def test_research_workflow_defaults_use_a_large_continuous_pending_window() -> N
     assert settings.maximum_coordinator_requested_artifacts == 8
     assert "maximum_research_subagents" not in type(settings).model_fields
     assert "exact_target_persistence" not in type(settings).model_fields
+
+
+@pytest.mark.asyncio
+async def test_hierarchical_limits_are_given_to_coordinator_and_workers(
+    tmp_path: Path,
+) -> None:
+    class HierarchyAwareClient(SuccessfulResearchClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.coordinator_hierarchies: list[dict[str, Any]] = []
+            self.worker_hierarchies: list[dict[str, Any]] = []
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                self.coordinator_hierarchies.append(payload["research_agent_hierarchy"])
+            elif output_type is ResearchWorkerReport:
+                self.worker_hierarchies.append(payload["agent_hierarchy"])
+            return await super().generate_structured(request, output_type)
+
+    client = HierarchyAwareClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            orchestration_mode="hierarchical",
+            maximum_subagents_per_agent=8,
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert result.accepted_for_manuscript
+    assert client.coordinator_hierarchies
+    assert client.coordinator_hierarchies[0] == {
+        "instruction": (
+            "Each research subagent may use its bounded sub-subagent pool and must "
+            "synthesize nested work into its own report."
+        ),
+        "maximum_concurrent_subagents": 4,
+        "maximum_sub_subagent_depth": 1,
+        "maximum_sub_subagents_per_subagent": 8,
+        "mode": "hierarchical",
+    }
+    assert client.worker_hierarchies
+    assert all(
+        hierarchy["role"] == "hierarchical_research_subagent"
+        and hierarchy["maximum_sub_subagents"] == 8
+        and hierarchy["maximum_sub_subagent_depth"] == 1
+        for hierarchy in client.worker_hierarchies
+    )
+
+
+@pytest.mark.asyncio
+async def test_zero_nested_limit_tells_workers_they_are_regular_subagents(
+    tmp_path: Path,
+) -> None:
+    class RegularWorkerClient(SuccessfulResearchClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.worker_hierarchies: list[dict[str, Any]] = []
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            if output_type is ResearchWorkerReport:
+                self.worker_hierarchies.append(json.loads(request.input_text)["agent_hierarchy"])
+            return await super().generate_structured(request, output_type)
+
+    client = RegularWorkerClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            orchestration_mode="hierarchical",
+            maximum_subagents_per_agent=0,
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+        ),
+    )
+
+    assert result.accepted_for_manuscript
+    assert client.worker_hierarchies
+    assert all(
+        hierarchy
+        == {
+            "instruction": (
+                "You are a regular research subagent. Complete this assignment yourself; "
+                "no nested delegation is configured."
+            ),
+            "role": "regular_research_subagent",
+        }
+        for hierarchy in client.worker_hierarchies
+    )
 
 
 @pytest.mark.asyncio
@@ -2611,6 +2714,109 @@ async def test_coordinator_input_too_large_rebuilds_a_smaller_distinct_context(
     ]
     assert sum(event["kind"] == "coordinator_context_compacted" for event in events) == 2
     assert sum(event["kind"] == "coordinator_input_too_large" for event in events) == 1
+
+
+@pytest.mark.asyncio
+async def test_oversized_mandatory_scheduler_history_uses_indexed_context_and_continues(
+    tmp_path: Path,
+) -> None:
+    class IndexedContextClient:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.indexed_payload: dict[str, Any] | None = None
+
+        async def generate_structured(
+            self, request: ModelRequest, output_type: type[Any]
+        ) -> ModelResult[Any]:
+            self.calls += 1
+            payload = json.loads(request.input_text)
+            if output_type is ResearchCoordinatorDecision:
+                if payload["initial_portfolio"]:
+                    parsed: BaseModel = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[
+                            ResearchAssignment(
+                                id=f"indexed-route-{index}",
+                                approach_family=f"family-{index}",
+                                task=f"Investigate indexed route {index}",
+                                expected_output="A rigorous partial result",
+                            )
+                            for index in range(4)
+                        ],
+                        rationale="Launch four independent routes.",
+                    )
+                else:
+                    assert payload["context_mode"] == "indexed"
+                    assert payload["research_agent_hierarchy"] == {
+                        "instruction": (
+                            "Each research subagent may use its bounded sub-subagent pool and "
+                            "must synthesize nested work into its own report."
+                        ),
+                        "maximum_concurrent_subagents": 4,
+                        "maximum_sub_subagent_depth": 1,
+                        "maximum_sub_subagents_per_subagent": 6,
+                        "mode": "hierarchical",
+                    }
+                    assert payload["scheduler_state_index"]["assignment_count"] == 4
+                    assert payload["unacknowledged_events"]
+                    assert payload["report_summaries"]
+                    self.indexed_payload = payload
+                    parsed = ResearchCoordinatorDecision(
+                        decision_id=payload["decision_id"],
+                        after_event_sequence=payload["after_event_sequence"],
+                        assignments=[],
+                        rationale="The configured coordinator decision budget is exhausted.",
+                        stop_recommended=True,
+                        stop_reason="The bounded fixture has reached its configured limit.",
+                        stop_category="budget",
+                    )
+            elif output_type is ResearchWorkerReport:
+                assignment = payload["assignment"]
+                parsed = ResearchWorkerReport(
+                    assignment_id=assignment["id"],
+                    status=WorkerStatus.PROGRESS,
+                    formal_results=[f"Partial lemma from {assignment['id']}"],
+                    proof_content="A retained rigorous partial argument.",
+                    exact_gap="One exact boundary lemma remains.",
+                    sources=[],
+                    mechanism=assignment["task"],
+                    dependencies=[
+                        f"dependency-{index:05d}-with-authenticated-evidence"
+                        for index in range(5_000)
+                    ],
+                )
+            else:  # pragma: no cover - this fixture creates no candidate
+                raise AssertionError(output_type)
+            return ModelResult(parsed=parsed, response_id=f"indexed-context-{self.calls}")
+
+    client = IndexedContextClient()
+    result = await run_adaptive_research(
+        client=client,
+        compiled_problem=compiled_problem(),
+        research_dir=tmp_path,
+        workflow_settings=ResearchWorkflowSettings(
+            orchestration_mode="hierarchical",
+            maximum_subagents_per_agent=6,
+            minimum_initial_assignments=4,
+            maximum_concurrent_agents=4,
+            maximum_pending_assignments=4,
+            maximum_coordinator_decisions=2,
+            maximum_coordinator_context_characters=100_000,
+        ),
+    )
+
+    assert result.outcome is ResearchOutcome.BUDGET_EXHAUSTED
+    assert client.indexed_payload is not None
+    manifests = sorted((tmp_path / "coordinator" / "context-manifests").glob("*.json"))
+    assert any(json.loads(path.read_text())["mode"] == "indexed" for path in manifests)
+    assert any(
+        "Context mode: indexed." in event.get("detail", [])
+        for event in (
+            json.loads(path.read_text()) for path in sorted((tmp_path / "events").glob("*.json"))
+        )
+        if event.get("kind") == "coordinator_context_compacted"
+    )
 
 
 @pytest.mark.asyncio

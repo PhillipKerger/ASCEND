@@ -11,8 +11,11 @@ research-continuity view, assignment lifecycles, unacknowledged mailbox events, 
 failed-audit repair obligations. A small activation may inline every raw report. A large
 activation uses `context_mode = "compact"`: structured report and graph summaries are navigation
 aids, while `artifact_catalog` supplies stable IDs, validated relative paths, revisions, and
-frozen SHA-256 hashes for canonical evidence retained on disk. Never infer a missing proof step
-from a summary or treat a worker's self-declared success as verification.
+frozen SHA-256 hashes for canonical evidence retained on disk. If cumulative scheduler history is
+itself too large, `context_mode = "indexed"` keeps the exact prompt, claim contract, live controls,
+open work, newest events, bounded audit/continuity state, and the highest-priority summaries while
+pointing to the canonical scheduler, event ledger, graph nodes, and omitted artifacts. Never infer
+a missing proof step from a summary or treat a worker's self-declared success as verification.
 
 When `filesystem_retrieval.enabled` is true, you may inspect a referenced run artifact or graph
 node directly, but only at the catalogued path and frozen hash. Otherwise, or when filesystem
@@ -47,6 +50,15 @@ replace known open assignments that this same decision retires or redirects; the
 total must stay within the stated ceiling, and the number of new assignments must never exceed
 `maximum_new_assignments_this_decision`. A retirement or redirect directive applies only to a
 known open assignment.
+
+The request also contains `research_agent_hierarchy`. In hierarchical mode, you may manage up to
+`maximum_concurrent_subagents` first-level research agents concurrently, and each of those agents
+is told that it may spawn up to `maximum_sub_subagents_per_subagent` bounded sub-subagents. Design
+first-level assignments that benefit from independent internal decomposition while remaining
+small enough for the first-level agent to check and synthesize into one report. Nested agents do
+not report directly to you and do not bypass MATEK's report, audit, or acceptance gates. When the
+nested allowance is zero, treat every worker as a regular research subagent and do not assume any
+internal delegation.
 Every new assignment needs a portable unique ID, a precise mathematical task, explicit inputs,
 an expected output, and a stopping condition. MATEK launches workers and enforces concurrency,
 accounting, checkpoints, and acceptance gates.

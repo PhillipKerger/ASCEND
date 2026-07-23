@@ -82,6 +82,15 @@ formalization, and generates a reproducible final report.
 - Have the coordinator create sixteen initial assignments by default, spanning at least four
   materially different approaches unless the configured budget is lower.
 - Keep initial workers independent; do not reveal the favored route to all workers.
+- Provide an optional Codex hierarchical mode. The user configures the first-level MATEK worker
+  concurrency and a per-worker nested-agent allowance (eight by default when enabled). Give both
+  limits to the coordinator and every first-level worker. A worker with a positive allowance may
+  delegate bounded independent subtasks one tier deep, but must check and synthesize them into its
+  own `ResearchWorkerReport`; its children cannot bypass MATEK checkpoints or acceptance gates.
+  A zero nested allowance makes the worker a regular subagent and the prompt must say so without
+  implying that nested delegation is available. Keep flat application-managed orchestration as
+  the backend-portable default; do not silently emulate unavailable nested tools on the API
+  adapter.
 - Run research as a completion-driven event loop rather than fixed rounds. Atomically preserve
   every assignment and full raw worker report, then atomically write one immutable zero-padded
   completion-event file and refresh the materialized mailbox snapshot. Activate the coordinator
@@ -97,7 +106,12 @@ formalization, and generates a reproducible final report.
   may request a bounded evidence set for the next activation.
 - Preflight before starting a provider process. Persist each context manifest and any omissions.
   A provider `input_too_large` result must reduce the measured budget and create a distinct compact
-  request; if mandatory state cannot fit, pause retriably with `CONTEXT_BUDGET_EXHAUSTED`.
+  request. If cumulative scheduler state cannot fit, automatically rebuild an indexed context
+  containing the exact prompt/claim, live controls, open work, newest events, bounded scientific
+  summaries, and authenticated ledger/graph/artifact references. Reserve
+  `CONTEXT_BUDGET_EXHAUSTED` for the exceptional case where the immutable exact prompt/claim and
+  provider envelope still cannot fit after indexed compaction, or the provider rejects every
+  successively smaller valid request.
 - Refill useful work dynamically after completions instead of waiting for a batch barrier. Permit
   up to 32 total open assignments (queued plus running) by default. Permit up to 32 of that open
   set to be active research workers, subject to backend and budget limits. Initial workers and

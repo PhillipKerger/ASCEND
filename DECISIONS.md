@@ -26,6 +26,9 @@ follow-up work, but typoed/unknown names fail closed. Resume uses the graph iden
 intake, and graph maintenance requires explicit selection whenever more than one graph exists.
 
 - Explicit application-level agents are the stable default.
+- Optional hierarchical execution may use Codex subagents inside a first-level research worker.
+  MATEK's first-level scheduler, report checkpoint, aggregate usage accounting, and independent
+  acceptance roles remain authoritative; nested helpers never replace them.
 - Run workers concurrently with `asyncio` and bounded concurrency.
 - Research uses one durable logical coordinator with a completion-driven mailbox and live worker
   pool, not fixed rounds or wait-for-all worker batches.

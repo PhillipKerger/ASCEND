@@ -735,6 +735,8 @@ class ResearchAcceptanceGate(BaseModel):
 class ResearchWorkflowSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    orchestration_mode: Literal["flat", "hierarchical"] = "flat"
+    maximum_subagents_per_agent: int = Field(default=8, ge=0, le=32)
     minimum_initial_assignments: int = Field(default=16, ge=4)
     maximum_concurrent_agents: int = Field(default=32, ge=1)
     maximum_pending_assignments: int = Field(default=32, ge=1)
@@ -787,6 +789,12 @@ class ResearchWorkflowSettings(BaseModel):
 
         pending = self.maximum_pending_assignments
         return (self.maximum_coordinator_decisions + pending - 1) // pending
+
+    @property
+    def hierarchical_subagent_limit(self) -> int:
+        """Return the active nested-agent limit; flat workers receive no such capability."""
+
+        return self.maximum_subagents_per_agent if self.orchestration_mode == "hierarchical" else 0
 
 
 class ResearchResult(BaseModel):
@@ -1376,7 +1384,9 @@ async def run_adaptive_research(
     if remaining_run_model_calls is not None and remaining_run_model_calls < 0:
         raise ValueError("remaining_run_model_calls must be nonnegative")
     coordinator_model = coordinator_settings or ModelSettings(reasoning_effort="max")
-    worker_model = worker_settings or ModelSettings(reasoning_effort="xhigh")
+    worker_model = (worker_settings or ModelSettings(reasoning_effort="xhigh")).model_copy(
+        update={"maximum_subagents": settings.hierarchical_subagent_limit}
+    )
     auditor_model = audit_settings or ModelSettings(reasoning_effort="xhigh")
     judge_model = final_judge_settings or coordinator_model
 
@@ -1688,12 +1698,41 @@ async def run_adaptive_research(
         return path
 
     def assignment_input(record: ResearchAssignmentState) -> str:
+        nested_limit = (
+            record.request_settings.maximum_subagents
+            if record.request_settings is not None
+            else settings.hierarchical_subagent_limit
+        )
         payload: dict[str, object] = {
             "compiled_prompt": compiled.compiled_prompt,
             "claim_contract": compiled.claim_contract.as_dict(),
             "assignment": record.assignment.model_dump(mode="json"),
             "admitted_by_coordinator_decision": record.admitted_by_decision,
             "repair_generation": record.repair_generation,
+            "agent_hierarchy": (
+                {
+                    "role": "hierarchical_research_subagent",
+                    "coordinator_maximum_concurrent_subagents": (
+                        settings.maximum_concurrent_agents
+                    ),
+                    "maximum_sub_subagents": nested_limit,
+                    "maximum_sub_subagent_depth": 1,
+                    "instruction": (
+                        f"You may spawn up to {nested_limit} sub-subagents for independent "
+                        "bounded parts of this assignment. You remain responsible for "
+                        "checking and synthesizing their work into this one scientific report. "
+                        "Tell every spawned agent that it may not delegate further."
+                    ),
+                }
+                if nested_limit > 0
+                else {
+                    "role": "regular_research_subagent",
+                    "instruction": (
+                        "You are a regular research subagent. Complete this assignment "
+                        "yourself; no nested delegation is configured."
+                    ),
+                }
+            ),
         }
         if record.exact_target_policy_version == 1:
             payload["exact_target_policy"] = exact_target_policy()
@@ -2836,15 +2875,18 @@ async def run_adaptive_research(
                         "status": report.status.value,
                         "approach_family": record.assignment.approach_family,
                         "mechanism": compact_text(report.mechanism or record.assignment.task),
+                        "formal_result_count": len(report.formal_results),
                         "formal_results": [
-                            compact_text(item, words=64) for item in report.formal_results
+                            compact_text(item, words=64) for item in report.formal_results[:16]
                         ],
+                        "counterexample_count": len(report.counterexamples),
                         "counterexamples": [
-                            compact_text(item, words=64) for item in report.counterexamples
+                            compact_text(item, words=64) for item in report.counterexamples[:16]
                         ],
                         "exact_gap": compact_text(report.exact_gap, words=64),
+                        "dependency_count": len(report.dependencies),
                         "dependencies": [
-                            compact_text(item, words=32) for item in report.dependencies
+                            compact_text(item, words=32) for item in report.dependencies[:32]
                         ],
                         "path": report_relative,
                         "sha256": record.report_sha256,
@@ -3044,6 +3086,20 @@ async def run_adaptive_research(
         completed_ids = set(reports_by_id)
         payload: dict[str, object] = {
             "coordinator_mode": "continuous_event_driven",
+            "research_agent_hierarchy": {
+                "mode": settings.orchestration_mode,
+                "maximum_concurrent_subagents": settings.maximum_concurrent_agents,
+                "maximum_sub_subagents_per_subagent": (settings.hierarchical_subagent_limit),
+                "maximum_sub_subagent_depth": (
+                    1 if settings.hierarchical_subagent_limit > 0 else 0
+                ),
+                "instruction": (
+                    "Each research subagent may use its bounded sub-subagent pool and must "
+                    "synthesize nested work into its own report."
+                    if settings.hierarchical_subagent_limit > 0
+                    else "All research workers are regular subagents without nested delegation."
+                ),
+            },
             "compiled_prompt": compiled.compiled_prompt,
             "claim_contract": compiled.claim_contract.as_dict(),
             "exact_target_policy": exact_target_policy(),
@@ -3160,6 +3216,7 @@ async def run_adaptive_research(
         decision_model_settings = coordinator_model
         control_keys = {
             "coordinator_mode",
+            "research_agent_hierarchy",
             "compiled_prompt",
             "claim_contract",
             "decision_id",
@@ -3185,7 +3242,10 @@ async def run_adaptive_research(
         }
 
         def compact_base_payload(source_payload: dict[str, object]) -> dict[str, object]:
-            base = {key: source_payload[key] for key in control_keys}
+            # An indexed first build is rebuilt after its durable compaction event.
+            # Optional bulky audit fields have already been represented by the
+            # bounded audit_recovery_state and need not be re-expanded.
+            base = {key: source_payload[key] for key in control_keys if key in source_payload}
             base["filesystem_retrieval"] = (
                 {
                     "enabled": True,
@@ -3252,6 +3312,126 @@ async def run_adaptive_research(
                 base["latest_candidate_state"] = None
             return base
 
+        def indexed_base_payload(source_payload: dict[str, object]) -> dict[str, object]:
+            """Keep exact controls inline while replacing cumulative state with an index."""
+
+            indexed_control_keys = control_keys - {
+                "audit_repair_obligations",
+                "latest_independent_audits",
+                "latest_final_judge_verdict",
+            }
+            base = {key: source_payload[key] for key in indexed_control_keys}
+            assignment_counts = {
+                status.value: len(assignment_records(status)) for status in AssignmentLifecycle
+            }
+            base["scheduler_state_index"] = {
+                "canonical_path": "research/coordinator/state.json",
+                "assignment_count": len(scheduler.assignments),
+                "assignment_counts": assignment_counts,
+                "event_ledger_pattern": "research/events/<zero-padded-sequence>.json",
+                "event_sequence": event_sequence,
+                "instruction": (
+                    "This indexed context replaces cumulative scheduler history. Running and "
+                    "queued assignments, new events, report summaries, and hash-bound evidence "
+                    "references are prioritized below. Use decision-scoped assignment IDs to "
+                    "avoid colliding with older omitted IDs."
+                ),
+            }
+            base["audit_recovery_state"] = {
+                "obligation_count": len(scheduler.repair_obligations),
+                "obligations": [
+                    compact_text(item, words=48) for item in scheduler.repair_obligations[:16]
+                ],
+                "audits": {
+                    name: {
+                        "verdict": audit.verdict.value,
+                        "rationale": compact_text(audit.rationale, words=48),
+                        "unresolved_obligations": [
+                            compact_text(item, words=32)
+                            for item in audit.unresolved_obligations[:8]
+                        ],
+                    }
+                    for name, audit in current_audits.items()
+                },
+                "final_judge": (
+                    {
+                        "verdict": current_verdict.verdict.value,
+                        "reasons": [
+                            compact_text(item, words=32) for item in current_verdict.reasons[:8]
+                        ],
+                        "unresolved_obligations": [
+                            compact_text(item, words=32)
+                            for item in current_verdict.unresolved_obligations[:8]
+                        ],
+                    }
+                    if current_verdict is not None
+                    else None
+                ),
+            }
+            if current_candidate is not None:
+                candidate_path = candidate_dir / "package.json"
+                base["latest_candidate_state"] = {
+                    "exact_theorem": compact_text(current_candidate.exact_theorem, words=96),
+                    "unresolved_item_count": len(current_candidate.unresolved_items),
+                    "unresolved_items": [
+                        compact_text(item, words=48)
+                        for item in current_candidate.unresolved_items[:16]
+                    ],
+                    "imported_theorems": [
+                        {
+                            "name": theorem.name,
+                            "verified": theorem.verified,
+                            "source_id": theorem.source_id,
+                        }
+                        for theorem in current_candidate.imported_theorems[:32]
+                    ],
+                    "path": (
+                        candidate_path.relative_to(destination.parent).as_posix()
+                        if candidate_path.is_file()
+                        else None
+                    ),
+                    "sha256": sha256_file(candidate_path) if candidate_path.is_file() else None,
+                }
+            else:
+                base["latest_candidate_state"] = None
+            base["approach_registry_index"] = {
+                "approach_count": len(registry.approaches),
+                "families": [approach.family for approach in registry.approaches[:64]],
+                "status_counts": {
+                    status: sum(approach.status == status for approach in registry.approaches)
+                    for status in sorted({approach.status for approach in registry.approaches})
+                },
+            }
+            continuity = latest_continuity or build_continuity()
+            base["research_continuity_index"] = {
+                "after_event_sequence": continuity.after_event_sequence,
+                "open_gap_count": len(continuity.open_gaps),
+                "open_gaps": [compact_text(item, words=48) for item in continuity.open_gaps[:16]],
+                "counterexample_count": len(continuity.counterexamples),
+                "counterexamples": [
+                    compact_text(item, words=48) for item in continuity.counterexamples[:16]
+                ],
+                "dependency_count": len(continuity.dependencies),
+            }
+            if graph_memory is not None:
+                frontier = graph_memory.get("frontier", {})
+                base["knowledge_graph_memory"] = {
+                    "graph_revision": graph_memory.get("graph_revision"),
+                    "problem_id": graph_memory.get("problem_id"),
+                    "review_required_before_delegation": graph_memory.get(
+                        "review_required_before_delegation", False
+                    ),
+                    "overview": graph_memory.get("overview", {}),
+                    "frontier_counts": {
+                        str(name): len(items) if isinstance(items, list) else 0
+                        for name, items in frontier.items()
+                    }
+                    if isinstance(frontier, dict)
+                    else {},
+                    "instruction": graph_memory.get("instruction"),
+                }
+            return base
+
         def build_context(
             source_payload: dict[str, object],
             *,
@@ -3274,6 +3454,7 @@ async def run_adaptive_research(
                 after_event_sequence=event_sequence,
                 normal_payload=source_payload,
                 compact_base=compact_base_payload(source_payload),
+                indexed_base=indexed_base_payload(source_payload),
                 events=recent_events(),
                 assignment_table=coordinator_assignment_table(),
                 report_evidence=report_evidence,
@@ -3347,11 +3528,12 @@ async def run_adaptive_research(
                 character_limit=settings.maximum_coordinator_context_characters,
                 force_compact=False,
             )
-            if context_manifest.mode == "compact":
+            if context_manifest.mode != "normal":
                 append_event(
                     "coordinator_context_compacted",
                     decision_id=decision_id,
                     detail=[
+                        f"Context mode: {context_manifest.mode}.",
                         f"Omitted {len(context_manifest.omitted_artifacts)} full artifacts; "
                         "authenticated references remain available.",
                         f"Effective provider-input limit: "
@@ -5134,7 +5316,12 @@ async def run_adaptive_research(
             Ascension.MANAGE_RESEARCH_POOL,
             "Managing adaptive research pool: "
             f"{initial_count} initial assignments, up to "
-            f"{settings.maximum_concurrent_agents} active agents.",
+            f"{settings.maximum_concurrent_agents} active agents"
+            + (
+                f", each with up to {settings.hierarchical_subagent_limit} nested subagents."
+                if settings.hierarchical_subagent_limit > 0
+                else "."
+            ),
         )
         scheduler.phase = (
             SchedulerPhase.AUDITING
@@ -5253,8 +5440,9 @@ async def run_adaptive_research(
                 exc=exc,
                 category=FailureCategory.RESOURCE,
                 extra_obligations=[
-                    "Increase research.maximum_coordinator_context_characters only if the "
-                    "selected provider supports it, or resume after reducing mandatory state."
+                    "Indexed compaction was exhausted. Verify whether the immutable exact prompt "
+                    "and claim contract fit the selected provider, then resume with a larger "
+                    "supported transport limit or provider context window."
                 ],
             )
         return await pause_retriable(

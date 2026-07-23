@@ -582,6 +582,11 @@ class WorkflowRunner:
                 # key so a cache hit can never stand in for another executed model.
                 "model": self.config.codex.model,
                 "reasoning_effort": effort,
+                "maximum_subagents": (
+                    self.config.research.hierarchical_subagent_limit
+                    if category in {"research", "research_worker"}
+                    else 0
+                ),
             }
         )
 
@@ -952,6 +957,9 @@ class WorkflowRunner:
                 "backend_display_name": backend_metadata["display_name"],
                 "authentication_class": backend_metadata.get("authentication_class", "unverified"),
                 "automatic_fallback": False,
+                "research_orchestration_mode": (self.config.research.orchestration_mode),
+                "maximum_subagents_per_agent": (self.config.research.hierarchical_subagent_limit),
+                "maximum_concurrent_agents": (self.config.research.maximum_concurrent_agents),
             }
         )
         state.metadata["configuration_summary"] = summary
@@ -1839,6 +1847,10 @@ class WorkflowRunner:
                     compiled_problem=compiled,
                     research_dir=state.run_root / "research",
                     workflow_settings=ResearchWorkflowSettings(
+                        orchestration_mode=self.config.research.orchestration_mode,
+                        maximum_subagents_per_agent=(
+                            self.config.research.maximum_subagents_per_agent
+                        ),
                         minimum_initial_assignments=max(
                             4, self.config.research.minimum_initial_agents
                         ),

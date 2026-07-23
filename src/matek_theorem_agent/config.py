@@ -64,6 +64,7 @@ class ModelSettings(_StrictSettings):
     web_search: bool = True
     maximum_web_search_calls: int = Field(default=8, gt=0)
     max_output_tokens: int = Field(default=100_000, gt=0)
+    maximum_subagents: int = Field(default=0, ge=0, le=32)
 
     @field_validator("model")
     @classmethod
@@ -276,6 +277,8 @@ class CodexSettings(_StrictSettings):
 
 
 class ResearchSettings(_StrictSettings):
+    orchestration_mode: Literal["flat", "hierarchical"] = "flat"
+    maximum_subagents_per_agent: int = Field(default=8, ge=0, le=32)
     minimum_initial_agents: int = Field(default=16, ge=4)
     maximum_concurrent_agents: int = Field(default=32, gt=0)
     maximum_pending_assignments: int = Field(default=32, gt=0)
@@ -335,6 +338,12 @@ class ResearchSettings(_StrictSettings):
 
         pending = self.maximum_pending_assignments
         return (self.maximum_coordinator_decisions + pending - 1) // pending
+
+    @property
+    def hierarchical_subagent_limit(self) -> int:
+        """Return the active per-worker Codex subagent allowance."""
+
+        return self.maximum_subagents_per_agent if self.orchestration_mode == "hierarchical" else 0
 
 
 class ManuscriptSettings(_StrictSettings):
@@ -525,6 +534,11 @@ class AppConfig(_StrictSettings):
 
     @model_validator(mode="after")
     def selected_models_have_budget_pricing(self) -> AppConfig:
+        if self.backend.provider != "codex" and self.research.hierarchical_subagent_limit > 0:
+            raise ValueError(
+                "research.orchestration_mode='hierarchical' currently requires the Codex "
+                "backend; the Responses API adapter does not expose nested-agent tools"
+            )
         if self.backend.provider != "api":
             return self
         selected = {
@@ -604,6 +618,8 @@ _CONVENIENCE_PATHS: dict[str, tuple[str, ...]] = {
     "MAXIMUM_ROUNDS": ("research", "maximum_rounds"),
     "MAX_AGENTS": ("research", "maximum_concurrent_agents"),
     "MAXIMUM_CONCURRENT_AGENTS": ("research", "maximum_concurrent_agents"),
+    "RESEARCH_MODE": ("research", "orchestration_mode"),
+    "SUBAGENTS_PER_AGENT": ("research", "maximum_subagents_per_agent"),
     "LEAN_ENABLED": ("lean", "enabled"),
     "SANDBOX": ("lean", "execution_backend"),
 }
@@ -614,6 +630,8 @@ _CLI_PATHS: dict[str, tuple[str, ...]] = {
     "max_coordinator_decisions": ("research", "maximum_coordinator_decisions"),
     "max_rounds": ("research", "maximum_rounds"),
     "max_agents": ("research", "maximum_concurrent_agents"),
+    "research_mode": ("research", "orchestration_mode"),
+    "subagents_per_agent": ("research", "maximum_subagents_per_agent"),
     "sandbox": ("lean", "execution_backend"),
     "no_lean": ("lean", "enabled"),
 }
@@ -1229,6 +1247,14 @@ def config_as_toml(config: AppConfig) -> str:
     except ImportError as exc:  # pragma: no cover - declared runtime dependency
         raise ConfigError("tomli-w is required to serialize configuration") from exc
     data = config.model_dump(mode="python", exclude={"project_root"}, exclude_none=True)
+    # This request-identity field is derived from [research] for Codex workers. It
+    # belongs in frozen scheduler requests, not in the public API role tables.
+    api = data.get("api")
+    models = api.get("models") if isinstance(api, dict) else None
+    if isinstance(models, dict):
+        for settings in models.values():
+            if isinstance(settings, dict):
+                settings.pop("maximum_subagents", None)
     return tomli_w.dumps(data)
 
 

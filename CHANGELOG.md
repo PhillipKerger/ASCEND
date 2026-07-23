@@ -2,11 +2,19 @@
 
 ## 0.3.0 — 2026-07-22
 
+- Added optional Codex hierarchical research mode. Users can set first-level worker concurrency
+  with `--max-agents` and a per-worker nested allowance with `--subagents-per-agent`; the
+  coordinator and workers see both limits, zero produces regular workers, and only research-worker
+  Codex processes receive the bounded collaboration controls.
 - Added deterministic, resumable coordinator context budgeting with an 800,000-character default
   measured on final provider input. Large histories compact into prioritized summaries and
   hash-bound artifact/graph references; API coordinators can request omitted evidence on demand.
-  Provider size rejection rebuilds a smaller distinct request, while mandatory-state overflow
-  pauses as `CONTEXT_BUDGET_EXHAUSTED` without losing completed research.
+  Provider size rejection rebuilds a smaller distinct request. Oversized cumulative scheduler
+  history now falls through to an indexed context instead of pausing; only an immutable exact
+  prompt/claim or repeated rejection of every smaller valid request can produce
+  `CONTEXT_BUDGET_EXHAUSTED`.
+- `matek resume problem.md` now selects the newest run whose immutable intake record names that
+  exact source file; run-ID resume remains unchanged.
 - Existing problem graphs now carry an explicit pre-delegation review requirement. The initial
   coordinator receives a problem-scoped overview and frontier and must use prior results,
   failures, gaps, audits, and tasks when shaping its assignment portfolio.

@@ -68,6 +68,9 @@ maximum_web_search_calls = 8
 max_output_tokens = 120000
 
 [research]
+orchestration_mode = "flat"
+# Used only in hierarchical mode; zero explicitly keeps workers regular.
+maximum_subagents_per_agent = 8
 minimum_initial_agents = 16
 maximum_concurrent_agents = 32
 maximum_pending_assignments = 32

@@ -97,6 +97,23 @@ If the compiler found that existing literature resolves the target, the portfoli
 independent source verification, hypothesis matching, proof reconstruction, and formalization.
 Known results must remain labeled as known rather than novel.
 
+### Optional hierarchical workers
+
+Flat application-managed workers remain the default. With Codex hierarchical mode enabled, the
+coordinator still creates and observes the durable first-level assignments, while each
+first-level research-worker process receives Codex's collaboration tools and a configured
+per-session nested-thread limit. For example, `--max-agents 8 --hierarchical
+--subagents-per-agent 8` permits up to eight active MATEK workers, each of which may use up to
+eight nested agents for bounded parts of its assignment. Nested agents inherit the parent's
+sandbox and search policy. The first-level worker must tell its children not to delegate further,
+validate their work, and return one normal scientific report. MATEK checkpoints that report and
+the aggregate provider usage at the existing worker boundary.
+
+Both tiers receive the resolved limits. If the nested limit is zero, workers receive the regular
+subagent contract and Codex nested-agent controls are not enabled. The current Responses API
+adapter rejects a positive hierarchical configuration rather than pretending that nested tools
+exist. Nested outputs are never independent proof audits and never relax candidate acceptance.
+
 ### Completion-driven coordinator loop
 
 MATEK runs a durable event loop with no round barrier:
@@ -133,10 +150,13 @@ paths, while API coordinators request a bounded set for the next activation.
 
 Every context has an immutable manifest recording its event cursor, mode, inclusion reasons,
 omissions, measured characters, token estimate, and hash. Provider `input_too_large` responses
-produce a distinct request under a smaller limit rather than an identical retry. If mandatory
-state alone cannot fit, research pauses as `CONTEXT_BUDGET_EXHAUSTED` while preserving partial
-scientific progress. `research/continuity.json` remains a derived navigation view, never a lossy
-replacement for reports or the immutable event ledger.
+produce a distinct request under a smaller limit rather than an identical retry. If the ordinary
+compact state cannot fit, MATEK switches to indexed mode: cumulative assignment/history/audit
+material becomes prioritized summaries and authenticated references, while exact prompt/claim,
+live controls, open work, and newest events remain inline. `CONTEXT_BUDGET_EXHAUSTED` is reserved
+for an immutable exact prompt/claim or provider envelope that still cannot fit, or repeated
+provider rejection of every smaller valid request. `research/continuity.json` remains a derived
+navigation view, never a lossy replacement for reports or the immutable event ledger.
 
 Each decision may add assignments, retire or redirect work, request hostile checks or lemma
 completion, recommend candidate packaging, or report an actual budget/resource boundary. The

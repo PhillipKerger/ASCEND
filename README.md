@@ -147,6 +147,8 @@ max_research_coordinator_decisions = 256 # second coordinator-decision ceiling
 # max_codex_threads = 512     # optional second global call-count ceiling
 
 [research]
+orchestration_mode = "flat" # set to "hierarchical" for bounded Codex subagents
+maximum_subagents_per_agent = 8 # used only in hierarchical mode; zero keeps regular workers
 minimum_initial_agents = 16   # initial assignments; configurable down to the safety floor of 4
 maximum_concurrent_agents = 32 # research-worker concurrency ceiling
 maximum_pending_assignments = 32 # total open (queued plus running) assignment ceiling
@@ -173,6 +175,22 @@ backend ceilings are also high enough. Initial workers and later coordinator ref
 this same pool and use web search by default. With `--no-web-search`, the web-agent ceiling no longer
 constrains calls at the backend; the current orchestration nevertheless includes that configured
 ceiling when it computes its conservative worker-admission window.
+
+Hierarchical mode is optional and currently Codex-only:
+
+```bash
+matek run problem.md --hierarchical --max-agents 8 --subagents-per-agent 8
+```
+
+Here MATEK may run up to eight first-level research workers concurrently, and each worker may use
+up to eight Codex subagents for independent pieces of its assignment. The coordinator and workers
+are told both limits. Each first-level worker must check and synthesize its nested results into one
+ordinary `ResearchWorkerReport`; children are instructed not to delegate further and never count
+as audits or bypass the scientific acceptance gate. Nested agents inherit their parent's sandbox
+and web policy. Setting `--subagents-per-agent 0` gives workers the regular-subagent prompt and
+does not enable Codex nested tools. Flat mode remains the default, and the API backend rejects a
+positive hierarchy rather than silently changing behavior. See the official
+[Codex subagents documentation](https://developers.openai.com/codex/multi-agent).
 
 At the start of `matek run`, MATEK prints the resolved configuration before any model call. This
 includes the selected backend and no-fallback boundary, the actual coordinator and research-worker
@@ -287,8 +305,11 @@ activation persists a manifest with included and omitted artifact IDs, validated
 hashes, graph revisions, character/token estimates, and the exact payload hash. Codex can inspect
 catalogued files when deeper evidence is needed; an API coordinator can request up to eight
 omitted artifacts or graph nodes for its next bounded activation. A provider size rejection
-creates a smaller, distinct request. If the unchanged prompt and other mandatory state alone do
-not fit, MATEK pauses with `CONTEXT_BUDGET_EXHAUSTED` and preserves all completed work.
+creates a smaller, distinct request. If cumulative scheduler history still does not fit, MATEK
+switches to an indexed context containing the exact prompt and claim, live controls, open work,
+newest events, bounded summaries, and authenticated references into the scheduler ledger and
+knowledge graph. `CONTEXT_BUDGET_EXHAUSTED` is reserved for an exact prompt/claim that physically
+cannot fit the provider envelope or repeated provider rejection of every smaller valid request.
 
 `--max-agents N` controls how many research workers may run concurrently. The initial portfolio
 contains 16 assignments by default; the coordinator may refill or expand the live pool to 32
@@ -558,13 +579,14 @@ run and returns an actionable error; it cannot unexpectedly create Platform API 
 | `matek doctor [--deep] [--online]` | Check local capabilities, login, and optional live backends |
 | `matek run PROBLEM_FILE [options]` | Start a new research workflow |
 | `matek status [RUN_ID]` | Show the latest or selected run status |
-| `matek resume [RUN_ID] [options]` | Continue a checkpointed run |
+| `matek resume [RUN_ID_OR_PROBLEM] [options]` | Continue a run by ID, or the newest run for a problem file |
 | `matek report [RUN_ID] [--rewrite]` | Regenerate the deterministic report, optionally rewriting prose |
 | `matek verify [RUN_ID]` | Re-run integrity, bibliography, LaTeX, and Lean checks without a model |
 | `matek graph COMMAND` | Validate, query, diff, export, rebuild, or open persistent graph memory |
 
 Important `run` options include `--backend codex|api`, `--max-agents`,
-`--max-coordinator-decisions`, `--time-limit-minutes`, `--no-web-search`, `--no-lean`,
+`--hierarchical`, `--subagents-per-agent`, `--max-coordinator-decisions`,
+`--time-limit-minutes`, `--no-web-search`, `--no-lean`,
 `--research-only`, `--knowledge-graph NAME`, `--dry-run`, `--sandbox native|docker`, and
 `--allow-project-edits`.
 Deprecated `--max-rounds` is accepted only to migrate existing scripts to a decision budget; it
